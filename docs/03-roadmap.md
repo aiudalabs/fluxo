@@ -8,7 +8,7 @@ Convención: `[ ] Fx-NN título — AC: <criterio verificable> · closes: <lecci
 ---
 
 ## Fase 0 · Bootstrap
-- [ ] F0-01 Confirmar apuesta de plataforma — AC: `06-decisiones` D1 resuelta (Supabase por defecto o alternativa). BLOQUEA F1+.
+- [x] F0-01 Confirmar apuesta de plataforma — ✅ **Supabase managed** (06-decisiones D1, 2026-07-11). Próximo: F0-02.
 - [ ] F0-02 Provisionar Supabase (dev) — AC: proyecto Postgres + Auth(GitHub OAuth) + Vault; envs en `.env.example`; migración vacía corre.
 - [ ] F0-03 CI base — AC: pipeline que corre migraciones, tests Go, lint console, y el **test de fuga cross-tenant** (aunque vacío aún).
 - [ ] F0-04 Skeleton `control/` (Go) — AC: binario que arranca, healthcheck, config por env; sin lógica de negocio todavía.
@@ -82,4 +82,5 @@ Convención: `[ ] Fx-NN título — AC: <criterio verificable> · closes: <lecci
 próxima sesión se re-oriente rápido.
 
 ### Bitácora
-- 2026-07-11 · Bootstrap: repo, docs 00-06, CLAUDE.md, skeleton. Sin código. Próximo: F0-01 (confirmar plataforma).
+- 2026-07-11 · Bootstrap: repo, docs 00-06, CLAUDE.md, skeleton. Sin código.
+- 2026-07-11 · F0-01 ✅ plataforma = Supabase managed (D1 resuelta). Desbloqueado F0-02. Próximo: provisionar Supabase.

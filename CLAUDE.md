@@ -76,5 +76,6 @@ Nunca marques `[x]` algo que no verificaste.
 ## Estado
 
 Bootstrap inicial (2026-07-11). Sin código todavía — el skeleton y los docs están; la construcción empieza en
-sesiones nuevas siguiendo `docs/03-roadmap.md`. Decisión abierta que gatea la Fase 1: la apuesta de plataforma
-(Supabase por defecto — confirmar en `06-decisiones`).
+sesiones nuevas siguiendo `docs/03-roadmap.md`. Plataforma DECIDIDA: **Supabase managed** (`06-decisiones` D1). La
+próxima tarea es **F0-02** (provisionar Supabase). Decisiones aún abiertas: D2 (Agent SDK), D3 (alcance última milla),
+D4 (repo remoto/org — antes del primer push).

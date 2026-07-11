@@ -9,13 +9,17 @@ Runtime×Provider). Razón: los bugs son arquitectónicos y recurren; no hay ten
 portable; el tiempo no es restricción. NO es el "trap del rewrite" porque lo bueno es portable y lo malo es
 alquilable. Ejecución por strangler. (Ver auditoría aiuda-forge 2026-07-11 + `04-lecciones`.)
 
-## ⚠️ D1 · Apuesta de plataforma del sustrato (BLOQUEA F1+)
-**Recomendado (default de trabajo): Supabase** (Postgres + RLS + Realtime + Auth GitHub-OAuth + Vault + Edge Functions)
-+ **Vercel/CF** para preview. Razón: es literalmente "el sustrato alquilado" del principio; RLS+Realtime hacen el
-aislamiento y la proyección sin código; ya existe el stack profile `react-supabase` (dogfooding). Reversible-ish
-(Postgres es Postgres; Vercel↔CF).
-**Alternativa:** Postgres self-host + auth/realtime/vault propios (menos lock-in, más código — contradice "casi cero
-infra"). **Estado:** a CONFIRMAR por el fundador antes de F1-01. Si no hay objeción, se procede con Supabase.
+## ✅ D1 · Apuesta de plataforma del sustrato: **Supabase managed** (2026-07-11)
+**Decidido: Supabase** (Postgres + RLS + Realtime + Auth GitHub-OAuth + Vault + Edge Functions) + **Vercel/CF** para
+preview. Razón (análisis de costos): la comparación NO es "Supabase vs nuestra Postgres" — es **baterías alquiladas
+vs baterías DIY**. RLS es de Postgres (gratis en cualquiera); el costo real son Auth/Realtime/Vault/Edge, que
+self-hostear una Postgres pelada te obliga a **construir a mano** — exactamente la costura de auth + Vault-plaintext +
+polling que la auditoría de v1 marcó como bugs (L-SEC-3, L-ARCH-4). El ahorro (~$25/mo Pro vs ~$0 en el VPS) es ruido
+frente a las semanas de dev + ops que ahorra; matchea la tesis "casi cero infra bespoke".
+**Salida futura (bajo lock-in de datos):** abajo es Postgres estándar → los datos son portables (pg_dump). El lock-in
+está en las baterías. Reconsiderar self-host (Supabase OSS en el VPS, o Postgres+baterías propias) cuando haya
+escala/ingresos que paguen el ops, o cuando Realtime/bandwidth sean una línea material. Mantener el schema como
+Postgres+RLS estándar para que esa salida sea barata.
 
 ## ⚠️ D2 · Runtime SDK de los agentes de diseño
 Recomendado: **Claude Agent SDK** (el loop en el SDK, el rol en markdown → cumple "el agente vive en markdown").
