@@ -9,7 +9,7 @@ Convención: `[ ] Fx-NN título — AC: <criterio verificable> · closes: <lecci
 
 ## Fase 0 · Bootstrap
 - [x] F0-01 Confirmar apuesta de plataforma — ✅ **Supabase managed** (06-decisiones D1, 2026-07-11). Próximo: F0-02.
-- [ ] F0-02 Provisionar Supabase (dev) — AC: proyecto Postgres + Auth(GitHub OAuth) + Vault; envs en `.env.example`; migración vacía corre.
+- [~] F0-02 Provisionar Supabase (dev, **local-first con CLI**) — `supabase init` ✅ (config.toml, project_id `fluxo`, PG17). FALTA: correr `supabase start` (con Docker) + `supabase status` → keys locales a `.env`; smoke de una migración vacía (`supabase db reset`). Ver `supabase/README.md`. Hosted (staging/prod) queda para D4/deploy. AC: `supabase start` levanta el stack y `db reset` corre limpio.
 - [ ] F0-03 CI base — AC: pipeline que corre migraciones, tests Go, lint console, y el **test de fuga cross-tenant** (aunque vacío aún).
 - [ ] F0-04 Skeleton `control/` (Go) — AC: binario que arranca, healthcheck, config por env; sin lógica de negocio todavía.
 - [ ] F0-05 Cargar `registry/` de v1 — AC: agents/skills/workflows/templates/stacks copiados de aiuda-forge y validados (parsean).
@@ -83,4 +83,5 @@ próxima sesión se re-oriente rápido.
 
 ### Bitácora
 - 2026-07-11 · Bootstrap: repo, docs 00-06, CLAUDE.md, skeleton. Sin código.
-- 2026-07-11 · F0-01 ✅ plataforma = Supabase managed (D1 resuelta). Desbloqueado F0-02. Próximo: provisionar Supabase.
+- 2026-07-11 · F0-01 ✅ plataforma = Supabase managed (D1 resuelta). Desbloqueado F0-02.
+- 2026-07-11 · F0-02 en curso: `supabase init` hecho (local-first con CLI 2.26.9). Falta `supabase start` (Docker apagado) + keys a .env. Luego F0-03 (CI) / F0-05 (cargar registry de v1) / F1-01 (1ª migración: brain_events).
