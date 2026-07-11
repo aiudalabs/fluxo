@@ -1,0 +1,30 @@
+# env / secrets
+.env
+.env.local
+*.local
+
+# Go
+/control/bin/
+*.test
+*.out
+
+# node / next
+node_modules/
+console/.next/
+console/out/
+dist/
+
+# supabase
+supabase/.branches/
+supabase/.temp/
+
+# db / logs
+*.db
+*.db-shm
+*.db-wal
+*.log
+
+# os / editor
+.DS_Store
+.idea/
+.vscode/
