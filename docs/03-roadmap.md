@@ -39,7 +39,7 @@ Convención: `[ ] Fx-NN título — AC: <criterio verificable> · closes: <lecci
 - [ ] F4-03 Runtime `github_actions` — AC: dispatch por workflow/agent-tasks; **liveness por workflow_run** (no 404); creds del cliente (BYO). closes: L-AUTO-4.
 - [ ] F4-04 Runtime `local_daemon` (reusa worker+sandbox de v1) — AC: un daemon reclama unidades y corre el CLI local; misma interfaz.
 - [ ] F4-05 Runtime `docker_isolated` (egress-deny) — AC: corre en contenedor efímero para E2E offline; misma interfaz.
-- [ ] F4-06 Fallback por lista + probe declarado — AC: si el canal falla/no tiene capacidad, cae al siguiente de la lista con señal en UI. closes: L-CQ-1.
+- [x] F4-06 Fallback por lista + probe declarado — AC: si el canal falla/no tiene capacidad, cae al siguiente de la lista con señal en UI. closes: L-CQ-1. ✅ `control/internal/runtime.Dispatcher`: recorre los choices ordenados del lane (Policy.Select), Probe (fail-open) → Dispatch, primer éxito gana; cada intento queda en `Attempts` (runtime/provider/ok/reason) para la señal de UI. Reemplaza el swap binario `otherExecutor` de v1 por lista ordenada. Threadea el `invoke` del provider (data) al runtime. Tests con runtimes fake: cae al siguiente por falta de capacidad, primer éxito gana con 1 intento, todos fallan → error con trail, saltea runtime no registrado/provider no cargado, invoke config llega al runtime.
 
 ## Fase 5 · Método en registry + Agent SDK (cumplir la regla de oro)
 - [ ] F5-01 Runtime de diseño en Agent SDK — AC: los agentes de fase corren por SDK (rol .md + skills + tools MCP); resolver `$step.output.text` correcto. closes: L-D2.
