@@ -12,7 +12,6 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
-	"strings"
 	"syscall"
 
 	"github.com/aiudalabs/fluxo/control/internal/brain"
@@ -41,11 +40,11 @@ func main() {
 
 func run() error {
 	writer, err := brain.NewWriter(brain.Config{
-		RestURL:   restURL(os.Getenv("SUPABASE_URL")),
-		AnonKey:   os.Getenv("SUPABASE_ANON_KEY"),
-		JWTSecret: os.Getenv("SUPABASE_JWT_SECRET"),
-		TenantID:  os.Getenv("FLUXO_TENANT_ID"),
-		ProjectID: os.Getenv("FLUXO_PROJECT_ID"),
+		SupabaseURL: os.Getenv("SUPABASE_URL"),
+		AnonKey:     os.Getenv("SUPABASE_ANON_KEY"),
+		JWTSecret:   os.Getenv("SUPABASE_JWT_SECRET"),
+		TenantID:    os.Getenv("FLUXO_TENANT_ID"),
+		ProjectID:   os.Getenv("FLUXO_PROJECT_ID"),
 	})
 	if err != nil {
 		return err
@@ -79,12 +78,4 @@ func brainWriteHandler(writer *brain.Writer) mcp.ToolHandler {
 		}
 		return fmt.Sprintf("brain: %s appended", in.Kind), nil
 	}
-}
-
-// restURL derives the PostgREST base from the Supabase project URL.
-func restURL(supabaseURL string) string {
-	if supabaseURL == "" {
-		return ""
-	}
-	return strings.TrimRight(supabaseURL, "/") + "/rest/v1"
 }

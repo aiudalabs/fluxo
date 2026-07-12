@@ -17,13 +17,29 @@ import (
 
 	"github.com/aiudalabs/fluxo/control/internal/config"
 	"github.com/aiudalabs/fluxo/control/internal/httpapi"
+	"github.com/aiudalabs/fluxo/control/internal/state"
 )
 
 func main() {
 	log := slog.New(slog.NewJSONHandler(os.Stdout, nil))
 
 	cfg := config.Load(os.LookupEnv)
-	srv := httpapi.New(cfg.CORSOrigin)
+
+	// The state store is optional: without Supabase configured, control still
+	// boots and serves health — the /stories and /runs endpoints return 503.
+	var store httpapi.StateStore
+	if cfg.SupabaseURL != "" && cfg.SupabaseAnonKey != "" {
+		st, err := state.NewStore(cfg.SupabaseURL, cfg.SupabaseAnonKey)
+		if err != nil {
+			log.Error("state store init failed", "err", err)
+			os.Exit(1)
+		}
+		store = st
+	} else {
+		log.Warn("SUPABASE_URL/ANON_KEY unset — state endpoints disabled")
+	}
+
+	srv := httpapi.New(cfg.CORSOrigin, store)
 
 	httpServer := &http.Server{
 		Addr:              cfg.Addr,

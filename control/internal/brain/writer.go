@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 	"time"
 )
 
@@ -18,11 +19,11 @@ import (
 // injected project context (never chosen by the calling agent); Secret signs the
 // tenant JWT (from Vault in prod, env in dev).
 type Config struct {
-	RestURL   string // e.g. http://127.0.0.1:54321/rest/v1
-	AnonKey   string // Supabase apikey header (gateway passthrough)
-	JWTSecret string // signs the tenant JWT
-	TenantID  string // injected project context
-	ProjectID string // injected project context
+	SupabaseURL string // Supabase project URL, e.g. http://127.0.0.1:54321
+	AnonKey     string // Supabase apikey header (gateway passthrough)
+	JWTSecret   string // signs the tenant JWT
+	TenantID    string // injected project context
+	ProjectID   string // injected project context
 }
 
 // Event is what an agent appends. TenantID/ProjectID are filled from Config, not
@@ -35,17 +36,19 @@ type Event struct {
 
 // Writer appends events to the brain for one project.
 type Writer struct {
-	cfg   Config
-	http  *http.Client
-	now   func() time.Time
-	subj  string
-	jwtTL time.Duration
+	cfg      Config
+	eventsURL string
+	http     *http.Client
+	now      func() time.Time
+	subj     string
+	jwtTL    time.Duration
 }
 
-// NewWriter validates config and returns a ready Writer.
+// NewWriter validates config and returns a ready Writer. The PostgREST path is
+// derived here so it lives only in this package (arch lint, F2-03).
 func NewWriter(cfg Config) (*Writer, error) {
 	for name, v := range map[string]string{
-		"RestURL": cfg.RestURL, "AnonKey": cfg.AnonKey, "JWTSecret": cfg.JWTSecret,
+		"SupabaseURL": cfg.SupabaseURL, "AnonKey": cfg.AnonKey, "JWTSecret": cfg.JWTSecret,
 		"TenantID": cfg.TenantID, "ProjectID": cfg.ProjectID,
 	} {
 		if v == "" {
@@ -53,11 +56,12 @@ func NewWriter(cfg Config) (*Writer, error) {
 		}
 	}
 	return &Writer{
-		cfg:   cfg,
-		http:  &http.Client{Timeout: 10 * time.Second},
-		now:   time.Now,
-		subj:  "brain-mcp",
-		jwtTL: 2 * time.Minute,
+		cfg:       cfg,
+		eventsURL: strings.TrimRight(cfg.SupabaseURL, "/") + "/rest/v1/brain_events",
+		http:      &http.Client{Timeout: 10 * time.Second},
+		now:       time.Now,
+		subj:      "brain-mcp",
+		jwtTL:     2 * time.Minute,
 	}, nil
 }
 
@@ -91,7 +95,7 @@ func (w *Writer) Append(ctx context.Context, ev Event) error {
 		return fmt.Errorf("brain: marshal row: %w", err)
 	}
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, w.cfg.RestURL+"/brain_events", bytes.NewReader(body))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, w.eventsURL, bytes.NewReader(body))
 	if err != nil {
 		return fmt.Errorf("brain: build request: %w", err)
 	}

@@ -27,7 +27,7 @@ func TestAppendAgainstLocalSupabase(t *testing.T) {
 	tenantB := "99999999-8888-7777-6666-555555555555"
 	project := "12121212-0000-0000-0000-000000000001"
 
-	cfg := Config{RestURL: rest, AnonKey: anon, JWTSecret: secret, TenantID: tenantA, ProjectID: project}
+	cfg := Config{SupabaseURL: restBase, AnonKey: anon, JWTSecret: secret, TenantID: tenantA, ProjectID: project}
 	wr, err := NewWriter(cfg)
 	if err != nil {
 		t.Fatalf("NewWriter: %v", err)

@@ -10,13 +10,13 @@ import (
 	"testing"
 )
 
-func testConfig(restURL string) Config {
+func testConfig(supabaseURL string) Config {
 	return Config{
-		RestURL:   restURL,
-		AnonKey:   "anon-key",
-		JWTSecret: "test-secret-at-least-32-characters-long!!",
-		TenantID:  "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
-		ProjectID: "a1a1a1a1-0000-0000-0000-000000000001",
+		SupabaseURL: supabaseURL,
+		AnonKey:     "anon-key",
+		JWTSecret:   "test-secret-at-least-32-characters-long!!",
+		TenantID:    "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+		ProjectID:   "a1a1a1a1-0000-0000-0000-000000000001",
 	}
 }
 
@@ -45,8 +45,8 @@ func TestAppendSendsScopedRowAndTenantJWT(t *testing.T) {
 		t.Fatalf("Append: %v", err)
 	}
 
-	if gotPath != "/brain_events" {
-		t.Errorf("path = %q, want /brain_events", gotPath)
+	if gotPath != "/rest/v1/brain_events" {
+		t.Errorf("path = %q, want /rest/v1/brain_events", gotPath)
 	}
 	if gotAPIKey != "anon-key" {
 		t.Errorf("apikey = %q, want anon-key", gotAPIKey)
@@ -101,7 +101,7 @@ func TestAppendValidates(t *testing.T) {
 }
 
 func TestNewWriterRequiresConfig(t *testing.T) {
-	if _, err := NewWriter(Config{RestURL: "x"}); err == nil {
+	if _, err := NewWriter(Config{SupabaseURL: "x"}); err == nil {
 		t.Error("expected error on incomplete config")
 	}
 }

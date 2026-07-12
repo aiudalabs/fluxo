@@ -17,6 +17,12 @@ type Config struct {
 	// CORSOrigin is the single allowed browser origin for the console
 	// (CONTROL_CORS_ORIGIN).
 	CORSOrigin string
+	// SupabaseURL is the Supabase project URL (SUPABASE_URL); the state store
+	// derives its PostgREST base from it. Empty ⇒ state endpoints are disabled.
+	SupabaseURL string
+	// SupabaseAnonKey is the anon apikey for REST gateway passthrough
+	// (SUPABASE_ANON_KEY).
+	SupabaseAnonKey string
 }
 
 // Lookup mirrors os.LookupEnv: it returns the value and whether it was set.
@@ -27,8 +33,10 @@ type Lookup func(key string) (string, bool)
 // that is unset or set to the empty string.
 func Load(lookup Lookup) Config {
 	return Config{
-		Addr:       envOr(lookup, "CONTROL_ADDR", defaultAddr),
-		CORSOrigin: envOr(lookup, "CONTROL_CORS_ORIGIN", defaultCORSOrigin),
+		Addr:            envOr(lookup, "CONTROL_ADDR", defaultAddr),
+		CORSOrigin:      envOr(lookup, "CONTROL_CORS_ORIGIN", defaultCORSOrigin),
+		SupabaseURL:     envOr(lookup, "SUPABASE_URL", ""),
+		SupabaseAnonKey: envOr(lookup, "SUPABASE_ANON_KEY", ""),
 	}
 }
 
