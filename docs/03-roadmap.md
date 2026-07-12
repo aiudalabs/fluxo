@@ -11,7 +11,7 @@ Convención: `[ ] Fx-NN título — AC: <criterio verificable> · closes: <lecci
 - [x] F0-01 Confirmar apuesta de plataforma — ✅ **Supabase managed** (06-decisiones D1, 2026-07-11). Próximo: F0-02.
 - [~] F0-02 Provisionar Supabase (dev, **local-first con CLI**) — `supabase init` ✅ (config.toml, project_id `fluxo`, PG17). FALTA: correr `supabase start` (con Docker) + `supabase status` → keys locales a `.env`; smoke de una migración vacía (`supabase db reset`). Ver `supabase/README.md`. Hosted (staging/prod) queda para D4/deploy. AC: `supabase start` levanta el stack y `db reset` corre limpio.
 - [ ] F0-03 CI base — AC: pipeline que corre migraciones, tests Go, lint console, y el **test de fuga cross-tenant** (aunque vacío aún).
-- [ ] F0-04 Skeleton `control/` (Go) — AC: binario que arranca, healthcheck, config por env; sin lógica de negocio todavía.
+- [x] F0-04 Skeleton `control/` (Go) — AC: binario que arranca, healthcheck, config por env; sin lógica de negocio todavía. ✅ módulo `github.com/aiudalabs/fluxo/control`; `/healthz`+`/readyz` (JSON), config por env (CONTROL_ADDR/CORS), shutdown grácil; `go vet`+tests verdes, binario driveado con curl. Sin metodología ni aislamiento a mano (golden rule).
 - [ ] F0-05 Cargar `registry/` de v1 — AC: agents/skills/workflows/templates/stacks copiados de aiuda-forge y validados (parsean).
 
 ## Fase 1 · Brain a Postgres+RLS (moat · aditivo)
@@ -85,3 +85,4 @@ próxima sesión se re-oriente rápido.
 - 2026-07-11 · Bootstrap: repo, docs 00-06, CLAUDE.md, skeleton. Sin código.
 - 2026-07-11 · F0-01 ✅ plataforma = Supabase managed (D1 resuelta). Desbloqueado F0-02.
 - 2026-07-11 · F0-02 en curso: `supabase init` hecho (local-first con CLI 2.26.9). Falta `supabase start` (Docker apagado) + keys a .env. Luego F0-03 (CI) / F0-05 (cargar registry de v1) / F1-01 (1ª migración: brain_events).
+- 2026-07-11 · F0-04 ✅ skeleton `control/` (Go 1.24, stdlib only): módulo `github.com/aiudalabs/fluxo/control`, `cmd/control` + `internal/config` + `internal/httpapi`. `/healthz`+`/readyz` JSON, config por env, CORS de origen único, shutdown grácil. Verificado: `go vet`, `go test ./...` verde, binario corrido y driveado con curl (200/404/SIGTERM). Módulo asume org `aiudalabs` (pendiente D4 — rename mecánico si cambia). Próximo desbloqueado: F0-05 (cargar registry de v1 desde ~/projects/genai/aiuda-forge). F0-02 espera Docker.

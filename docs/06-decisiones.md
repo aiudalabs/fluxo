@@ -32,6 +32,9 @@ se llegue a Fase 7.
 
 ## ⚠️ D4 · Repo remoto / org
 ¿Dónde vive este repo (github.com/aiudalabs/fluxo? privado?) y con qué billing? Necesario antes del primer push.
+> Nota (F0-04): el módulo Go de `control/` se rooteó como `github.com/aiudalabs/fluxo/control` (alineado con la marca
+> AIuda Labs / `fluxo.aiudalabs.com`). Si D4 elige otra org, es un rename mecánico (`go mod edit -module` + imports).
+> No se hizo `git push` a ningún remoto — sólo commits locales, según lo pedido.
 
 ---
 *Cuando una decisión se resuelve, moverla a ✅ con fecha y una línea de por qué, y desbloquear su tarea en el roadmap.*
