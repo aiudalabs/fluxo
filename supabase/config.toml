@@ -297,6 +297,12 @@ deno_version = 1
 # [edge_runtime.secrets]
 # secret_key = "env(SECRET_VALUE)"
 
+# The GitHub webhook receiver (F3-01) is called by GitHub, not by a Supabase user,
+# so it does NOT require a Supabase JWT. Its own trust boundary is the HMAC
+# signature it verifies (X-Hub-Signature-256).
+[functions.github-webhook]
+verify_jwt = false
+
 [analytics]
 enabled = true
 port = 54327
