@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 // F1-04 verification (dev tool): exercise the EXACT data path BrainExplorer uses —
 // the supabase-js client with a tenant token — to prove RLS-scoped reads and
-// Realtime delivery against live Supabase. Reads NEXT_PUBLIC_* from the env
+// Realtime delivery against live Supabase. Route-independent (the UI route is now
+// /projects/<projectId>/brain — project-first). Reads NEXT_PUBLIC_* from the env
 // (source console/.env.local first). Exits non-zero on any failed assertion.
 import { createClient } from "@supabase/supabase-js";
 

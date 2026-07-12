@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { browserClient, type BrainEvent } from "@/lib/supabaseClient";
+import { type BrainEvent } from "@/lib/supabaseClient";
+import { useProject } from "@/lib/project";
 import { useLocale } from "@/lib/locale";
 
 const KIND_COLOR: Record<string, string> = {
@@ -72,7 +73,8 @@ function provenanceLine(p: P): string {
 // adds kind filters and the requirement→issue→PR trail (from `provenance` events; those are
 // written on backlog publish / PR merge — F1-03/F5-03 — so the trail lights up once the
 // client-repo handoff is live). This is the moat's read surface; kills L-ARCH-4.
-export default function BrainExplorer({ projectId }: { projectId: string }) {
+export default function BrainExplorer() {
+  const { projectId, supabase } = useProject();
   const { t } = useLocale();
   const [events, setEvents] = useState<BrainEvent[]>([]);
   const [status, setStatus] = useState<"loading" | "ready" | "error">("loading");
@@ -81,7 +83,6 @@ export default function BrainExplorer({ projectId }: { projectId: string }) {
   const [showTrail, setShowTrail] = useState(false);
 
   useEffect(() => {
-    const supabase = browserClient();
     let cancelled = false;
 
     (async () => {
@@ -117,7 +118,7 @@ export default function BrainExplorer({ projectId }: { projectId: string }) {
       cancelled = true;
       supabase.removeChannel(channel);
     };
-  }, [projectId]);
+  }, [projectId, supabase]);
 
   const kinds = useMemo(() => Array.from(new Set(events.map((e) => e.kind))).sort(), [events]);
   const shown = useMemo(() => (filter === "all" ? events : events.filter((e) => e.kind === filter)), [events, filter]);

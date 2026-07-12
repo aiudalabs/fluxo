@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 // F6-02 verification (dev tool): prove the Studio's data path over Supabase — the exact
-// client the console uses. Seeds a design run (a done phase with a harvested doc + mockup,
+// client the console uses (route /projects/<projectId>/studio — project-first).
+// Seeds a design run (a done phase with a harvested doc + mockup,
 // a pending gate with open questions) as the tenant, reads it back the way Studio queries,
 // then flips the gate to resolved and confirms Realtime projects it (the conversational
 // gate resolution the UI performs). Reads NEXT_PUBLIC_* from console/.env.local.

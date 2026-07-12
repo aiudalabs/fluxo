@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 // F3-04 verification (dev tool): prove a story status transition is projected to a
-// tenant subscriber over Realtime — no polling. Uses the same supabase-js client
-// the console board will use. Reads NEXT_PUBLIC_* + VERIFY_TENANT_ID from env.
+// tenant subscriber over Realtime — no polling. Uses the same supabase-js client the
+// console board uses (route /projects/<projectId>/board — project-first; route-
+// independent here). Reads NEXT_PUBLIC_* + VERIFY_TENANT_ID from env.
 import { createClient } from "@supabase/supabase-js";
 
 const url = process.env.NEXT_PUBLIC_SUPABASE_URL;

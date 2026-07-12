@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { browserClient } from "@/lib/supabaseClient";
+import { useProject } from "@/lib/project";
 import { useLocale } from "@/lib/locale";
 
 type Story = {
@@ -24,7 +24,8 @@ const COLUMN_COLOR: Record<string, string> = {
 // Board is the deps-aware kanban that lives on Realtime. A 'ready' story with no
 // unmet dependency can be dispatched with one click → the dispatch_story RPC
 // (atomic: live-run guard + state machine, F6-01/F3-03).
-export default function Board({ projectId }: { projectId: string }) {
+export default function Board() {
+  const { projectId, supabase } = useProject();
   const { t } = useLocale();
   const [stories, setStories] = useState<Story[]>([]);
   const [status, setStatus] = useState<"loading" | "ready" | "error">("loading");
@@ -32,7 +33,6 @@ export default function Board({ projectId }: { projectId: string }) {
   const [busy, setBusy] = useState<string | null>(null);
 
   useEffect(() => {
-    const supabase = browserClient();
     let cancelled = false;
 
     (async () => {
@@ -73,11 +73,11 @@ export default function Board({ projectId }: { projectId: string }) {
       cancelled = true;
       supabase.removeChannel(channel);
     };
-  }, [projectId]);
+  }, [projectId, supabase]);
 
   const dispatch = async (id: string) => {
     setBusy(id);
-    const { error } = await browserClient().rpc("dispatch_story", { p_story_id: id });
+    const { error } = await supabase.rpc("dispatch_story", { p_story_id: id });
     if (error) setError(error.message);
     setBusy(null);
     // The status change arrives via Realtime; no optimistic write needed.

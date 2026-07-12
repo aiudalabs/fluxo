@@ -3,8 +3,6 @@
 import Link from "next/link";
 import { useLocale } from "@/lib/locale";
 
-const devProject = process.env.NEXT_PUBLIC_DEV_PROJECT_ID;
-
 export default function Home() {
   const { t } = useLocale();
   return (
@@ -12,11 +10,7 @@ export default function Home() {
       <h1>{t("app.title")}</h1>
       <p style={{ color: "var(--muted)" }}>{t("app.tagline")}</p>
       <p>
-        {devProject ? (
-          <Link href={`/brain/${devProject}`}>{t("home.openBrain")}</Link>
-        ) : (
-          <span style={{ color: "var(--muted)" }}>{t("home.configure")}</span>
-        )}
+        <Link href="/projects">{t("home.openProjects")}</Link>
       </p>
     </main>
   );

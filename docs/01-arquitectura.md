@@ -54,6 +54,9 @@ L2 · AGENTES  diseño → Claude Agent SDK · ejecución → runtime (ver 02) �
 ### L3 — UI
 Next.js que lee Supabase directo (RLS + Realtime). Casi sin backend propio. Board, grafo de deps con
 click-para-despachar, **brain explorer** (timeline auditable), preview embebido, gates conversacionales. Español-first.
+**IA de rutas = project-first** (06-decisiones): `app/projects/[projectId]/{studio,board,brain}`; el *layout de proyecto*
+arma el contexto (cliente + tenant token en el socket de realtime) **una sola vez** y las features no lo re-arman;
+`/projects` es la lista. La URL lleva el estado (proyecto + vista).
 
 ## Cómo cada pieza mata un bug de v1
 | Pieza v2 | Mata de v1 (`04-lecciones`) |

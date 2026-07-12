@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { browserClient } from "@/lib/supabaseClient";
+import { useProject } from "@/lib/project";
 import { useLocale } from "@/lib/locale";
 
 type Artifact = { path: string; kind: string; content: string };
@@ -48,7 +48,8 @@ function upsertBy<T extends { id: string }>(setter: React.Dispatch<React.SetStat
 // conversationally (approve / pedir cambios / responder preguntas — F5-04). When the
 // backlog is published the run reaches awaiting_handoff and Studio links to the board
 // (it does not go mute — L-UX-1).
-export default function Studio({ projectId }: { projectId: string }) {
+export default function Studio() {
+  const { projectId, supabase } = useProject();
   const { t } = useLocale();
   const [run, setRun] = useState<Run | null>(null);
   const [phases, setPhases] = useState<Phase[]>([]);
@@ -58,7 +59,6 @@ export default function Studio({ projectId }: { projectId: string }) {
   const [selected, setSelected] = useState<Artifact | null>(null);
 
   useEffect(() => {
-    const supabase = browserClient();
     let cancelled = false;
 
     (async () => {
@@ -102,7 +102,7 @@ export default function Studio({ projectId }: { projectId: string }) {
       cancelled = true;
       supabase.removeChannel(channel);
     };
-  }, [projectId]);
+  }, [projectId, supabase]);
 
   const pendingGate = useMemo(() => gates.find((g) => g.status === "pending") ?? null, [gates]);
   const backlogDone = useMemo(() => phases.some((p) => p.phase_id === "backlog" && p.status === "done"), [phases]);
@@ -177,6 +177,7 @@ export default function Studio({ projectId }: { projectId: string }) {
 // responder the open questions the phase surfaced. Any of these resolves the gate row;
 // the engine picks up the resolution and advances or loops the phase.
 function GatePanel({ gate, onError }: { gate: Gate; onError: (m: string) => void }) {
+  const { supabase } = useProject();
   const { t } = useLocale();
   const [feedback, setFeedback] = useState("");
   const [answers, setAnswers] = useState<Record<number, string>>({});
@@ -184,7 +185,7 @@ function GatePanel({ gate, onError }: { gate: Gate; onError: (m: string) => void
 
   const resolve = async (patch: Record<string, unknown>, tag: string) => {
     setBusy(tag);
-    const { error } = await browserClient()
+    const { error } = await supabase
       .from("design_gates")
       .update({ status: "resolved", resolved_at: new Date().toISOString(), ...patch })
       .eq("id", gate.id);

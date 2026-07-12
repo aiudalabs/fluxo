@@ -54,5 +54,17 @@ respeta la regla de oro (el rol/método no se toca — sólo cambia que el archi
 texto), y da un punto único de captura → brain + Studio + repo. Alternativa rechazada: parsear artefactos del texto
 de respuesta (frágil, un blob por fase, no multi-archivo).
 
+## ✅ D6 · IA de rutas de la console = **project-first** (2026-07-12)
+**Decidido:** las rutas son project-first — `app/projects/[projectId]/{studio,board,brain}` con un **layout de
+proyecto** (`lib/project.tsx · ProjectShell`) que carga el contexto del proyecto, arma el **cliente supabase + el
+tenant token en el socket de realtime UNA sola vez** (`realtime.setAuth`) y renderiza la nav entre vistas; las
+features leen el cliente de `useProject()` y **no re-arman** nada. `app/projects/page.tsx` = lista/switcher. Se
+**retiraron** las rutas viejas feature-first (`/studio|/board|/brain/[projectId]`).
+**Rationale:** el modelo mental correcto es "estás **dentro de un proyecto** y cambiás de vista", no "estás en una
+feature y elegís proyecto" — como en v1. Centralizar contexto + tenant en un solo lugar (el layout) elimina que cada
+feature re-arme el token/cliente (hoy cada una lo hacía), y deja un único punto donde luego enchufar la sesión real de
+GitHub-OAuth. La URL sigue llevando el estado (proyecto + vista). Sin tabla `projects` aún (dev usa
+`NEXT_PUBLIC_DEV_PROJECT_ID` + JWT pre-minteado); "cargar el proyecto" hoy = establecer ese contexto compartido.
+
 ---
 *Cuando una decisión se resuelve, moverla a ✅ con fecha y una línea de por qué, y desbloquear su tarea en el roadmap.*
