@@ -52,3 +52,9 @@ create policy brain_events_insert_own_tenant
 revoke all on public.brain_events from anon;
 grant select, insert on public.brain_events to authenticated;
 revoke update, delete, truncate on public.brain_events from authenticated;
+
+-- Realtime: broadcast inserts so the console's brain explorer updates with no
+-- polling (F1-04, kills L-ARCH-4). Row-level authorization still applies — a
+-- subscriber only receives rows its tenant JWT can SELECT under the RLS policy
+-- above, so the realtime stream is tenant-isolated too.
+alter publication supabase_realtime add table public.brain_events;
