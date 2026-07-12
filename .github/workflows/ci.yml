@@ -1,0 +1,72 @@
+# Fluxo CI (F0-03). Every job delegates to scripts/ci.sh <stage> so local dev and
+# CI run the exact same checks — no drift. Stages skip cleanly until their
+# artifacts land (migrations F1-01, cross-tenant leak F1-05/F2-04, console F6);
+# a skip is always announced, never silent (docs/04-lecciones L-AUTO-3).
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  registry:
+    name: registry (method-as-data)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install pyyaml
+      - run: scripts/ci.sh registry
+
+  control:
+    name: control (Go)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: control/go.mod
+          cache: false # control is stdlib-only (no go.sum) — nothing to cache yet
+      - run: scripts/ci.sh control
+
+  database:
+    name: migrations + cross-tenant leak
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      DATABASE_URL: postgres://postgres:postgres@localhost:5432/postgres
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install postgres client
+        run: sudo apt-get update && sudo apt-get install -y postgresql-client
+        # NOTE: pg_prove + pgTAP extension are installed here when the leak suite
+        # lands (F1-05/F2-04). Until then the leak stage skips (no supabase/tests).
+      - run: scripts/ci.sh migrations leak
+
+  console:
+    name: console (lint)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - run: scripts/ci.sh console
