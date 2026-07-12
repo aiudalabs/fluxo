@@ -6,11 +6,12 @@
 // que publishBacklog espera, y lo publicamos vía el store (RLS por tenant). El outcome se
 // audita en el brain.
 
-import { readFileSync } from "node:fs";
+import { readFileSync, existsSync } from "node:fs";
 import { join } from "node:path";
 import yaml from "js-yaml";
 import type { HandoffExecutor } from "./engine.ts";
 import type { SupabaseDesignStore, SprintSeed, StorySeed } from "./supabase.ts";
+import { GithubApp, GithubRepo } from "./github.ts";
 
 interface RawBacklog {
   epic?: { id?: string; title?: string; description?: string };
@@ -46,16 +47,75 @@ export function parseBacklog(raw: string): { sprints: SprintSeed[]; stories: Sto
   return { sprints, stories };
 }
 
-// makeSupabaseHandoff realiza el ports HandoffExecutor sobre el store + el workdir.
-export function makeSupabaseHandoff(store: SupabaseDesignStore, workdir: string): HandoffExecutor {
+// slugify: nombre de proyecto → nombre de repo válido (minúsculas, guiones).
+function slugify(s: string): string {
+  return s.toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "")
+    .replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 90) || "fluxo-project";
+}
+
+// El cuerpo del issue: user story + criterios + deps + sprint/lane.
+function issueBody(st: StorySeed): string {
+  const parts: string[] = [st.body ?? st.title];
+  if (st.acceptance) parts.push(`\n## Acceptance criteria\n${st.acceptance}`);
+  if (st.deps?.length) parts.push(`\n**Depends on:** ${st.deps.join(", ")}`);
+  const meta = [st.sprint && `Sprint ${st.sprint}`, st.lane && `Lane ${st.lane}`, st.screen_key && `Screen ${st.screen_key}`].filter(Boolean);
+  if (meta.length) parts.push(`\n_${meta.join(" · ")}_`);
+  return parts.join("\n");
+}
+
+export interface GithubTarget {
+  app: GithubApp;
+  org: string;
+  repoName: string; // se slugifica
+  description?: string;
+}
+
+// Docs que commiteamos al repo si existen en el workdir (orden de lectura).
+const REPO_DOCS = ["BRIEF.md", "CONSTITUTION.md", "PRD.md", "DATA_MODEL.md", "ARCHITECTURE.md", "UI_SCREENS.md", "DESIGN_SYSTEM.md", "backlog.yaml"];
+
+// publishToGithub: crea el repo (Administration:write), commitea los docs (Contents:write),
+// y crea un issue por story (Issues:write), reconciliando project.repo + story.external_ref.
+async function publishToGithub(store: SupabaseDesignStore, workdir: string, gh: GithubTarget, stories: StorySeed[]): Promise<void> {
+  const token = await gh.app.installationToken(gh.org);
+  const repo = await GithubRepo.create(token, gh.org, slugify(gh.repoName), { private: true, description: gh.description });
+  for (const f of REPO_DOCS) {
+    const p = join(workdir, "docs", f);
+    if (existsSync(p)) await repo.putFile(`docs/${f}`, readFileSync(p, "utf8"), `design: ${f}`);
+  }
+  await store.setProjectRepo(repo.htmlUrl);
+  let issues = 0;
+  for (const st of stories) {
+    const { number } = await repo.createIssue(`[${st.key}] ${st.title}`, issueBody(st), [st.lane, st.sprint].filter((x): x is string => !!x));
+    await store.setStoryRef(st.key, `github:${repo.owner}/${repo.repo}#${number}`, repo.htmlUrl);
+    issues++;
+  }
+  await store.brainAppend("repo_created", { repo: repo.htmlUrl, issues }, "engine:handoff");
+  console.log(`  ↪ GitHub: repo ${repo.htmlUrl} + ${issues} issues`);
+}
+
+// makeHandoff: el HandoffExecutor completo. Publica al board SIEMPRE (Supabase); si se pasa
+// `github`, además crea el repo + docs + issues. El tramo GitHub DEGRADA con gracia: si falla
+// (ej. falta el permiso Administration en la installation) loguea y sigue — el board ya quedó.
+export function makeHandoff(store: SupabaseDesignStore, workdir: string, github?: GithubTarget): HandoffExecutor {
   return {
     async run(): Promise<void> {
-      const path = join(workdir, "docs", "backlog.yaml");
-      const raw = readFileSync(path, "utf8");
+      const raw = readFileSync(join(workdir, "docs", "backlog.yaml"), "utf8");
       const { sprints, stories } = parseBacklog(raw);
       const r = await store.publishBacklog(sprints, stories);
       await store.brainAppend("backlog_published", { sprints: r.sprints, stories: r.stories }, "engine:handoff");
       console.log(`  ↪ handoff: publicadas ${r.stories} stories en ${r.sprints} sprints`);
+      if (github) {
+        try {
+          await publishToGithub(store, workdir, github, stories);
+        } catch (e) {
+          console.error(`  ⚠ handoff GitHub omitido (el board ya se publicó): ${e instanceof Error ? e.message : e}`);
+        }
+      }
     },
   };
+}
+
+// Alias retrocompatible (solo Supabase).
+export function makeSupabaseHandoff(store: SupabaseDesignStore, workdir: string): HandoffExecutor {
+  return makeHandoff(store, workdir);
 }

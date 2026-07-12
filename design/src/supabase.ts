@@ -132,6 +132,23 @@ export class SupabaseDesignStore {
     });
   }
 
+  // setProjectRepo guarda la URL del repo creado en el handoff a GitHub.
+  async setProjectRepo(repoUrl: string): Promise<void> {
+    await this.rest(`/projects?id=eq.${this.cfg.project}`, {
+      method: "PATCH",
+      body: JSON.stringify({ repo: repoUrl, updated_at: new Date().toISOString() }),
+    });
+  }
+
+  // setStoryRef vincula una story a su issue de GitHub (external_ref = github:owner/repo#N)
+  // + el repo — así el board/drawer linkean al issue real.
+  async setStoryRef(key: string, externalRef: string, repoUrl: string): Promise<void> {
+    await this.rest(`/stories?project_id=eq.${this.cfg.project}&key=eq.${key}`, {
+      method: "PATCH",
+      body: JSON.stringify({ external_ref: externalRef, repo: repoUrl }),
+    });
+  }
+
   // brainAppend writes one auditable event to the brain (F1-02) as the tenant. The gate
   // outcome is the highest-value provenance — the honest "why" the design is the way it
   // is (docs/00-vision) — so a resolved gate is recorded here (kind gate_answer, D5).

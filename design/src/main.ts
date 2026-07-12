@@ -17,7 +17,8 @@ import { loadWorkflow, designPhases } from "./workflow.ts";
 import { runDesign } from "./engine.ts";
 import { makeSdkRunner } from "./sdkRunner.ts";
 import { SupabaseDesignStore } from "./supabase.ts";
-import { makeSupabaseHandoff } from "./handoff.ts";
+import { makeHandoff, type GithubTarget } from "./handoff.ts";
+import { GithubApp } from "./github.ts";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const registryDir = resolve(here, "..", "..", "registry");
@@ -47,14 +48,14 @@ if (!projectId) {
 
 // 1) Leer el proyecto con service_role (el worker es backend/confiable) → tenant + idea.
 const base = url.replace(/\/$/, "") + "/rest/v1";
-const pres = await fetch(`${base}/projects?id=eq.${projectId}&select=tenant_id,name,description`, {
+const pres = await fetch(`${base}/projects?id=eq.${projectId}&select=tenant_id,name,description,org`, {
   headers: { apikey: serviceKey, Authorization: `Bearer ${serviceKey}` },
 });
 if (!pres.ok) {
   console.error(`no pude leer el proyecto: ${pres.status} ${await pres.text()}`);
   process.exit(1);
 }
-const [project] = (await pres.json()) as Array<{ tenant_id: string; name: string; description: string | null }>;
+const [project] = (await pres.json()) as Array<{ tenant_id: string; name: string; description: string | null; org: string | null }>;
 if (!project) {
   console.error(`proyecto ${projectId} no existe`);
   process.exit(1);
@@ -78,7 +79,22 @@ console.log(`  (cada gate CONGELA el run hasta que lo resuelvas en el Studio)`);
 
 // 4) Correr. runDesign camina las fases, cosecha docs al workdir → design_phases, y
 //    congela en cada gate hasta que el resolver (poll a design_gates) ve 'resolved'.
-const handoff = makeSupabaseHandoff(store, workdir);
+// Tramo GitHub del handoff: solo si hay credenciales de la App + org del proyecto. El
+// handoff degrada con gracia si falta el permiso Administration (el board igual se publica).
+let github: GithubTarget | undefined;
+const ghAppId = process.env.GITHUB_APP_ID;
+const ghKeyPath = process.env.GITHUB_APP_PRIVATE_KEY_PATH;
+const ghKey = process.env.GITHUB_APP_PRIVATE_KEY;
+if (ghAppId && (ghKeyPath || ghKey) && project.org) {
+  github = {
+    app: new GithubApp({ appId: ghAppId, privateKeyPath: ghKeyPath, privateKey: ghKey }),
+    org: project.org,
+    repoName: project.name,
+    description: idea.slice(0, 200),
+  };
+  console.log(`  handoff GitHub: org ${project.org} · repo ${project.name}`);
+}
+const handoff = makeHandoff(store, workdir, github);
 try {
   const res = await runDesign(
     wf,
