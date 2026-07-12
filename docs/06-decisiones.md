@@ -32,11 +32,14 @@ consume); el Agent SDK lo consumirá en F5.
 "web publicada + app distribuida a link de prueba" y deja tiendas para v1.1? Afecta el corte de F8. A definir cuando
 se llegue a Fase 7.
 
-## ⚠️ D4 · Repo remoto / org
-¿Dónde vive este repo (github.com/aiudalabs/fluxo? privado?) y con qué billing? Necesario antes del primer push.
-> Nota (F0-04): el módulo Go de `control/` se rooteó como `github.com/aiudalabs/fluxo/control` (alineado con la marca
-> AIuda Labs / `fluxo.aiudalabs.com`). Si D4 elige otra org, es un rename mecánico (`go mod edit -module` + imports).
-> No se hizo `git push` a ningún remoto — sólo commits locales, según lo pedido.
+## ✅ D4 · Repo remoto / org: **github.com/aiudalabs/fluxo (privado)** (2026-07-12)
+**Decidido:** el repo vive en `github.com/aiudalabs/fluxo`, **privado**. `origin` seteado, commits pusheados, CI
+corriendo en Actions. El módulo Go `github.com/aiudalabs/fluxo/control` (elegido en F0-04) **coincide** con la org →
+sin rename. Desde acá, el flujo puede pushear.
+> **Pendiente menor (no bloqueante):** el flip del gate `db`/leak a **required check** en branch protection espera
+> plan pago de GitHub. Por ahora la CI corre en cada push/PR y va **roja ante una fuga** (probado localmente que el
+> stage `db` sale exit 1) — suficiente en trunk. Cuando haya branch protection, marcar `db` (y `control`) como
+> required en `main`.
 
 ---
 *Cuando una decisión se resuelve, moverla a ✅ con fecha y una línea de por qué, y desbloquear su tarea en el roadmap.*
