@@ -75,7 +75,19 @@ stage_console() {
   fi
 }
 
-ALL_STAGES=(registry control db console)
+# stage_design runs the design runtime's PURE tests (the L-D2 resolver) + typecheck.
+# The real agent run needs CLAUDE_CODE_OAUTH_TOKEN + the API and is not part of CI.
+stage_design() {
+  banner "design (Agent SDK runtime)"
+  if [ -f design/package.json ]; then
+    ( cd design && npm ci && npm test && npx tsc --noEmit )
+    pass "design"
+  else
+    skip "design (no design/package.json yet — F5-01)"
+  fi
+}
+
+ALL_STAGES=(registry control db console design)
 
 main() {
   local stages=("$@")
