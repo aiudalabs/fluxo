@@ -5,7 +5,7 @@
 // localStorage; defaults to DEFAULT_LOCALE (español-first). No dependency.
 
 import { createContext, useCallback, useContext, useEffect, useState } from "react";
-import { DEFAULT_LOCALE, LOCALES, t as translate, type Locale } from "./i18n";
+import { DEFAULT_LOCALE, LOCALES, t as translate, type Locale } from "./i18n-flat";
 
 const STORAGE_KEY = "fluxo.lang";
 

@@ -1,129 +1,132 @@
 "use client";
 
-import { useEffect, useState } from "react";
+// Board (F6P-01) · el kanban JIRA de v1, PORTADO verbatim (KanbanBoard + LaneChip +
+// statusToken + las clases .tickets-*/.kb-* del globals.css de v1). Lo ÚNICO distinto
+// vs v1: la data sale de Supabase (RLS + Realtime) en vez del REST propio. El adaptador
+// del data-hook mapea el schema v2 (uuids + estados `review`/`blocked`) a la shape
+// `OrchestratorTicket` que el board espera (ids/deps/sprint por KEY; `review`→`in_review`).
+
+import { useEffect, useMemo, useState } from "react";
 import { useProject } from "@/lib/project";
-import { useLocale } from "@/lib/locale";
+import { useT } from "@/lib/i18n";
+import { KanbanBoard } from "@/components/tickets/KanbanBoard";
+import type { OrchestratorTicket, TicketStatus } from "@/lib/types";
 
-type Story = {
-  id: string;
-  project_id: string;
-  key: string;
-  title: string;
-  lane: string;
-  status: string;
-  blocked_by: string[];
-};
+// v2 usa `review` y `blocked`; el board (statusToken) usa `in_review`. Adaptamos.
+function mapStatus(s: string): TicketStatus {
+  if (s === "review") return "in_review";
+  if (s === "blocked") return "backlog";
+  return s as TicketStatus;
+}
 
-// The lifecycle columns (mirrors the DB status domain / state machine).
-const COLUMNS = ["backlog", "ready", "running", "review", "done", "failed", "blocked"] as const;
-const COLUMN_COLOR: Record<string, string> = {
-  backlog: "#8b949e", ready: "#58a6ff", running: "#d29922", review: "#a371f7",
-  done: "#3fb950", failed: "#f85149", blocked: "#f85149",
-};
+// Cross-sprint gating (portado de TicketsView.waitingBySprint): por sprint, qué sprints
+// espera (deps cross-sprint no-done). El board pinta "⧗ waiting on SPn".
+function waitingBySprint(tickets: OrchestratorTicket[]): Map<string, string[]> {
+  const sprintOf = new Map(tickets.map((t) => [t.id, t.sprint_id || ""]));
+  const doneIds = new Set(tickets.filter((t) => t.status === "done").map((t) => t.id));
+  const waiting = new Map<string, Set<string>>();
+  for (const t of tickets) {
+    const sid = t.sprint_id || "";
+    if (!sid) continue;
+    for (const d of t.deps ?? []) {
+      const depSprint = sprintOf.get(d);
+      if (depSprint && depSprint !== sid && !doneIds.has(d)) {
+        (waiting.get(sid) ?? waiting.set(sid, new Set()).get(sid)!).add(depSprint);
+      }
+    }
+  }
+  const out = new Map<string, string[]>();
+  for (const [sid, set] of waiting) out.set(sid, [...set].sort());
+  return out;
+}
 
-// Board is the deps-aware kanban that lives on Realtime. A 'ready' story with no
-// unmet dependency can be dispatched with one click → the dispatch_story RPC
-// (atomic: live-run guard + state machine, F6-01/F3-03).
 export default function Board() {
   const { projectId, supabase } = useProject();
-  const { t } = useLocale();
-  const [stories, setStories] = useState<Story[]>([]);
-  const [status, setStatus] = useState<"loading" | "ready" | "error">("loading");
-  const [error, setError] = useState("");
-  const [busy, setBusy] = useState<string | null>(null);
+  const t = useT();
+  const [tickets, setTickets] = useState<OrchestratorTicket[]>([]);
+  const [state, setState] = useState<"loading" | "ready" | "error">("loading");
+  const [q, setQ] = useState("");
 
   useEffect(() => {
     let cancelled = false;
-
-    (async () => {
-      const { data, error } = await supabase
-        .from("stories")
-        .select("*")
-        .eq("project_id", projectId)
-        .order("key", { ascending: true });
+    const load = async () => {
+      const [{ data: rows, error }, { data: sprints }] = await Promise.all([
+        supabase.from("stories").select("*").eq("project_id", projectId),
+        supabase.from("sprints").select("id,key").eq("project_id", projectId),
+      ]);
       if (cancelled) return;
-      if (error) {
-        setError(error.message);
-        setStatus("error");
-        return;
-      }
-      setStories((data as Story[]) ?? []);
-      setStatus("ready");
-    })();
-
-    const upsert = (row: Story) =>
-      setStories((prev) => {
-        const i = prev.findIndex((s) => s.id === row.id);
-        if (i === -1) return [...prev, row];
-        const next = [...prev];
-        next[i] = row;
-        return next;
-      });
-
-    const channel = supabase
-      .channel(`board:${projectId}`)
-      .on("postgres_changes", { event: "*", schema: "public", table: "stories", filter: `project_id=eq.${projectId}` },
-        (p) => {
-          if (p.eventType === "DELETE") setStories((prev) => prev.filter((s) => s.id !== (p.old as Story).id));
-          else upsert(p.new as Story);
-        })
-      .subscribe();
-
-    return () => {
-      cancelled = true;
-      supabase.removeChannel(channel);
+      if (error) { setState("error"); return; }
+      const sprintKey = new Map((sprints ?? []).map((s) => [s.id as string, s.key as string]));
+      const keyById = new Map((rows ?? []).map((s) => [s.id as string, s.key as string]));
+      const mapped: OrchestratorTicket[] = (rows ?? []).map((s) => ({
+        id: s.key,
+        title: s.title,
+        body: s.body ?? undefined,
+        acceptance: s.acceptance ?? undefined,
+        status: mapStatus(s.status),
+        deps: ((s.blocked_by as string[] | null) ?? []).map((u) => keyById.get(u) ?? u),
+        run_id: s.run_id ?? undefined,
+        sprint_id: s.sprint_id ? sprintKey.get(s.sprint_id) : undefined,
+        epic_id: s.epic_id ?? undefined,
+        owner: s.lane ?? undefined,
+        pr_url: s.pr_url ?? undefined,
+        session_url: s.session_url ?? undefined,
+        external_ref: s.external_ref ?? undefined,
+        kind: s.kind ?? undefined,
+        agent_lost: s.agent_lost ?? undefined,
+      }));
+      mapped.sort((a, b) => a.id.localeCompare(b.id));
+      setTickets(mapped);
+      setState("ready");
     };
+    void load();
+    // Realtime: cualquier cambio en stories del proyecto → recargar (RLS-scoped).
+    const ch = supabase
+      .channel(`board:${projectId}`)
+      .on("postgres_changes", { event: "*", schema: "public", table: "stories", filter: `project_id=eq.${projectId}` }, () => void load())
+      .subscribe();
+    return () => { cancelled = true; void supabase.removeChannel(ch); };
   }, [projectId, supabase]);
 
-  const dispatch = async (id: string) => {
-    setBusy(id);
-    const { error } = await supabase.rpc("dispatch_story", { p_story_id: id });
-    if (error) setError(error.message);
-    setBusy(null);
-    // The status change arrives via Realtime; no optimistic write needed.
-  };
-
-  if (status === "loading") return <p style={{ color: "var(--muted)" }}>{t("common.loading")}</p>;
-  if (status === "error") return <p style={{ color: "#f85149" }}>{t("board.readError", { msg: error })}</p>;
-
-  const byStatus = (s: string) => stories.filter((st) => st.status === s);
+  const gates = useMemo(() => waitingBySprint(tickets), [tickets]);
+  const list = useMemo(() => {
+    const needle = q.trim().toLowerCase();
+    if (!needle) return tickets;
+    return tickets.filter((tk) => `${tk.id} ${tk.title} ${tk.body ?? ""}`.toLowerCase().includes(needle));
+  }, [tickets, q]);
 
   return (
-    <div style={{ display: "flex", gap: 12, overflowX: "auto", paddingBottom: 12 }}>
-      {COLUMNS.map((col) => (
-        <div key={col} style={{ minWidth: 200, flex: "1 0 200px" }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 8 }}>
-            <span style={{ width: 8, height: 8, borderRadius: 999, background: COLUMN_COLOR[col] }} />
-            <strong style={{ fontSize: 13, textTransform: "capitalize" }}>{col}</strong>
-            <span style={{ color: "var(--muted)", fontSize: 12 }}>{byStatus(col).length}</span>
-          </div>
-          {byStatus(col).map((s) => (
-            <div key={s.id} style={{ border: "1px solid var(--border)", background: "var(--panel)", borderRadius: 8, padding: "0.6rem 0.7rem", marginBottom: 8 }}>
-              <div style={{ display: "flex", gap: 6, alignItems: "baseline" }}>
-                <span style={{ fontFamily: "ui-monospace, monospace", fontSize: 11, color: "var(--muted)" }}>{s.key}</span>
-                {s.lane && <span style={{ fontSize: 10, color: "var(--accent)" }}>{s.lane}</span>}
-              </div>
-              <div style={{ fontSize: 13, margin: "2px 0 6px" }}>{s.title || "—"}</div>
-              {s.blocked_by?.length > 0 && (
-                <div style={{ fontSize: 11, color: "#f85149" }}>{t("board.blockedBy", { n: s.blocked_by.length })}</div>
-              )}
-              {s.status === "ready" && (
-                <button
-                  onClick={() => dispatch(s.id)}
-                  disabled={busy === s.id || s.blocked_by?.length > 0}
-                  style={{
-                    marginTop: 6, fontSize: 12, cursor: "pointer",
-                    background: "var(--accent)", color: "#0d1117", border: "none",
-                    borderRadius: 6, padding: "3px 10px", opacity: s.blocked_by?.length > 0 ? 0.4 : 1,
-                  }}
-                >
-                  {busy === s.id ? "…" : t("board.dispatch")}
-                </button>
-              )}
-            </div>
-          ))}
-        </div>
-      ))}
+    <div className="tickets-shell">
+      <div className="tickets-head">
+        <h2>{t("nav.tickets.title")}</h2>
+        <span className="c">{t("tickets.desc.kanban")}</span>
+      </div>
+      <div className="tickets-toolbar">
+        <input
+          placeholder={t("tickets.toolbar.search")}
+          value={q}
+          onChange={(e) => setQ(e.target.value)}
+          style={{ width: 220 }}
+        />
+        <span className="sp" />
+        <span className="tickets-count">
+          {list.length === tickets.length ? tickets.length : `${list.length}/${tickets.length}`}
+        </span>
+      </div>
+      <div className="tickets-canvas">
+        {state === "loading" ? (
+          <div className="placeholder"><span className="spin" /></div>
+        ) : state === "error" ? (
+          <div className="placeholder err">{t("common.error")}</div>
+        ) : (
+          <KanbanBoard
+            tickets={list}
+            gates={gates}
+            onOpenTicket={() => {}}
+            onOpenRun={() => {}}
+          />
+        )}
+      </div>
     </div>
   );
 }

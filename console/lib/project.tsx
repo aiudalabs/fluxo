@@ -41,31 +41,26 @@ export function ProjectShell({ projectId, children }: { projectId: string; child
 
   return (
     <Ctx.Provider value={{ projectId, supabase }}>
-      <div style={{ maxWidth: 1200, margin: "0 auto", padding: "1.25rem 1.25rem 0" }}>
-        <div style={{ display: "flex", alignItems: "baseline", gap: 12, flexWrap: "wrap" }}>
-          <Link href="/projects" style={{ fontSize: 13, color: "var(--muted)", textDecoration: "none" }}>
-            {t("nav.projects")}
-          </Link>
-          <span style={{ fontFamily: "ui-monospace, monospace", fontSize: 12, color: "var(--muted)" }}>{projectId}</span>
-        </div>
-        <nav style={{ display: "flex", gap: 6, marginTop: 10, borderBottom: "1px solid var(--border)" }}>
+      <header style={{ display: "flex", alignItems: "center", gap: 16, padding: "0 20px", borderBottom: "1px solid var(--stroke)", background: "#fff", position: "sticky", top: 0, zIndex: 20 }}>
+        <Link href="/projects" style={{ fontSize: 13, color: "var(--ink4)", textDecoration: "none" }}>← {t("nav.projects")}</Link>
+        <span style={{ fontFamily: "var(--mono)", fontSize: 12, color: "var(--ink4)" }}>{projectId.slice(0, 8)}…</span>
+        <nav style={{ display: "flex", gap: 4, marginLeft: 12 }}>
           {FEATURES.map((f) => {
             const href = `/projects/${projectId}/${f}`;
             const active = pathname === href;
             return (
               <Link key={f} href={href} style={{
-                fontSize: 14, padding: "6px 12px", textDecoration: "none",
-                color: active ? "var(--fg)" : "var(--muted)",
-                borderBottom: `2px solid ${active ? "var(--accent)" : "transparent"}`,
-                marginBottom: -1,
+                fontSize: 14, fontWeight: 600, padding: "18px 12px", textDecoration: "none",
+                color: active ? "var(--ink)" : "var(--ink4)",
+                borderBottom: `2px solid ${active ? "var(--accent)" : "transparent"}`, marginBottom: -1,
               }}>
                 {t(`nav.${f}`)}
               </Link>
             );
           })}
         </nav>
-      </div>
-      <main style={{ maxWidth: 1200, margin: "0 auto", padding: "1.25rem" }}>{children}</main>
+      </header>
+      <main>{children}</main>
     </Ctx.Provider>
   );
 }
