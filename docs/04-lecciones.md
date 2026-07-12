@@ -56,5 +56,15 @@ construcción** o **cubrir con un test**. Los códigos `L-*` los referencia `03-
 - **L-LM-4** · Multi-superficie parcial: verify solo del app primario. → v2: verify por app (F7-05).
 - **L-LM-5** · Integración cross-lane no es gate (el contrato de frontera es lint estático). → v2: e2e cross-lane (F7-04).
 
+## Lecciones de UI de v1 (portar el diseño, NO rediseñar) — ver `07-ui-port-v1.md`
+El build autónomo rehízo la UI **plana** (inline styles, GitHub-dark, sin `/flow`, sin marca, UUIDs) porque el spec pedía
+*funcionalidad*, no el diseño real. Vara = producción → **portar la consola de v1 100%**, cambiar solo la fuente de datos.
+- **L-UI-1** · La consola de v1 (`aiuda-forge/console/src`) ES el diseño (semanas de trabajo). Portar `globals.css` (4567 líneas), fuentes, `statusToken`, componentes **verbatim**; cambiar SOLO el data-hook a Supabase. NO rediseñar/simplificar.
+- **L-UI-2** · NUNCA `transform` en la animación de `.wrap`/`.tickets-shell`/`.studio-shell` — un transform computado los hace containing-block de los `.drawer position:fixed` (banda fantasma + drawer intercepta clicks). Solo opacity. (globals.css:2633)
+- **L-UI-3** · `statusToken.ts` = ÚNICA fuente de color/pill de estado (6 estados). No divergir en 5 mapas (el bug de v1 temprano).
+- **L-UI-4** · Board JIRA: columnas vacías colapsan a riel de 42px → las 6 entran sin scroll-H desde ~1280px; scroll independiente por columna.
+- **L-UI-5** · Mostrar NOMBRES de proyecto, no UUIDs. La entrada `/` abre estilo **chatbot** ("¿Qué quieres construir?" + idea + chips de ejemplo que guían), no un panel vacío.
+- **L-UI-6** · Docs con VERSIONES (v1: commits en branch `design`; chips v1…vN + changelog global). v2 necesita versionado (`design_docs` append-only o git real).
+
 > Regla: si estás por escribir código que reintroduce cualquiera de estos, PARÁ. La arquitectura v2 los hace
 > innecesarios o imposibles — si sentís que "necesitás" el patrón viejo, estás cruzando la frontera de `01-arquitectura`.

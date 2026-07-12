@@ -28,6 +28,12 @@ app/projects/[projectId]/brain/page.tsx     (+ BrainExplorer.tsx)
 - Patrón: `page.tsx` + Componente co-locado (una feature = una carpeta bajo `[projectId]/`).
 - La URL lleva el estado: `http://localhost:3000/projects/<uuid>/{studio|board|brain}`.
 
+## ⚠️ El UI se PORTA de v1 — no se rediseña
+Esta console v2 es **funcional pero PLANA** — NO es la vara. El diseño real (semanas de trabajo) es la consola de
+**aiuda-forge** (`/Users/nmlemus/projects/genai/aiuda-forge/console/src`): portar **verbatim** (globals.css, fuentes
+Satoshi/Instrument Serif/JetBrains Mono, `statusToken`, los componentes de board/studio/flow, la entrada `/` chatbot) y
+cambiar **solo la fuente de datos a Supabase**. Mapa completo: **`docs/07-ui-port-v1.md`** (Fase 6-bis del roadmap).
+
 ## Estado (F1-04 ✅ — brain explorer mínimo)
 
 Next.js 15 (App Router, TS) + `@supabase/supabase-js`. Ruta `/projects/[projectId]/brain`: timeline por proyecto que
