@@ -12,6 +12,7 @@ import { useProject } from "@/lib/project";
 import { useT } from "@/lib/i18n";
 import { KanbanBoard } from "@/components/tickets/KanbanBoard";
 import { LaneChip } from "@/components/tickets/LaneChip";
+import { TicketDetail } from "@/components/tickets/TicketDetail";
 import { statusToken } from "@/lib/statusToken";
 import type { OrchestratorTicket, TicketStatus } from "@/lib/types";
 
@@ -58,6 +59,7 @@ export default function Board() {
   const [fStatus, setFStatus] = useState<TicketStatus | "all">("all");
   const [fSprint, setFSprint] = useState("all");
   const [fLane, setFLane] = useState("all");
+  const [openId, setOpenId] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -174,14 +176,20 @@ export default function Board() {
       ) : state === "error" ? (
         <div className="tickets-canvas pad"><div className="placeholder err">{t("common.error")}</div></div>
       ) : view === "tabla" ? (
-        <div className="tickets-canvas pad"><TicketsTable tickets={filtered} gates={gates} onOpenTicket={() => {}} onOpenRun={() => {}} /></div>
+        <div className="tickets-canvas pad"><TicketsTable tickets={filtered} gates={gates} onOpenTicket={setOpenId} onOpenRun={() => {}} /></div>
       ) : view === "sprints" ? (
-        <div className="tickets-canvas pad"><SprintsView tickets={filtered} meta={sprintMeta} onOpenTicket={() => {}} /></div>
+        <div className="tickets-canvas pad"><SprintsView tickets={filtered} meta={sprintMeta} onOpenTicket={setOpenId} /></div>
       ) : (
         <div className="tickets-canvas">
-          <KanbanBoard tickets={filtered} gates={gates} onOpenTicket={() => {}} onOpenRun={() => {}} />
+          <KanbanBoard tickets={filtered} gates={gates} onOpenTicket={setOpenId} onOpenRun={() => {}} />
         </div>
       )}
+
+      <TicketDetail
+        ticket={openId ? tickets.find((tk) => tk.id === openId) ?? null : null}
+        onClose={() => setOpenId(null)}
+        onOpenTicket={setOpenId}
+      />
     </div>
   );
 }
