@@ -1,0 +1,8 @@
+# Backlog method as DATA (F5-02). The hierarchy levels and the ordered gate names
+# live here, NOT in Go — so a different method (see kanban.yaml) is a new file, not
+# a kernel release (golden rule 1, closes L-CQ-1). The executor reads `levels` and
+# `gates`; it never hard-codes "sprint" or a gate name.
+id: scrum
+levels: [epic, sprint, story]
+# Ordered design gates (each maps to a human_gate in the design workflow).
+gates: [discovery, constitution, prd, data_model, architecture, ui, mockups, backlog]

@@ -1,0 +1,6 @@
+# A sprint-less method — proves the hierarchy is data: NO sprint level, a leaner
+# gate set, and ZERO Go changes to support it (L-CQ-1). stories just carry a null
+# sprint_id (the schema already allows it, F2-01).
+id: kanban
+levels: [epic, story]
+gates: [discovery, prd, architecture, ui, backlog]

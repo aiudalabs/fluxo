@@ -10,6 +10,7 @@ workflows/    ceremonias como data (design, sprint-planning, review, retro, rele
 templates/    lo que se scaffoldea en el repo del cliente (.github/, verify harnesses) por stack
 stacks/       (pendiente) perfiles de stack — hoy viven como variantes en templates/github-native/<perfil>
 providers/    ✅ canales de ejecución como data (claude.yaml, copilot.yaml) — ver docs/02; los carga `control/internal/runtime`
+methods/      ✅ (F5-02) jerarquía de backlog + gates como data (scrum.yaml, kanban.yaml) — los carga `control/internal/method`
 ```
 
 Regla de oro: si estás por escribir un `if` sobre metodología en Go, va acá en su lugar.

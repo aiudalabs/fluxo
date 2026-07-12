@@ -43,7 +43,7 @@ Convención: `[ ] Fx-NN título — AC: <criterio verificable> · closes: <lecci
 
 ## Fase 5 · Método en registry + Agent SDK (cumplir la regla de oro)
 - [ ] F5-01 Runtime de diseño en Agent SDK — AC: los agentes de fase corren por SDK (rol .md + skills + tools MCP); resolver `$step.output.text` correcto. closes: L-D2.
-- [ ] F5-02 Jerarquía de backlog + gate a data — AC: épica/sprint/story y nombre del gate salen del registry (schema); un método kanban (sin sprints) no requiere tocar Go. closes: L-CQ-1.
+- [x] F5-02 Jerarquía de backlog + gate a data — AC: épica/sprint/story y nombre del gate salen del registry (schema); un método kanban (sin sprints) no requiere tocar Go. closes: L-CQ-1. ✅ `registry/methods/{scrum,kanban}.yaml` declaran `levels` (jerarquía) + `gates` (nombres ordenados) como data. Loader `control/internal/method.Load` genérico (yaml.v3, sin branch por id): `HasLevel`/`Leaf`. Verificado: scrum tiene nivel `sprint`, **kanban NO** (mismo code path, cero Go) — un método sin sprints es un YAML; gates salen del schema. `registry/validate.py` valida methods.
 - [ ] F5-03 Handoff → Issues + deps en el repo del cliente — AC: publica Issues con grafo `blocked_by`; provenance al brain.
 - [ ] F5-04 Gates conversacionales — AC: en cada gate se puede aprobar / corregir / **responder las preguntas abiertas** (no solo approve/reject).
 
