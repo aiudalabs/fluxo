@@ -45,9 +45,16 @@ En cada fase, en el panel del gate: **Aprobar** (o *Responder preguntas* / *Pedi
 - PRD ✓ → arranca **Backlog** → aparece backlog.yaml → gate.
 - **Backlog ✓ → el handoff publica el backlog** al board.
 
-## 5. El board se llena
-Andá al **Board**: las stories reales del backlog, con lane, sprint, ACs y dependencias.
-También en **Flow** (Ciclo/Grafo) y **Overview** (progreso).
+## 5. El board se llena — Y el repo se crea
+Al aprobar el **backlog gate**, el handoff:
+- publica las stories al **Board** (lane, sprint, ACs, dependencias) — también visible en **Flow** y **Overview**.
+- **crea el repo en GitHub** (`aiudalabs/<slug>`), **commitea los docs de diseño** (BRIEF/PRD/backlog…)
+  y **abre un issue por story** (título `[S1-01] …`, labels lane+sprint, body con ACs + deps).
+- reconcilia `project.repo` + `story.external_ref` (`github:owner/repo#N`) → el board/drawer linkean al issue real.
+
+Requiere la GitHub App con **Administration + Contents + Issues: write** y credenciales en `.env`
+(`GITHUB_APP_ID`, `GITHUB_APP_PRIVATE_KEY_PATH`). Sin ellas, el handoff degrada con gracia: publica
+solo al board. Verificado en vivo: `github.com/aiudalabs/fluxo-demo-padel` (repo + 3 docs + 4 issues).
 
 ---
 
