@@ -73,9 +73,21 @@ Cuando una sesión arranca a construir:
 **Regla de oro del loop:** preferí una verdad incómoda ("esto no lo puedo cerrar sin decidir X") a un avance falso.
 Nunca marques `[x]` algo que no verificaste.
 
+## Decisiones ya tomadas — defaults firmes (NO volver a preguntar)
+
+- **D1 ✅ Supabase** (managed; local-first con el CLI para dev).
+- **D2 ✅ Claude Agent SDK** para los agentes de diseño (dirección; la versión se pinea en F5-01).
+- **Deps pre-aprobadas:** Next.js + @supabase/supabase-js (console), Claude Agent SDK (F5); `control/` stdlib-first
+  (una dep nueva solo si un doc la nombra).
+- **brain / tenant:** escrituras con **JWT de tenant** (RLS aplica de verdad); `service_role` solo para paths de sistema/admin.
+- **Auth real** (GitHub-OAuth → JWT con claim `tenant`) es una tarea posterior; hasta entonces usá un **dev-shim** del claim y seguí — no es un bloqueo.
+- **D4 (repo remoto/org):** solo bloquea `git push`. Construí y commiteá local sin parar por D4.
+- **D3 (alcance última milla):** se define al llegar a Fase 7; no bloquea nada antes.
+
+Si alguna se reabre, lo dice el humano — la sesión no las vuelve a preguntar. Detalle en `docs/06-decisiones.md`.
+
 ## Estado
 
-Bootstrap inicial (2026-07-11). Sin código todavía — el skeleton y los docs están; la construcción empieza en
-sesiones nuevas siguiendo `docs/03-roadmap.md`. Plataforma DECIDIDA: **Supabase managed** (`06-decisiones` D1). La
-próxima tarea es **F0-02** (provisionar Supabase). Decisiones aún abiertas: D2 (Agent SDK), D3 (alcance última milla),
-D4 (repo remoto/org — antes del primer push).
+Rebuild en marcha (2026-07). Fase 0 completa + Fase 1 en curso (brain a Postgres+RLS: F1-01/02 hechos). La
+construcción sigue el protocolo autónomo de `GOAL.md` sobre `docs/03-roadmap.md`. El único bloqueo real pendiente es
+**D4** (repo remoto) y solo para `git push` — el trabajo local NO para por eso.
