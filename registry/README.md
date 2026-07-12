@@ -9,7 +9,7 @@ skills/       capacidades reutilizables (la NUEVA `brain-write` llega en F1-02)
 workflows/    ceremonias como data (design, sprint-planning, review, retro, release, iterate)
 templates/    lo que se scaffoldea en el repo del cliente (.github/, verify harnesses) por stack
 stacks/       (pendiente) perfiles de stack — hoy viven como variantes en templates/github-native/<perfil>
-providers/    (F4-02) canales de ejecución como data (claude.yaml, copilot.yaml, …) — ver docs/02
+providers/    ✅ canales de ejecución como data (claude.yaml, copilot.yaml) — ver docs/02; los carga `control/internal/runtime`
 ```
 
 Regla de oro: si estás por escribir un `if` sobre metodología en Go, va acá en su lugar.

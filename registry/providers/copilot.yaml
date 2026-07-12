@@ -1,0 +1,14 @@
+# Provider: GitHub Copilot coding agent. Execution channel as DATA (docs/02).
+# Runs via the Copilot agent-tasks API on GitHub Actions, with the CLIENT's
+# Copilot entitlement (BYO, zero COGS).
+id: copilot
+runtimes: [github_actions]
+invoke:
+  github_actions:
+    api: agent_tasks
+    model: $model
+credential:
+  source: client_copilot
+  owner: client
+capacity_probe: none
+liveness: workflow_run   # derive from the run, never Copilot's frail agent-tasks 404 (L-AUTO-4)

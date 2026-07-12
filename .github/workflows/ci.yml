@@ -33,7 +33,7 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version-file: control/go.mod
-          cache: false # control is stdlib-only (no go.sum) — nothing to cache yet
+          cache-dependency-path: control/go.sum
       - run: scripts/ci.sh control
 
   database:

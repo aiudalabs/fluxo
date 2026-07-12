@@ -1,0 +1,21 @@
+# Provider: Claude Code CLI. Execution channel as DATA (docs/02-capa-runtime).
+# Adding/altering a channel is this YAML — never a switch in Go (golden rule 1,
+# closes L-CQ-1). Credentials are the CLIENT's, on their org (BYO, zero COGS).
+id: claude
+runtimes: [github_actions, local_daemon, docker_isolated]
+invoke:
+  github_actions:
+    workflow: claude.yml
+    inputs:
+      prompt: $prompt
+      issues: $issues
+  local:
+    argv: [claude, -p, --output-format, stream-json, --permission-mode, acceptEdits]
+credential:
+  source: repo_secret
+  name: CLAUDE_CODE_OAUTH_TOKEN
+  owner: client
+capacity_probe: repo_secret_exists   # probe the client repo's secret (not the server env, L-UX-2)
+liveness: workflow_run               # robust source, not the fragile 404 (L-AUTO-4)
+running_signal: label:agent:running
+prompt_preamble: claude_ephemeral.md # ephemeral-runner discipline, in markdown (not Go)
