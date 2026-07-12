@@ -1,0 +1,72 @@
+name: "Copilot Setup Steps"
+
+# Provisions the toolchain the Copilot coding agent (and any Actions-based agent)
+# needs before it starts working on an issue in this repo: Python + deps, a
+# Postgres+PostGIS service for integration tests, and pnpm for the React app.
+# GitHub runs the job named `copilot-setup-steps` to prepare the agent's
+# environment. It can also be run manually to validate the setup.
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - .github/workflows/copilot-setup-steps.yml
+
+jobs:
+  copilot-setup-steps:
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgis/postgis:16-3.4
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: {{project_name}}_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      # SIN actions/checkout: el harness de Copilot clona él mismo — un checkout
+      # explícito aquí 404ea con su token y mata la sesión entera (bisect 2026-07-03).
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          # SIN cache: pip — el cache resuelve rutas de requirements/pyproject en
+          # el workspace, que en las sesiones de agente puede estar VACÍO en esta
+          # fase (el harness clona después). Cazado en vivo: mataba la sesión.
+
+      # Robusto al layout real (cazado en vivo: un flat-layout sin `packages`
+      # configurado revienta el editable install y eso tumbó la sesión entera
+      # del agente). requirements.txt manda; el editable es best-effort.
+      - name: Install backend deps
+        run: |
+          python -m pip install -U pip
+          if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+          if [ -f requirements-dev.txt ]; then pip install -r requirements-dev.txt; fi
+          if [ -f pyproject.toml ]; then pip install -e ".[dev]" || pip install -e . || echo "editable install no soportado — seguimos con requirements"; fi
+
+      # Frontend solo cuando existe (los primeros sprints suelen ser backend-only).
+      - name: Set up Node + pnpm (frontend)
+        if: ${{ hashFiles('frontend/package.json') != '' }}
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - name: Set up Node runtime
+        if: ${{ hashFiles('frontend/package.json') != '' }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Install frontend deps
+        if: ${{ hashFiles('frontend/package.json') != '' }}
+        working-directory: frontend
+        run: pnpm install --frozen-lockfile || pnpm install

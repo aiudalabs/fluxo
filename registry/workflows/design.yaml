@@ -1,0 +1,263 @@
+# Design workflow — el proceso de diseño de producto como workflow YAML del registry.
+# Cada fase es un paso `design` (sin sandbox, produce un doc) seguido de un human_gate
+# que congela la ejecución hasta que un humano aprueba. Al rechazar, el gate vuelve al
+# paso de la fase con el feedback del revisor inyectado como $<gate>.detail.
+#
+# Orden de fases (SDLC): discovery → constitution → PRD → data-model → architecture →
+#                        UI → mockups → backlog → docs_pr (merge a main) → handoff
+#
+# `label:` es el nombre display de la fase (dato). La UI DERIVA las fases de estos steps
+# (type: design = fase; el human_gate siguiente = su gate) — no hay lista hardcodeada.
+#
+# Modelo delta: docs/ en `main` es la verdad canónica. Una design-run o iteración abre
+# un PR cuyo diff ES el delta; el merge a `main` ES el apply/archive (git provee el store).
+#
+# Inputs: se usa $<step>.output.text (el texto del agente vive en output.text — ver
+# runner.go / resolve.go). NO usar $<step>.text (era un no-op papereado; #16/D2).
+id: design
+version: 2.0.0
+steps:
+  # ── Fase 1: Discovery ─────────────────────────────────────────────────────
+  - id: discovery
+    type: design
+    label: Descubrimiento
+    agent: analyst
+    inputs:
+      instructions: $trigger.instructions
+      output: docs/BRIEF.md
+
+  - id: discovery_gate
+    type: human_gate
+    inputs:
+      reason: "Revisa el brief del proyecto (docs/BRIEF.md). Aprueba para fijar la constitución, o rechaza con feedback."
+    on_fail:
+      goto: discovery
+      max: 100
+      feedback: $discovery_gate.detail
+
+  # ── Fase 2: Constitution — decisiones durables bloqueadas (el ancla) ───────
+  # Doc pequeño y estable que TODAS las fases posteriores leen en vez de re-enviar
+  # prosa. Stack, modelo de negocio, presupuestos no-funcionales. Anti-bloat.
+  - id: constitution
+    type: design
+    label: Constitución
+    agent: principles
+    inputs:
+      brief: $discovery.output.text
+      instructions: $trigger.instructions
+      output: docs/CONSTITUTION.md
+
+  - id: constitution_gate
+    type: human_gate
+    inputs:
+      reason: "Revisa la constitución (docs/CONSTITUTION.md) — las decisiones bloqueadas (stack, modelo de negocio, presupuestos no-funcionales). Aprueba para proceder al PRD, o rechaza con feedback."
+    on_fail:
+      goto: constitution
+      max: 100
+      feedback: $constitution_gate.detail
+
+  # ── Fase 3: PRD ───────────────────────────────────────────────────────────
+  - id: prd
+    type: design
+    label: PRD
+    agent: pm
+    inputs:
+      brief: $discovery.output.text
+      constitution: $constitution.output.text
+      instructions: $trigger.instructions
+      output: docs/PRD.md
+
+  # Lint the PRD before the human sees it: every functional requirement (FR-NN) must
+  # carry a GIVEN/WHEN/THEN scenario (the acceptance contract the story inherits). A
+  # malformed PRD loops back to the pm with the exact gap named — the reviewer's
+  # attention is not spent on a doc that is structurally broken.
+  - id: validate_prd
+    type: validate
+    label: Lint PRD
+    inputs:
+      schema: prd
+      path: docs/PRD.md
+    on_fail:
+      goto: prd
+      max: 2
+      feedback: $validate_prd.detail
+
+  - id: prd_gate
+    type: human_gate
+    inputs:
+      reason: "Revisa el PRD (docs/PRD.md). Cada requisito lleva su escenario GIVEN/WHEN/THEN. Aprueba para proceder al modelo de datos, o rechaza con feedback."
+    on_fail:
+      goto: prd
+      max: 100
+      feedback: $prd_gate.detail
+
+  # ── Fase 4: Data model — entidades, state machines, ubicación ─────────────
+  - id: data_model
+    type: design
+    label: Modelo de datos
+    agent: data-modeler
+    inputs:
+      prd: $prd.output.text
+      constitution: $constitution.output.text
+      output: docs/DATA_MODEL.md
+
+  - id: data_model_gate
+    type: human_gate
+    inputs:
+      reason: "Revisa el modelo de datos (docs/DATA_MODEL.md) — entidades, campos, máquinas de estado y patrones de acceso. Aprueba para proceder a la arquitectura, o rechaza con feedback."
+    on_fail:
+      goto: data_model
+      max: 100
+      feedback: $data_model_gate.detail
+
+  # ── Fase 5: Architecture ──────────────────────────────────────────────────
+  # El architect escribe DOS artefactos: docs/ARCHITECTURE.md (prosa) y
+  # docs/provisioning.yaml — el CONTRATO DE FRONTERA declarado (Gap F, S1): roles/
+  # permisos por identidad, índices requeridos (o derive), dependencia→config, y un
+  # platform-checklist que el scrum-master convierte en ACs. `provisioning` es solo
+  # la RUTA declarada del 2º artefacto; el arch_gate existente lo revisa (sin gate
+  # nuevo). Proyectos viejos sin provisioning.yaml siguen andando: es OPCIONAL aguas
+  # abajo (el linter que lo consume llega en S2, opt-in).
+  - id: architecture
+    type: design
+    label: Arquitectura
+    agent: architect
+    inputs:
+      prd: $prd.output.text
+      data_model: $data_model.output.text
+      output: docs/ARCHITECTURE.md
+      provisioning: docs/provisioning.yaml
+
+  - id: arch_gate
+    type: human_gate
+    inputs:
+      reason: "Revisa la arquitectura (docs/ARCHITECTURE.md) Y el contrato de frontera (docs/provisioning.yaml): roles/permisos, índices, dependencia→config y el platform-checklist. Aprueba para proceder a la UI, o rechaza con feedback."
+    on_fail:
+      goto: architecture
+      max: 100
+      feedback: $arch_gate.detail
+
+  # ── Fase 6: UI / Screens ──────────────────────────────────────────────────
+  - id: ui
+    type: design
+    label: UI / Pantallas
+    agent: ux
+    inputs:
+      prd: $prd.output.text
+      architecture: $architecture.output.text
+      output: docs/UI_SCREENS.md
+    on_fail:
+      # Un stall/timeout NO tumba el run: reintenta hasta 3 veces, pidiendo generación
+      # INCREMENTAL (una superficie a la vez) para no quedar en silencio largo — que es
+      # lo que dispara el watchdog. Así el engine trabaja "por etapas", como a mano.
+      goto: ui
+      max: 3
+      feedback: "La generación anterior se cortó (stall/timeout por silencio largo). Reintenta escribiendo docs/UI_SCREENS.md de forma INCREMENTAL: una superficie a la vez (Paciente → Médico → Admin → Farmacia), guardando el archivo tras cada superficie. Si ya existe contenido parcial, continúa donde quedó. Nunca pases más de unos minutos sin escribir al archivo."
+
+  - id: ui_gate
+    type: human_gate
+    inputs:
+      reason: "Revisa el spec de UI (docs/UI_SCREENS.md). Aprueba para proceder a los mockups, o rechaza con feedback."
+    on_fail:
+      goto: ui
+      max: 100
+      feedback: $ui_gate.detail
+
+  # ── Fase 7: Mockups — un HTML por superficie ──────────────────────────────
+  # El designer lee los specs por RUTA (no contenido) para mantener el prompt chico
+  # (~5k en vez de ~80k). Escribe un HTML por superficie en docs/mockups/.
+  - id: mockups
+    type: design
+    label: Mockups
+    agent: designer
+    inputs:
+      screens_path: docs/UI_SCREENS.md
+      prd_path: docs/PRD.md
+      output: docs/mockups/index.html
+    on_fail:
+      # Igual que UI: los mockups (un HTML por superficie) son pesados; auto-retry con
+      # generación incremental (un archivo por superficie) para no stallear.
+      goto: mockups
+      max: 3
+      feedback: "La generación anterior se cortó (stall/timeout). Reintenta escribiendo los mockups de forma INCREMENTAL: un archivo HTML por superficie en docs/mockups/ (patient.html, doctor.html, admin.html, pharmacy.html) más index.html, guardando tras cada uno. Continúa donde quedó si hay parciales. Nunca pases varios minutos sin escribir a disco."
+
+  - id: mockups_gate
+    type: human_gate
+    inputs:
+      reason: "Revisa los mockups en docs/mockups/ (un HTML por superficie de la app). Aprueba o pide cambios."
+    on_fail:
+      goto: mockups
+      max: 100
+      feedback: $mockups_gate.detail
+
+  # ── Fase 8: Backlog ───────────────────────────────────────────────────────
+  - id: backlog
+    type: design
+    label: Backlog
+    agent: scrum-master
+    inputs:
+      prd: $prd.output.text
+      architecture: $architecture.output.text
+      data_model: $data_model.output.text
+      # Contrato de frontera del architect (S1): el scrum-master lo lee para (a)
+      # convertir el platform-checklist en ACs de frontera por-story y (b) emitir
+      # screen_key en las stories de frontend. RUTA opcional — si el archivo no
+      # existe (proyecto viejo), el scrum-master degrada al backlog de hoy.
+      provisioning: docs/provisioning.yaml
+      output: docs/backlog.yaml
+    on_fail:
+      # Un backlog fallido/timed-out NO debe tumbar el design run completo (#15).
+      # El backlog de dos niveles ya lo mantiene liviano, pero un proyecto grande
+      # puede exceder el timeout — reintentar una vez, pidiendo quedarse lean.
+      goto: backlog
+      max: 1
+      feedback: "La generación anterior del backlog falló o excedió el tiempo. Genera un backlog MÁS LEAN y enfocado al MVP: prioriza el happy-path central, agrupa en menos sprints y difiere lo nice-to-have. Mantén el nivel de ESQUELETO (título + user-story + acceptance-scenarios + deps + owner + sprint) — sin specs de implementación; esas las expande el story-detailer just-in-time."
+
+  # Lint the backlog before the human sees it: valid YAML, unique ids, deps that point
+  # at real stories, owners that are known lanes, and a screen_key on every frontend
+  # story. Catches the deadlock-y bugs (a dep pointing at nothing, a typo'd owner that
+  # can't be dispatched) BEFORE publish — where they would silently wedge readiness.
+  - id: validate_backlog
+    type: validate
+    label: Lint backlog
+    inputs:
+      schema: backlog
+      path: docs/backlog.yaml
+    on_fail:
+      goto: backlog
+      max: 2
+      feedback: $validate_backlog.detail
+
+  - id: backlog_gate
+    type: human_gate
+    inputs:
+      reason: "Revisa el backlog (docs/backlog.yaml). Aprueba para publicarlo al ticket store, o rechaza con feedback."
+    on_fail:
+      goto: backlog
+      max: 100
+      feedback: $backlog_gate.detail
+
+  # ── Fase 9: Docs PR — commitear docs/ y MERGEAR a main ANTES de publicar el
+  #    backlog. INVARIANTE: una story solo se publica (handoff) cuando los docs ya
+  #    están en `main` — la spec canónica que leerán los agentes de sprint. El
+  #    auto-merge (merge: true) es legítimo: cada fase pasó su human_gate, así que
+  #    la PR es solo la agregación de lo ya aprobado (sin decisión humana nueva).
+  #    Si el create/merge falla, docs_pr FALLA (terminal, reintentable) y handoff NO
+  #    corre → nunca hay tickets sobre un main sin docs (incidente reservas-belleza
+  #    2026-07-06: PR_MODE=local dejó los docs fuera de main y el sprint arrancó ciego).
+  - id: docs_pr
+    type: pr
+    label: Docs → PR
+    inputs:
+      base: main
+      merge: true
+      ticket: "design: publish docs for review"
+
+  # ── Fase 10: Handoff — publicar el backlog en el ticket store (docs YA en main) ─
+  - id: handoff
+    type: ticket_publish
+    label: Handoff → stories
+    inputs:
+      backlog: docs/backlog.yaml
+      repo: $trigger.repo
+      project_id: $trigger.project_id   # scope de cada story/sprint al proyecto (A1)

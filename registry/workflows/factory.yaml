@@ -1,0 +1,52 @@
+# The real factory flow — defined ENTIRELY in data. The kernel runs this with no
+# flow-specific Go. To add a step (e.g. a `simplify` agent, or `agentic_verify`),
+# edit THIS file — no recompile. That editability is the v2 success criterion.
+id: factory
+version: 1.0.0
+steps:
+  # BMAD two-level backlog, level 2 (`create-story`): the scrum-master published only
+  # a LIGHT skeleton (title + user-story + ACs). Here, just-in-time, the story-detailer
+  # reads docs/PRD.md + docs/ARCHITECTURE.md from the cloned `dev` worktree and expands
+  # THIS one story into the full dev-ready spec — one story per call, so it never times
+  # out even for a large project.
+  - id: draft_story
+    type: agent
+    agent: story-detailer
+    inputs:
+      skeleton: $trigger.ticket   # the light story (title + user-story + ACs) the scheduler passes
+
+  - id: implement
+    type: agent
+    agent: dev                  # static fallback; the per-lane specialist below overrides it
+    inputs:
+      ticket: $draft_story.output.text   # the full dev-ready spec from draft_story (agent text is at .output.text)
+      agent: $trigger.agent      # lane routing: the story's owner (python-dev, react-dev…); empty -> falls back to `dev`
+
+  - id: gate
+    type: gate
+    command_from: repo          # runs the target repo's .vibeforge-gate in the sandbox
+    on_fail:
+      goto: implement           # gate red -> back to dev with the failure as feedback
+      max: 2
+      feedback: $gate.detail
+
+  - id: review
+    type: agentic_verify         # BLOCKING: a "broken" verdict fails the step
+    agent: reviewer
+    model: claude-sonnet-4-6     # CROSS-MODEL: different model than the implementer (opus)
+    prompt: adversarial
+    inputs:
+      ticket: $trigger.ticket
+      diff_hint: "Review the working tree changes that just passed the gate."
+    on_fail:
+      goto: implement            # review found a real defect -> back to dev with the evidence
+      max: 4                      # reviewer surfaces ~one defect per round; give the dev room
+      feedback: $review.detail
+
+  - id: pr
+    type: pr
+    approval: risk-policy        # low risk -> auto; high -> human_gate (Wave 6)
+    inputs:
+      base: dev                  # GitHub Flow: the factory targets `dev` (mirrors design.yaml's docs_pr)
+      ticket: $trigger.ticket
+      branch_ref: $trigger.sprint_id   # resumable sprints: one branch per sprint (vibeforge/sprint_<id>)

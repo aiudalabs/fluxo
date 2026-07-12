@@ -1,0 +1,121 @@
+name: Claude Code
+# Canal de despacho del conductor (executor: claude_action): el conductor de
+# aiuda-forge dispara workflow_dispatch con el prompt de la story/sprint y
+# Claude Code implementa y abre el PR, facturado al plan Claude del usuario.
+# SIN trigger de issue_comment a propósito: el partner agent de Agent HQ también
+# responde a "@claude" y ambos dispararían con el mismo comentario.
+on:
+  workflow_dispatch:
+    inputs:
+      prompt:
+        description: "Tarea para Claude"
+        required: true
+      issues:
+        description: "Issues del despacho (coma-separados) — se marcan agent:running mientras corre este run"
+        required: false
+        default: ""
+
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+  id-token: write
+
+jobs:
+  claude:
+    runs-on: ubuntu-latest
+    # Backstop determinista contra un runner colgado (p.ej. un agente que se pone a
+    # "esperar" algo que en un runner efímero nunca llega): a los 45 min GitHub
+    # cancela el job y los pasos if:always() de abajo — "Rescue checkpoint" y
+    # "Clear running label" — corren igual en la ventana de gracia, así que el
+    # trabajo se rescata a un PR draft y el lock agent:running se libera. Sin esto,
+    # el default de GitHub Actions es 6 h de cuelgue.
+    timeout-minutes: 45
+    steps:
+      # Señal de "corriendo" observable en GitHub (la lee el conductor de
+      # aiuda-forge para no degradar la story a backlog mientras este run trabaja):
+      # el canal claude_action no asigna el issue ni abre PR mientras corre, así
+      # que marcamos agent:running al arrancar y lo quitamos en el paso final
+      # (if: always()). Sin issues en el input (p.ej. run manual) es un no-op.
+      - name: Mark issues running
+        if: ${{ inputs.issues != '' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ISSUES: ${{ inputs.issues }}
+        run: |
+          gh label create "agent:running" -c FBCA04 \
+            -d "Un agente está trabajando este issue AHORA (aiuda-forge conductor)" \
+            -R "${{ github.repository }}" --force || true
+          IFS=',' read -ra NUMS <<< "$ISSUES"
+          for n in "${NUMS[@]}"; do
+            n="${n// /}"
+            [ -z "$n" ] && continue
+            gh issue edit "$n" --add-label "agent:running" -R "${{ github.repository }}" || true
+          done
+
+      - uses: actions/checkout@v4
+      - uses: anthropics/claude-code-action@v1
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          prompt: ${{ inputs.prompt }}
+          # Visibilidad del agente en el log del run (el default esconde todo y
+          # un run "success" sin PR es indepurable).
+          show_full_output: "true"
+          # CI headless: el runner es efímero y aislado — el agente necesita
+          # escribir/commitear/pushear sin prompts interactivos (sin esto la
+          # sesión "trabaja" 40 turnos y muere sin poder crear un archivo).
+          claude_args: "--permission-mode bypassPermissions"
+
+      # Checkpoint de rescate DETERMINISTA (cazado en vivo dos veces: sesiones
+      # que implementan durante 100+ turnos y terminan sin pushear — por
+      # session-limit o por "esperar" sub-agentes en headless). La disciplina
+      # por prompt no es enforcement; este paso sí: si quedó trabajo sin
+      # pushear, lo commitea, lo sube y abre un PR draft para que NADA se
+      # pierda con el runner efímero.
+      - name: Rescue checkpoint
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -e
+          git config user.name "aiuda-forge conductor"
+          git config user.email "conductor@users.noreply.github.com"
+          BR=$(git rev-parse --abbrev-ref HEAD || echo HEAD)
+          DIRTY=$(git status --porcelain | head -1)
+          AHEAD=0
+          if [ "$BR" != "main" ] && [ "$BR" != "HEAD" ]; then
+            AHEAD=$(git rev-list --count origin/main..HEAD 2>/dev/null || echo 0)
+          fi
+          if [ -z "$DIRTY" ] && [ "$AHEAD" = "0" ]; then
+            echo "sin trabajo que rescatar"; exit 0
+          fi
+          if [ "$BR" = "main" ] || [ "$BR" = "HEAD" ]; then
+            BR="claude/rescue-${{ github.run_id }}"
+            git checkout -b "$BR"
+          fi
+          if [ -n "$DIRTY" ]; then
+            git add -A
+            git commit -m "checkpoint de rescate — fin de sesión del agente" || true
+          fi
+          git push -u origin "$BR" || { echo "push falló"; exit 0; }
+          if ! gh pr list --head "$BR" --json number --jq length | grep -qv '^0$'; then
+            gh pr create --draft --head "$BR" \
+              --title "[WIP] rescate de sesión — $BR" \
+              --body "Trabajo rescatado automáticamente al terminar la sesión del agente (Rescue checkpoint). Revisar y completar." || true
+          fi
+
+      # Soltar el candado de "corriendo": el run terminó (éxito, fallo o cancelación
+      # limpia). La proyección del conductor ve el label ausente y deriva el estado
+      # real del issue (backlog si no dejó PR, in_review si sí) — sin ancla trabada.
+      - name: Clear running label
+        if: ${{ always() && inputs.issues != '' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ISSUES: ${{ inputs.issues }}
+        run: |
+          IFS=',' read -ra NUMS <<< "$ISSUES"
+          for n in "${NUMS[@]}"; do
+            n="${n// /}"
+            [ -z "$n" ] && continue
+            gh issue edit "$n" --remove-label "agent:running" -R "${{ github.repository }}" || true
+          done
