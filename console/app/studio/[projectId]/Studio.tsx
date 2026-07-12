@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { browserClient } from "@/lib/supabaseClient";
+import { useLocale } from "@/lib/locale";
 
 type Artifact = { path: string; kind: string; content: string };
 type Run = { id: string; project_id: string; status: string; workflow: string; created_at: string };
@@ -31,9 +32,6 @@ type Gate = {
 const PHASE_COLOR: Record<string, string> = {
   pending: "#8b949e", running: "#d29922", awaiting_gate: "#a371f7", done: "#3fb950", failed: "#f85149",
 };
-const RUN_LABEL: Record<string, string> = {
-  running: "En curso", awaiting_gate: "Esperando aprobación", awaiting_handoff: "Listo para publicar", done: "Terminado", failed: "Falló",
-};
 
 function upsertBy<T extends { id: string }>(setter: React.Dispatch<React.SetStateAction<T[]>>, row: T) {
   setter((prev) => {
@@ -51,6 +49,7 @@ function upsertBy<T extends { id: string }>(setter: React.Dispatch<React.SetStat
 // backlog is published the run reaches awaiting_handoff and Studio links to the board
 // (it does not go mute — L-UX-1).
 export default function Studio({ projectId }: { projectId: string }) {
+  const { t } = useLocale();
   const [run, setRun] = useState<Run | null>(null);
   const [phases, setPhases] = useState<Phase[]>([]);
   const [gates, setGates] = useState<Gate[]>([]);
@@ -109,17 +108,17 @@ export default function Studio({ projectId }: { projectId: string }) {
   const backlogDone = useMemo(() => phases.some((p) => p.phase_id === "backlog" && p.status === "done"), [phases]);
   const linkToExec = run?.status === "awaiting_handoff" || backlogDone;
 
-  if (status === "loading") return <p style={{ color: "var(--muted)" }}>Cargando…</p>;
-  if (status === "error") return <p style={{ color: "#f85149" }}>No se pudo leer el Studio: {error}</p>;
-  if (!run) return <p style={{ color: "var(--muted)" }}>Todavía no hay una design-run para este proyecto.</p>;
+  if (status === "loading") return <p style={{ color: "var(--muted)" }}>{t("common.loading")}</p>;
+  if (status === "error") return <p style={{ color: "#f85149" }}>{t("studio.readError", { msg: error })}</p>;
+  if (!run) return <p style={{ color: "var(--muted)" }}>{t("studio.noRun")}</p>;
 
   return (
     <div style={{ display: "grid", gridTemplateColumns: "minmax(280px, 360px) 1fr", gap: 20, alignItems: "start" }}>
       {/* ── Left: pipeline of phases ─────────────────────────────────────── */}
       <div>
         <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
-          <span style={{ fontSize: 13, color: "var(--muted)" }}>Estado del diseño:</span>
-          <strong style={{ fontSize: 13 }}>{RUN_LABEL[run.status] ?? run.status}</strong>
+          <span style={{ fontSize: 13, color: "var(--muted)" }}>{t("studio.designState")}</span>
+          <strong style={{ fontSize: 13 }}>{t(`studio.run.${run.status}`)}</strong>
         </div>
 
         {linkToExec && (
@@ -127,7 +126,7 @@ export default function Studio({ projectId }: { projectId: string }) {
             display: "block", marginBottom: 14, padding: "0.6rem 0.8rem", borderRadius: 8,
             background: "var(--accent)", color: "#0d1117", fontWeight: 600, fontSize: 13, textDecoration: "none",
           }}>
-            Backlog publicado — ver ejecución en el board →
+            {t("studio.backlogPublished")}
           </Link>
         )}
 
@@ -156,7 +155,7 @@ export default function Studio({ projectId }: { projectId: string }) {
                 )}
                 {gate && gate.status === "resolved" && (
                   <div style={{ marginTop: 6, fontSize: 11, color: gate.outcome === "approve" ? "#3fb950" : "#d29922" }}>
-                    {gate.outcome === "approve" ? "✓ aprobado" : "↺ cambios pedidos"}
+                    {gate.outcome === "approve" ? t("studio.gateApproved") : t("studio.gateChanges")}
                   </div>
                 )}
               </li>
@@ -178,6 +177,7 @@ export default function Studio({ projectId }: { projectId: string }) {
 // responder the open questions the phase surfaced. Any of these resolves the gate row;
 // the engine picks up the resolution and advances or loops the phase.
 function GatePanel({ gate, onError }: { gate: Gate; onError: (m: string) => void }) {
+  const { t } = useLocale();
   const [feedback, setFeedback] = useState("");
   const [answers, setAnswers] = useState<Record<number, string>>({});
   const [busy, setBusy] = useState<string | null>(null);
@@ -196,47 +196,48 @@ function GatePanel({ gate, onError }: { gate: Gate; onError: (m: string) => void
 
   return (
     <div style={{ border: "1px solid var(--accent)", background: "var(--panel)", borderRadius: 10, padding: "1rem", marginBottom: 18 }}>
-      <div style={{ fontSize: 12, color: "var(--accent)", marginBottom: 4 }}>◆ Gate — {gate.gate_id} · intento {gate.attempt}</div>
+      <div style={{ fontSize: 12, color: "var(--accent)", marginBottom: 4 }}>{t("gate.label", { gate: gate.gate_id, n: gate.attempt })}</div>
       <p style={{ marginTop: 0, fontSize: 14 }}>{gate.reason}</p>
 
       {gate.open_questions.length > 0 && (
         <div style={{ marginBottom: 12 }}>
-          <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 6 }}>Preguntas abiertas — respondelas para resolverlas:</div>
+          <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 6 }}>{t("gate.openQuestions")}</div>
           {gate.open_questions.map((q, i) => (
             <div key={i} style={{ marginBottom: 8 }}>
               <label style={{ fontSize: 13, display: "block", marginBottom: 3 }}>{q}</label>
               <input value={answers[i] ?? ""} onChange={(e) => setAnswers((p) => ({ ...p, [i]: e.target.value }))}
-                placeholder="Tu respuesta…" style={inputStyle} />
+                placeholder={t("gate.answerPlaceholder")} style={inputStyle} />
             </div>
           ))}
           <button disabled={!hasAnswers || busy !== null}
             onClick={() => resolve({ outcome: "revise", answers: gate.open_questions.map((q, i) => ({ q, a: answers[i].trim() })) }, "answer")}
             style={{ ...btn("#a371f7"), opacity: hasAnswers ? 1 : 0.4 }}>
-            {busy === "answer" ? "…" : "Responder y regenerar"}
+            {busy === "answer" ? "…" : t("gate.answerBtn")}
           </button>
         </div>
       )}
 
       <div style={{ marginBottom: 10 }}>
-        <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 6 }}>…o pedí cambios con feedback libre:</div>
+        <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 6 }}>{t("gate.orFeedback")}</div>
         <textarea value={feedback} onChange={(e) => setFeedback(e.target.value)} rows={3}
-          placeholder="Qué corregir…" style={{ ...inputStyle, resize: "vertical" }} />
+          placeholder={t("gate.feedbackPlaceholder")} style={{ ...inputStyle, resize: "vertical" }} />
         <button disabled={!feedback.trim() || busy !== null}
           onClick={() => resolve({ outcome: "revise", feedback: feedback.trim() }, "revise")}
           style={{ ...btn("#d29922"), marginTop: 6, opacity: feedback.trim() ? 1 : 0.4 }}>
-          {busy === "revise" ? "…" : "Pedir cambios"}
+          {busy === "revise" ? "…" : t("gate.reviseBtn")}
         </button>
       </div>
 
       <button disabled={busy !== null} onClick={() => resolve({ outcome: "approve" }, "approve")} style={btn("#3fb950")}>
-        {busy === "approve" ? "…" : "Aprobar y continuar"}
+        {busy === "approve" ? "…" : t("gate.approveBtn")}
       </button>
     </div>
   );
 }
 
 function ArtifactViewer({ artifact }: { artifact: Artifact | null }) {
-  if (!artifact) return <p style={{ color: "var(--muted)" }}>Elegí un documento o mockup para verlo.</p>;
+  const { t } = useLocale();
+  if (!artifact) return <p style={{ color: "var(--muted)" }}>{t("studio.pickArtifact")}</p>;
   return (
     <div style={{ border: "1px solid var(--border)", background: "var(--panel)", borderRadius: 10, overflow: "hidden" }}>
       <div style={{ padding: "0.5rem 0.8rem", borderBottom: "1px solid var(--border)", fontFamily: "ui-monospace, monospace", fontSize: 12 }}>

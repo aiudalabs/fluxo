@@ -2,18 +2,13 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { browserClient, type BrainEvent } from "@/lib/supabaseClient";
+import { useLocale } from "@/lib/locale";
 
 const KIND_COLOR: Record<string, string> = {
   decision: "#a371f7",
   gate_answer: "#3fb950",
   rejected_design: "#f85149",
   provenance: "#58a6ff",
-};
-const KIND_LABEL: Record<string, string> = {
-  decision: "decisión",
-  gate_answer: "gate",
-  rejected_design: "descartado",
-  provenance: "trazabilidad",
 };
 
 type P = Record<string, unknown>;
@@ -22,14 +17,15 @@ const str = (v: unknown) => (v == null ? "" : String(v));
 // Human-readable rendering per brain kind (payload shapes per registry/skills/brain-write).
 // Falls back to the raw JSON for an unknown kind so nothing is ever hidden from the audit.
 function EventBody({ kind, payload }: { kind: string; payload: P }) {
+  const { t } = useLocale();
   if (kind === "decision") {
     return (
       <>
         {payload.title != null && <strong style={{ fontSize: 13 }}>{str(payload.title)}</strong>}
         {payload.decision != null && <p style={bodyP}>{str(payload.decision)}</p>}
-        {payload.rationale != null && <p style={{ ...bodyP, color: "var(--muted)" }}>Por qué: {str(payload.rationale)}</p>}
+        {payload.rationale != null && <p style={{ ...bodyP, color: "var(--muted)" }}>{t("brain.why", { v: str(payload.rationale) })}</p>}
         {Array.isArray(payload.alternatives_rejected) && payload.alternatives_rejected.length > 0 && (
-          <p style={{ ...bodyP, color: "var(--muted)" }}>Rechazado: {payload.alternatives_rejected.map(str).join(", ")}</p>
+          <p style={{ ...bodyP, color: "var(--muted)" }}>{t("brain.rejected", { v: payload.alternatives_rejected.map(str).join(", ") })}</p>
         )}
       </>
     );
@@ -55,8 +51,8 @@ function EventBody({ kind, payload }: { kind: string; payload: P }) {
     return (
       <>
         <strong style={{ fontSize: 13 }}>{str(payload.what)}</strong>
-        {payload.why_rejected != null && <p style={bodyP}>Por qué no: {str(payload.why_rejected)}</p>}
-        {payload.chosen_instead != null && <p style={{ ...bodyP, color: "var(--muted)" }}>En su lugar: {str(payload.chosen_instead)}</p>}
+        {payload.why_rejected != null && <p style={bodyP}>{t("brain.whyNot", { v: str(payload.why_rejected) })}</p>}
+        {payload.chosen_instead != null && <p style={{ ...bodyP, color: "var(--muted)" }}>{t("brain.instead", { v: str(payload.chosen_instead) })}</p>}
       </>
     );
   }
@@ -77,6 +73,7 @@ function provenanceLine(p: P): string {
 // written on backlog publish / PR merge — F1-03/F5-03 — so the trail lights up once the
 // client-repo handoff is live). This is the moat's read surface; kills L-ARCH-4.
 export default function BrainExplorer({ projectId }: { projectId: string }) {
+  const { t } = useLocale();
   const [events, setEvents] = useState<BrainEvent[]>([]);
   const [status, setStatus] = useState<"loading" | "ready" | "error">("loading");
   const [error, setError] = useState<string>("");
@@ -126,20 +123,20 @@ export default function BrainExplorer({ projectId }: { projectId: string }) {
   const shown = useMemo(() => (filter === "all" ? events : events.filter((e) => e.kind === filter)), [events, filter]);
   const provenance = useMemo(() => events.filter((e) => e.kind === "provenance"), [events]);
 
-  if (status === "loading") return <p style={{ color: "var(--muted)" }}>Cargando…</p>;
-  if (status === "error") return <p style={{ color: "#f85149" }}>No se pudo leer el brain: {error}</p>;
-  if (events.length === 0) return <p style={{ color: "var(--muted)" }}>Sin eventos todavía para este proyecto.</p>;
+  if (status === "loading") return <p style={{ color: "var(--muted)" }}>{t("common.loading")}</p>;
+  if (status === "error") return <p style={{ color: "#f85149" }}>{t("brain.readError", { msg: error })}</p>;
+  if (events.length === 0) return <p style={{ color: "var(--muted)" }}>{t("brain.empty")}</p>;
 
   return (
     <div style={{ margin: "1rem 0" }}>
       {/* Filters + trail toggle */}
       <div style={{ display: "flex", flexWrap: "wrap", gap: 6, alignItems: "center", marginBottom: 12 }}>
-        <Chip label={`todos (${events.length})`} active={filter === "all"} color="var(--accent)" onClick={() => setFilter("all")} />
+        <Chip label={`${t("brain.all")} (${events.length})`} active={filter === "all"} color="var(--accent)" onClick={() => setFilter("all")} />
         {kinds.map((k) => (
-          <Chip key={k} label={`${KIND_LABEL[k] ?? k} (${events.filter((e) => e.kind === k).length})`} active={filter === k} color={KIND_COLOR[k] ?? "var(--muted)"} onClick={() => setFilter(k)} />
+          <Chip key={k} label={`${t(`kind.${k}`)} (${events.filter((e) => e.kind === k).length})`} active={filter === k} color={KIND_COLOR[k] ?? "var(--muted)"} onClick={() => setFilter(k)} />
         ))}
         <button onClick={() => setShowTrail((s) => !s)} style={{ marginLeft: "auto", ...chipStyle(showTrail, "#58a6ff") }}>
-          Trazabilidad requisito→issue→PR
+          {t("brain.trailToggle")}
         </button>
       </div>
 
@@ -150,7 +147,7 @@ export default function BrainExplorer({ projectId }: { projectId: string }) {
           <li key={e.id} style={{ border: "1px solid var(--border)", background: "var(--panel)", borderRadius: 8, padding: "0.75rem 1rem", marginBottom: 8 }}>
             <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
               <span style={{ fontSize: 12, fontWeight: 600, color: KIND_COLOR[e.kind] ?? "var(--text)", border: `1px solid ${KIND_COLOR[e.kind] ?? "var(--border)"}`, borderRadius: 999, padding: "1px 8px" }}>
-                {KIND_LABEL[e.kind] ?? e.kind}
+                {t(`kind.${e.kind}`)}
               </span>
               <span style={{ color: "var(--muted)", fontSize: 12 }}>{e.actor}</span>
               <span style={{ marginLeft: "auto", color: "var(--muted)", fontSize: 12 }}>{new Date(e.ts).toLocaleString()}</span>
@@ -168,6 +165,7 @@ export default function BrainExplorer({ projectId }: { projectId: string }) {
 // ProvenanceTrail reconstructs each requirement's chain (requirement → issue → PR) from the
 // provenance events, newest stage last. Honest empty state until F5-03 writes them.
 function ProvenanceTrail({ events }: { events: BrainEvent[] }) {
+  const { t } = useLocale();
   const byReq = useMemo(() => {
     const m = new Map<string, BrainEvent[]>();
     for (const e of events) {
@@ -181,11 +179,9 @@ function ProvenanceTrail({ events }: { events: BrainEvent[] }) {
 
   return (
     <div style={{ border: "1px solid #58a6ff", background: "var(--panel)", borderRadius: 10, padding: "0.9rem 1rem", marginBottom: 14 }}>
-      <div style={{ fontSize: 12, color: "#58a6ff", marginBottom: 8 }}>Trazabilidad requisito → issue → PR</div>
+      <div style={{ fontSize: 12, color: "#58a6ff", marginBottom: 8 }}>{t("brain.trailTitle")}</div>
       {byReq.size === 0 ? (
-        <p style={{ color: "var(--muted)", fontSize: 13, margin: 0 }}>
-          Aún no hay eventos de trazabilidad. Se escriben al publicar el backlog a Issues y al mergear cada PR (F1-03 · llega con F5-03, el handoff al repo del cliente).
-        </p>
+        <p style={{ color: "var(--muted)", fontSize: 13, margin: 0 }}>{t("brain.trailEmpty")}</p>
       ) : (
         <ul style={{ listStyle: "none", padding: 0, margin: 0 }}>
           {Array.from(byReq.entries()).map(([req, evs]) => {

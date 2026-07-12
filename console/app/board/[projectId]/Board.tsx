@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { browserClient } from "@/lib/supabaseClient";
+import { useLocale } from "@/lib/locale";
 
 type Story = {
   id: string;
@@ -24,6 +25,7 @@ const COLUMN_COLOR: Record<string, string> = {
 // unmet dependency can be dispatched with one click → the dispatch_story RPC
 // (atomic: live-run guard + state machine, F6-01/F3-03).
 export default function Board({ projectId }: { projectId: string }) {
+  const { t } = useLocale();
   const [stories, setStories] = useState<Story[]>([]);
   const [status, setStatus] = useState<"loading" | "ready" | "error">("loading");
   const [error, setError] = useState("");
@@ -81,8 +83,8 @@ export default function Board({ projectId }: { projectId: string }) {
     // The status change arrives via Realtime; no optimistic write needed.
   };
 
-  if (status === "loading") return <p style={{ color: "var(--muted)" }}>Cargando…</p>;
-  if (status === "error") return <p style={{ color: "#f85149" }}>No se pudo leer el board: {error}</p>;
+  if (status === "loading") return <p style={{ color: "var(--muted)" }}>{t("common.loading")}</p>;
+  if (status === "error") return <p style={{ color: "#f85149" }}>{t("board.readError", { msg: error })}</p>;
 
   const byStatus = (s: string) => stories.filter((st) => st.status === s);
 
@@ -103,7 +105,7 @@ export default function Board({ projectId }: { projectId: string }) {
               </div>
               <div style={{ fontSize: 13, margin: "2px 0 6px" }}>{s.title || "—"}</div>
               {s.blocked_by?.length > 0 && (
-                <div style={{ fontSize: 11, color: "#f85149" }}>⛔ blocked by {s.blocked_by.length}</div>
+                <div style={{ fontSize: 11, color: "#f85149" }}>{t("board.blockedBy", { n: s.blocked_by.length })}</div>
               )}
               {s.status === "ready" && (
                 <button
@@ -115,7 +117,7 @@ export default function Board({ projectId }: { projectId: string }) {
                     borderRadius: 6, padding: "3px 10px", opacity: s.blocked_by?.length > 0 ? 0.4 : 1,
                   }}
                 >
-                  {busy === s.id ? "…" : "Despachar"}
+                  {busy === s.id ? "…" : t("board.dispatch")}
                 </button>
               )}
             </div>

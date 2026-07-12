@@ -1,21 +1,21 @@
+"use client";
+
 import Link from "next/link";
+import { useLocale } from "@/lib/locale";
 
 const devProject = process.env.NEXT_PUBLIC_DEV_PROJECT_ID;
 
 export default function Home() {
+  const { t } = useLocale();
   return (
     <main style={{ maxWidth: 760, margin: "0 auto", padding: "3rem 1.25rem" }}>
-      <h1>Fluxo · Console</h1>
-      <p style={{ color: "var(--muted)" }}>
-        La consola es una vista sobre el <strong>brain</strong> — el registro auditable por proyecto.
-      </p>
+      <h1>{t("app.title")}</h1>
+      <p style={{ color: "var(--muted)" }}>{t("app.tagline")}</p>
       <p>
         {devProject ? (
-          <Link href={`/brain/${devProject}`}>Abrir el brain explorer del proyecto de dev →</Link>
+          <Link href={`/brain/${devProject}`}>{t("home.openBrain")}</Link>
         ) : (
-          <span style={{ color: "var(--muted)" }}>
-            Configurá <code>NEXT_PUBLIC_DEV_PROJECT_ID</code> y navegá a <code>/brain/&lt;project_id&gt;</code>.
-          </span>
+          <span style={{ color: "var(--muted)" }}>{t("home.configure")}</span>
         )}
       </p>
     </main>
