@@ -1,0 +1,75 @@
+# demo-design · workflow de diseño LEAN para demos (3 fases, 3 gates) — el arco completo
+# idea → brief → PRD → backlog → board, sin las fases intermedias (constitution/data_model/
+# architecture/ui/mockups) de `design.yaml`. Mismo método, en data; para un demo ágil.
+id: demo-design
+steps:
+  - id: discovery
+    type: design
+    label: Descubrimiento
+    agent: analyst
+    inputs:
+      instructions: $trigger.instructions
+      output: docs/BRIEF.md
+    on_fail:
+      goto: discovery
+      max: 100
+
+  - id: discovery_gate
+    type: human_gate
+    inputs:
+      reason: "Revisa el brief del proyecto (docs/BRIEF.md). Aprueba para pasar al PRD, o rechaza con feedback."
+    on_fail:
+      goto: discovery
+      max: 100
+      feedback: $discovery_gate.detail
+
+  - id: prd
+    type: design
+    label: PRD
+    agent: pm
+    inputs:
+      brief: $discovery.output.text
+      instructions: $trigger.instructions
+      output: docs/PRD.md
+    on_fail:
+      goto: prd
+      max: 100
+
+  - id: prd_gate
+    type: human_gate
+    inputs:
+      reason: "Revisa el PRD (docs/PRD.md). Aprueba para generar el backlog, o rechaza con feedback."
+    on_fail:
+      goto: prd
+      max: 100
+      feedback: $prd_gate.detail
+
+  - id: backlog
+    type: design
+    label: Backlog
+    agent: scrum-master
+    inputs:
+      prd: $prd.output.text
+      instructions: $trigger.instructions
+      output: docs/backlog.yaml
+    on_fail:
+      goto: backlog
+      max: 1
+      feedback: "La generación anterior del backlog falló o excedió el tiempo. Genera un backlog MÁS LEAN y enfocado al MVP: happy-path central, menos sprints, difiere lo nice-to-have. Nivel ESQUELETO (título + user-story + acceptance + deps + owner + sprint)."
+
+  - id: backlog_gate
+    type: human_gate
+    inputs:
+      reason: "Revisa el backlog (docs/backlog.yaml). Aprueba para publicarlo al board, o rechaza con feedback."
+    on_fail:
+      goto: backlog
+      max: 100
+      feedback: $backlog_gate.detail
+
+  - id: handoff
+    type: ticket_publish
+    label: Handoff → stories
+    inputs:
+      backlog: docs/backlog.yaml
+      repo: $trigger.repo
+      project_id: $trigger.project_id

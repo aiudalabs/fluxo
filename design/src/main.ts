@@ -27,7 +27,10 @@ const anonKey = process.env.SUPABASE_ANON_KEY;
 const jwtSecret = process.env.SUPABASE_JWT_SECRET;
 const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 const projectId = process.argv[2];
-const ideaOverride = process.argv[3];
+const args = process.argv.slice(3);
+const wfArg = args.find((a) => a.startsWith("--workflow="));
+const workflowId = wfArg ? wfArg.split("=")[1] : "design"; // demo-design = lean (3 fases)
+const ideaOverride = args.find((a) => !a.startsWith("--"));
 
 if (!url || !anonKey || !jwtSecret || !serviceKey) {
   console.error("need SUPABASE_URL, SUPABASE_ANON_KEY, SUPABASE_JWT_SECRET, SUPABASE_SERVICE_ROLE_KEY (source .env)");
@@ -58,13 +61,13 @@ if (!project) {
 }
 const idea = ideaOverride ?? project.description ?? project.name;
 
-// 2) Cargar el workflow real + sembrar las fases (todas las de tipo design, en orden).
-const wf = loadWorkflow(registryDir, "design");
+// 2) Cargar el workflow + sembrar las fases (todas las de tipo design, en orden).
+const wf = loadWorkflow(registryDir, workflowId);
 const phaseSeeds = designPhases(wf).map((p, i) => ({ phase_id: p.id, label: p.label, ord: i }));
 
 // 3) Store (mintea su propio tenant JWT → RLS real, sin service_role) + runner (Agent SDK).
 const store = new SupabaseDesignStore({ url, anonKey, jwtSecret, tenant: project.tenant_id, project: projectId });
-const runId = await store.createRun("design", phaseSeeds);
+const runId = await store.createRun(workflowId, phaseSeeds);
 const workdir = mkdtempSync(join(tmpdir(), "fluxo-design-"));
 const runner = makeSdkRunner(registryDir, workdir);
 

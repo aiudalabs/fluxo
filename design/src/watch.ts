@@ -25,6 +25,9 @@ if (!url || !serviceKey) {
 const dryRun = process.argv.includes("--dry-run");
 const intervalArg = process.argv.find((a) => a.startsWith("--interval="));
 const intervalMs = (intervalArg ? Number(intervalArg.split("=")[1]) : 15) * 1000;
+// El workflow que corre cada diseño auto-arrancado; se forwardea a main.ts. Para un demo
+// ágil: --workflow=demo-design (3 fases/3 gates) en vez de la design completa (8).
+const wfArg = process.argv.find((a) => a.startsWith("--workflow="));
 
 const base = url.replace(/\/$/, "") + "/rest/v1";
 const svc = { apikey: serviceKey, Authorization: `Bearer ${serviceKey}`, Accept: "application/json" };
@@ -53,8 +56,8 @@ async function tick() {
       console.log(`[dry-run] arrancaría diseño de "${p.name}" (${p.id})`);
       continue;
     }
-    console.log(`▶ auto-arranque de diseño: "${p.name}" (${p.id})`);
-    const child = spawn("node", ["--experimental-strip-types", mainScript, p.id], {
+    console.log(`▶ auto-arranque de diseño: "${p.name}" (${p.id})${wfArg ? ` [${wfArg}]` : ""}`);
+    const child = spawn("node", ["--experimental-strip-types", mainScript, p.id, ...(wfArg ? [wfArg] : [])], {
       stdio: "inherit",
       env: process.env,
     });
