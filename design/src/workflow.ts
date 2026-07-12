@@ -1,0 +1,107 @@
+// F5-04 · Parse a registry design workflow (registry/workflows/<id>.yaml) into a
+// typed, ordered step list the engine walks. The METHOD stays in data — this loader
+// is generic: it maps the declared `type` of each step to an engine `kind` and never
+// branches on a step id (golden rule 1).
+//
+// Step types in the design workflow:
+//   design         → an agent produces artifact(s) for a phase
+//   validate       → a schema lint before the human sees the doc (engine treats the
+//                    real linting as out-of-band; it honours the on_fail loop)
+//   human_gate     → freeze until a human approves / corrects / answers open questions
+//   pr | ticket_publish → handoff to the client repo (F5-03, infra-blocked)
+
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
+import { load } from "js-yaml";
+
+export interface OnFail {
+  goto: string;
+  max: number;
+  feedback?: string; // a `$<gate>.detail`-style ref, resolved at loop time
+}
+
+export type Step =
+  | {
+      kind: "design";
+      id: string;
+      label: string;
+      agent: string;
+      inputs: Record<string, unknown>;
+      onFail?: OnFail;
+    }
+  | { kind: "validate"; id: string; label: string; inputs: Record<string, unknown>; onFail?: OnFail }
+  | { kind: "gate"; id: string; reason: string; onFail: OnFail }
+  | { kind: "handoff"; id: string; stepType: string; label: string; inputs: Record<string, unknown> };
+
+export interface Workflow {
+  id: string;
+  version: string;
+  steps: Step[];
+}
+
+interface RawStep {
+  id?: string;
+  type?: string;
+  label?: string;
+  agent?: string;
+  inputs?: Record<string, unknown>;
+  on_fail?: { goto?: string; max?: number; feedback?: string };
+}
+
+interface RawWorkflow {
+  id?: string;
+  version?: string;
+  steps?: RawStep[];
+}
+
+function parseOnFail(raw: RawStep["on_fail"], stepId: string): OnFail | undefined {
+  if (!raw) return undefined;
+  if (!raw.goto) throw new Error(`workflow: step ${stepId} on_fail has no goto`);
+  return { goto: raw.goto, max: raw.max ?? 1, feedback: raw.feedback };
+}
+
+// mapStep turns a declared step into a typed engine Step. Unknown types are an error
+// (fail loud, not silently skipped — L-AUTO-3).
+function mapStep(raw: RawStep): Step {
+  const id = raw.id;
+  if (!id) throw new Error("workflow: a step has no id");
+  const type = raw.type;
+  const inputs = raw.inputs ?? {};
+  switch (type) {
+    case "design": {
+      if (!raw.agent) throw new Error(`workflow: design step ${id} has no agent`);
+      return { kind: "design", id, label: raw.label ?? id, agent: raw.agent, inputs, onFail: parseOnFail(raw.on_fail, id) };
+    }
+    case "validate":
+      return { kind: "validate", id, label: raw.label ?? id, inputs, onFail: parseOnFail(raw.on_fail, id) };
+    case "human_gate": {
+      const onFail = parseOnFail(raw.on_fail, id);
+      if (!onFail) throw new Error(`workflow: gate ${id} has no on_fail (nowhere to loop on reject)`);
+      const reason = typeof inputs.reason === "string" ? inputs.reason : "";
+      return { kind: "gate", id, reason, onFail };
+    }
+    case "pr":
+    case "ticket_publish":
+      return { kind: "handoff", id, stepType: type, label: raw.label ?? id, inputs };
+    default:
+      throw new Error(`workflow: step ${id} has unknown type ${String(type)}`);
+  }
+}
+
+export function parseWorkflow(doc: unknown): Workflow {
+  const raw = doc as RawWorkflow;
+  if (!raw?.id) throw new Error("workflow: no id");
+  if (!Array.isArray(raw.steps) || raw.steps.length === 0) throw new Error("workflow: no steps");
+  return { id: raw.id, version: raw.version ?? "0", steps: raw.steps.map(mapStep) };
+}
+
+export function loadWorkflow(registryDir: string, id: string): Workflow {
+  const text = readFileSync(join(registryDir, "workflows", `${id}.yaml`), "utf8");
+  return parseWorkflow(load(text));
+}
+
+// designPhases lists the phase (design) steps in order — the UI derives the pipeline
+// from these (type: design = a phase; the following human_gate = its gate).
+export function designPhases(wf: Workflow): Array<{ id: string; label: string }> {
+  return wf.steps.filter((s): s is Extract<Step, { kind: "design" }> => s.kind === "design").map((s) => ({ id: s.id, label: s.label }));
+}

@@ -41,5 +41,18 @@ sin rename. Desde acá, el flujo puede pushear.
 > stage `db` sale exit 1) — suficiente en trunk. Cuando haya branch protection, marcar `db` (y `control`) como
 > required en `main`.
 
+## ✅ D5 · Captura de artefactos del diseño: **workdir-harvest, no reply-text** (2026-07-12)
+**Decidido:** el runtime de diseño le da al agente de fase una **tool de escritura scopeada a un workdir temporal** y
+lo deja escribir los archivos **como el rol ya pide** (`docs/BRIEF.md`, `docs/ARCHITECTURE.md` + `docs/provisioning.yaml`,
+`docs/mockups/*.html`, …). El runtime **cosecha** (harvest) esos archivos del workdir → los escribe al **brain**
+(artefactos + provenance, vía el tool de F1-02), los muestra en **Studio** (F6-02), y (en F5-03) los commitea al repo
+del cliente. **Se retira la directiva de "ponelo en el reply"** — el hack `OUTPUT_DIRECTIVE` de F5-01 deja de hacer
+falta (el rol escribe a disco, que es su forma natural).
+**Rationale:** reply-text obliga a un solo blob de texto por fase y no modela fases multi-archivo (arquitectura =
+ARCHITECTURE.md + provisioning.yaml) ni mockups (un HTML por superficie). Workdir-harvest maneja ambos naturalmente,
+respeta la regla de oro (el rol/método no se toca — sólo cambia que el archivo se cosecha del disco en vez de del
+texto), y da un punto único de captura → brain + Studio + repo. Alternativa rechazada: parsear artefactos del texto
+de respuesta (frágil, un blob por fase, no multi-archivo).
+
 ---
 *Cuando una decisión se resuelve, moverla a ✅ con fecha y una línea de por qué, y desbloquear su tarea en el roadmap.*
