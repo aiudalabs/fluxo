@@ -64,7 +64,9 @@ El build autónomo rehízo la UI **plana** (inline styles, GitHub-dark, sin `/fl
 - **L-UI-3** · `statusToken.ts` = ÚNICA fuente de color/pill de estado (6 estados). No divergir en 5 mapas (el bug de v1 temprano).
 - **L-UI-4** · Board JIRA: columnas vacías colapsan a riel de 42px → las 6 entran sin scroll-H desde ~1280px; scroll independiente por columna.
 - **L-UI-5** · Mostrar NOMBRES de proyecto, no UUIDs. La entrada `/` abre estilo **chatbot** ("¿Qué quieres construir?" + idea + chips de ejemplo que guían), no un panel vacío.
-- **L-UI-6** · Docs con VERSIONES (v1: commits en branch `design`; chips v1…vN + changelog global). v2 necesita versionado (`design_docs` append-only o git real).
+- **L-UI-6** · Docs con VERSIONES (v1: commits en branch `design`; chips v1…vN + changelog global). **RESUELTO en v2 (commit 83dc9c9)**: las versiones salen del **brain append-only** (`brain_events` kind=artifact, cada evento = una versión con su `content` en el payload) — no hizo falta tabla `design_docs` nueva; el brain YA es el registro append-only. Los chips vN leen de ahí; ver una versión vieja rinde su content real.
+- **L-UI-7** · Port sin fricción de imports: al copiar el dir `lib/i18n/**` de v1, el `lib/i18n.ts` flat de v2 colisiona (`@/lib/i18n` resuelve al file, no al dir). Renombrar el de v2 a `i18n-flat.ts`. Y excluir `**/*.test.ts` del tsconfig (v1 los corre con node:test, usan import con extensión `.ts`).
+- **L-UI-8** · El Studio de v1 tiene DOS mecanismos conversacionales: el **gate 3-vías por fase** (Aprobar/Responder-preguntas/Pedir-cambios → resuelve `design_gates`) y el **refine per-doc** (re-corre la fase del doc). El gate ya cubre lo conversacional en v2; el refine per-doc queda para cuando exista el motor de diseño (F5) que re-corra la fase.
 
 > Regla: si estás por escribir código que reintroduce cualquiera de estos, PARÁ. La arquitectura v2 los hace
 > innecesarios o imposibles — si sentís que "necesitás" el patrón viejo, estás cruzando la frontera de `01-arquitectura`.
