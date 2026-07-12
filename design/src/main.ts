@@ -17,6 +17,7 @@ import { loadWorkflow, designPhases } from "./workflow.ts";
 import { runDesign } from "./engine.ts";
 import { makeSdkRunner } from "./sdkRunner.ts";
 import { SupabaseDesignStore } from "./supabase.ts";
+import { makeSupabaseHandoff } from "./handoff.ts";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const registryDir = resolve(here, "..", "..", "registry");
@@ -74,8 +75,13 @@ console.log(`  (cada gate CONGELA el run hasta que lo resuelvas en el Studio)`);
 
 // 4) Correr. runDesign camina las fases, cosecha docs al workdir → design_phases, y
 //    congela en cada gate hasta que el resolver (poll a design_gates) ve 'resolved'.
+const handoff = makeSupabaseHandoff(store, workdir);
 try {
-  const res = await runDesign(wf, { instructions: idea }, { runner, resolver: store.resolver, sink: store.sink });
+  const res = await runDesign(
+    wf,
+    { instructions: idea, project_id: projectId, repo: "" },
+    { runner, resolver: store.resolver, sink: store.sink, handoff },
+  );
   await store.setRunStatus(res.status);
   console.log(`\n✓ design run ${runId} terminó: ${res.status}`);
   for (const [phase, n] of Object.entries(res.phaseRuns)) console.log(`  ${phase}: ${n} corrida(s)`);

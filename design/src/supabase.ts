@@ -50,6 +50,26 @@ export interface PhaseSeed {
   ord: number;
 }
 
+// El handoff (publishBacklog) consume estas shapes — las produce el parser de backlog.yaml.
+export interface SprintSeed {
+  key: string;        // "SP1"
+  title?: string;     // nombre display
+  goal?: string;
+  position?: number;
+}
+export interface StorySeed {
+  key: string;        // "S1-01"
+  title: string;
+  body?: string;      // user story ("Como X, quiero Y…")
+  acceptance?: string; // criterios (líneas)
+  lane?: string;      // owner/agente (flutter-dev, …)
+  sprint?: string;    // KEY del sprint (SP1) — se resuelve a sprint_id
+  deps?: string[];    // KEYs de stories (S1-02) — se resuelven a blocked_by (uuid[])
+  epic_id?: string;
+  kind?: string;      // default 'story'
+  screen_key?: string;
+}
+
 const delay = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 // SupabaseDesignStore realises the engine's ports against design_runs/phases/gates.
@@ -129,12 +149,82 @@ export class SupabaseDesignStore {
     });
   }
 
+  // publishBacklog realiza el HANDOFF (F5-03): el backlog.yaml aprobado → filas reales en
+  // stories/sprints (RLS por tenant, como authenticated). Dos pasadas: (1) sprints → key→id,
+  // (2) stories (nacen 'backlog', sprint_id resuelto) → key→id, (3) blocked_by = deps
+  // resueltas key→uuid (blocked_by es uuid[] → stories.id). Idempotente por (project,key):
+  // limpia antes las stories/sprints del proyecto para no duplicar en un re-handoff.
+  async publishBacklog(sprints: SprintSeed[], stories: StorySeed[]): Promise<{ sprints: number; stories: number }> {
+    const s = this.scope();
+    // Limpieza previa (re-handoff): borrar stories del proyecto (blocked_by se va con ellas)
+    // y luego sprints. DELETE está revocado para authenticated en algunas tablas; si falla,
+    // seguimos (primer handoff no tiene qué borrar).
+    try {
+      await this.rest(`/stories?project_id=eq.${s.project_id}`, { method: "DELETE" });
+      await this.rest(`/sprints?project_id=eq.${s.project_id}`, { method: "DELETE" });
+    } catch {
+      /* primer handoff: nada que limpiar (o delete revocado) */
+    }
+
+    // 1) sprints → key→id
+    const sprintKeyToId = new Map<string, string>();
+    if (sprints.length) {
+      const res = await this.rest("/sprints", {
+        method: "POST",
+        prefer: "return=representation",
+        body: JSON.stringify(sprints.map((sp, i) => ({ ...s, key: sp.key, title: sp.title ?? sp.key, goal: sp.goal ?? "", position: sp.position ?? i }))),
+      });
+      for (const row of (await res.json()) as Array<{ id: string; key: string }>) sprintKeyToId.set(row.key, row.id);
+    }
+
+    // 2) stories (nacen 'backlog') → key→id
+    const storyKeyToId = new Map<string, string>();
+    if (stories.length) {
+      const res = await this.rest("/stories", {
+        method: "POST",
+        prefer: "return=representation",
+        body: JSON.stringify(stories.map((st) => ({
+          ...s,
+          key: st.key,
+          title: st.title,
+          status: "backlog",
+          lane: st.lane ?? "",
+          sprint_id: st.sprint ? sprintKeyToId.get(st.sprint) ?? null : null,
+          body: st.body ?? null,
+          acceptance: st.acceptance ?? null,
+          epic_id: st.epic_id ?? null,
+          kind: st.kind ?? "story",
+          screen_key: st.screen_key ?? null,
+        }))),
+      });
+      for (const row of (await res.json()) as Array<{ id: string; key: string }>) storyKeyToId.set(row.key, row.id);
+    }
+
+    // 3) blocked_by = deps (key→uuid); solo las que resuelven a una story existente.
+    for (const st of stories) {
+      const deps = (st.deps ?? []).map((k) => storyKeyToId.get(k)).filter((x): x is string => !!x);
+      if (deps.length) {
+        await this.rest(`/stories?project_id=eq.${s.project_id}&key=eq.${st.key}`, {
+          method: "PATCH",
+          body: JSON.stringify({ blocked_by: deps }),
+        });
+      }
+    }
+    return { sprints: sprintKeyToId.size, stories: storyKeyToId.size };
+  }
+
   // sink wires phase lifecycle to design_phases and the handoff to the run status.
   get sink(): EngineSink {
     return {
       onPhaseStart: (phaseId) => this.patchPhase(phaseId, { status: "running" }),
-      onPhaseDone: (phaseId, result: PhaseResult) =>
-        this.patchPhase(phaseId, { status: "done", artifacts: result.artifacts ?? [] }),
+      onPhaseDone: async (phaseId, result: PhaseResult) => {
+        await this.patchPhase(phaseId, { status: "done", artifacts: result.artifacts ?? [] });
+        // Cada doc cosechado → un evento artifact append-only en el brain: es la fuente de
+        // las VERSIONES en el Studio (los chips vN). Re-correr la fase agrega otra versión.
+        for (const a of result.artifacts ?? []) {
+          await this.brainAppend("artifact", { path: a.path, content: a.content, message: `design: ${phaseId}` }, `agent:${phaseId}`);
+        }
+      },
       onHandoff: () => this.setRunStatus("awaiting_handoff"),
     };
   }
