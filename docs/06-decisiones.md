@@ -21,9 +21,11 @@ está en las baterías. Reconsiderar self-host (Supabase OSS en el VPS, o Postgr
 escala/ingresos que paguen el ops, o cuando Realtime/bandwidth sean una línea material. Mantener el schema como
 Postgres+RLS estándar para que esa salida sea barata.
 
-## ⚠️ D2 · Runtime SDK de los agentes de diseño
-Recomendado: **Claude Agent SDK** (el loop en el SDK, el rol en markdown → cumple "el agente vive en markdown").
-Confirmar versión/pineo antes de F5-01.
+## ✅ D2 · Runtime SDK de los agentes de diseño: **Claude Agent SDK** (2026-07-12)
+**Decidido: Claude Agent SDK** (el loop en el SDK, el rol en markdown → cumple "el agente vive en markdown").
+Confirmado por el fundador. La versión/pineo se fija al llegar a **F5-01** (aún no se instala nada). No bloqueaba
+F1-02: el tool MCP `brain_write` es protocolo abierto y se construyó/verificó standalone (cualquier cliente MCP lo
+consume); el Agent SDK lo consumirá en F5.
 
 ## ⚠️ D3 · Alcance de la "última milla" en v1.0
 ¿La primera versión vendible incluye Fase 8 completa (tiendas + provisioning de infra del cliente) o corta en
