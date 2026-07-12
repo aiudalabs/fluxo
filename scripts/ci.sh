@@ -5,14 +5,13 @@
 # run these same stages, so local and CI can never drift. Run all stages, or a
 # subset by name:  scripts/ci.sh                # all
 #                  scripts/ci.sh registry control
-#                  scripts/ci.sh migrations leak # (needs DATABASE_URL)
+#                  scripts/ci.sh db             # needs supabase CLI + Docker + stack up
 #
-# Stages whose artifacts do not exist yet SKIP cleanly rather than fail, so the
-# pipeline is valid from day one and each phase turns a skip into a real gate as
-# it lands its artifact:
-#   - migrations  → real once supabase/migrations/*.sql exist (F1-01)
-#   - leak        → real once the pgTAP suite exists (F1-05 / F2-04)
-#   - console     → real once console/package.json exists (F6)
+# Stages skip cleanly (announced, never silent — L-AUTO-3) when their prerequisite
+# is absent, so the pipeline is valid from day one and each phase turns a skip into
+# a real gate as it lands its artifact:
+#   - db       → cross-tenant leak gate; needs supabase/tests + supabase CLI + stack
+#   - console  → real once console/package.json exists (F6)
 #
 # A SKIP is always announced (never silent): a silent skip reads as "covered"
 # when it is not (docs/04-lecciones L-AUTO-3: the green-but-empty gate).
@@ -41,34 +40,28 @@ stage_control() {
   fi
 }
 
-stage_migrations() {
-  banner "migrations"
-  if ! compgen -G "supabase/migrations/*.sql" >/dev/null; then
-    skip "migrations (none yet — F1-01)"
-  elif [ -z "${DATABASE_URL:-}" ]; then
-    skip "migrations (DATABASE_URL unset — needs Postgres)"
-  else
-    for m in supabase/migrations/*.sql; do
-      echo "  applying $m"
-      psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f "$m"
-    done
-    pass "migrations"
-  fi
-}
-
-stage_leak() {
-  banner "cross-tenant leak test (L-ARCH-1, bloqueante)"
+# stage_db runs the pgTAP suite via the Supabase CLI — including the cross-tenant
+# leak test (L-ARCH-1) that MUST stay green to merge. We use `supabase test db`
+# (not raw psql/pg_prove) because our migrations depend on Supabase primitives —
+# the `authenticated`/`anon` roles, `auth.jwt()`, the supabase_realtime
+# publication — that a vanilla Postgres does not have. `supabase test db` is
+# transactional (rolls back), so it never mutates local data.
+#
+# In CI the job runs `supabase start` first (which also smoke-applies every
+# migration). Locally it needs the stack already up.
+stage_db() {
+  banner "db: pgTAP incl. cross-tenant leak (L-ARCH-1, bloqueante)"
   if ! compgen -G "supabase/tests/*.sql" >/dev/null; then
-    skip "leak test (no supabase/tests/*.sql yet — F1-05/F2-04)"
-  elif [ -z "${DATABASE_URL:-}" ]; then
-    skip "leak test (DATABASE_URL unset)"
-  elif ! command -v pg_prove >/dev/null; then
-    # Locally the canonical run is `supabase test db` (pg_prove in a container).
-    # Installing pg_prove + pgTAP into the CI Postgres is wired in F1-05.
-    skip "leak test (pg_prove not installed — use 'supabase test db'; CI wiring F1-05)"
+    skip "db (no supabase/tests/*.sql yet)"
+  elif ! command -v supabase >/dev/null 2>&1; then
+    skip "db (supabase CLI not installed)"
+  elif ! docker info >/dev/null 2>&1; then
+    skip "db (Docker not running — supabase needs it)"
+  elif ! supabase status >/dev/null 2>&1; then
+    skip "db (supabase stack not running — run 'supabase start')"
   else
-    pg_prove --ext .sql supabase/tests
-    pass "leak test"
+    supabase test db
+    pass "db"
   fi
 }
 
@@ -82,7 +75,7 @@ stage_console() {
   fi
 }
 
-ALL_STAGES=(registry control migrations leak console)
+ALL_STAGES=(registry control db console)
 
 main() {
   local stages=("$@")

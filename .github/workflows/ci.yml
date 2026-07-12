@@ -37,29 +37,25 @@ jobs:
       - run: scripts/ci.sh control
 
   database:
-    name: migrations + cross-tenant leak
+    name: db (migrations + cross-tenant leak)
     runs-on: ubuntu-latest
-    services:
-      postgres:
-        image: postgres:17
-        env:
-          POSTGRES_PASSWORD: postgres
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd "pg_isready -U postgres"
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
-    env:
-      DATABASE_URL: postgres://postgres:postgres@localhost:5432/postgres
     steps:
       - uses: actions/checkout@v4
-      - name: Install postgres client
-        run: sudo apt-get update && sudo apt-get install -y postgresql-client
-        # NOTE: pg_prove + pgTAP extension are installed here when the leak suite
-        # lands (F1-05/F2-04). Until then the leak stage skips (no supabase/tests).
-      - run: scripts/ci.sh migrations leak
+      - uses: supabase/setup-cli@v1
+        with:
+          version: latest
+      # `supabase start` applies every migration (a migration smoke test) on a
+      # Supabase-capable Postgres — needed because our schema uses Supabase
+      # primitives (authenticated/anon roles, auth.jwt(), supabase_realtime).
+      # A plain postgres:17 cannot apply it. Excluded services aren't needed for
+      # DB tests (and some are flaky in CI); this list may want a first-run tweak.
+      - name: Start Supabase (smoke-applies migrations)
+        run: supabase start -x studio,imgproxy,edge-runtime,logflare,vector,mailpit,realtime,storage-api,postgres-meta,supavisor
+      - name: pgTAP incl. cross-tenant leak (blocking)
+        run: scripts/ci.sh db
+      - name: Stop Supabase
+        if: always()
+        run: supabase stop --no-backup
 
   console:
     name: console (lint)
