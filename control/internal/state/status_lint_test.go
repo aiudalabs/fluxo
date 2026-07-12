@@ -3,6 +3,7 @@ package state
 import (
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 )
@@ -57,13 +58,21 @@ func walkGoFiles(t *testing.T, root string, fn func(path string, src string)) {
 func TestNoRawStatusLiterals(t *testing.T) {
 	root := controlRoot(t)
 	statuses := []string{"backlog", "ready", "running", "review", "done", "failed", "blocked"}
+	// A status word is allowed ONLY as a typed constant definition (`Name Type =
+	// "word"`) — e.g. state.Status or runtime.State. That is the sanctioned home
+	// for the literal; a raw assignment/comparison/query elsewhere is the L-CQ-2
+	// hazard and is flagged. This is a stricter, more precise rule than "only
+	// status.go", and it needs no per-file allowlist.
+	constDef := regexp.MustCompile(`^\s*[A-Za-z_]\w*\s+[A-Za-z_][\w.]*\s*=\s*"[a-z_]+"`)
 	walkGoFiles(t, root, func(path, src string) {
-		if filepath.Base(path) == "status.go" {
-			return // the one legal home for the literals
-		}
-		for _, s := range statuses {
-			if strings.Contains(src, `"`+s+`"`) {
-				t.Errorf("%s: raw status literal %q — use the state.Status constants", relPath(root, path), s)
+		for _, line := range strings.Split(src, "\n") {
+			if constDef.MatchString(line) {
+				continue // typed constant definition — the legal home
+			}
+			for _, s := range statuses {
+				if strings.Contains(line, `"`+s+`"`) {
+					t.Errorf("%s: raw status literal %q — use the typed status constants", relPath(root, path), s)
+				}
 			}
 		}
 	})
