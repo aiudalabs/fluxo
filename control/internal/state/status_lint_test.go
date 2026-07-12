@@ -64,7 +64,15 @@ func TestNoRawStatusLiterals(t *testing.T) {
 	// hazard and is flagged. This is a stricter, more precise rule than "only
 	// status.go", and it needs no per-file allowlist.
 	constDef := regexp.MustCompile(`^\s*[A-Za-z_]\w*\s+[A-Za-z_][\w.]*\s*=\s*"[a-z_]+"`)
+	// The lint guards the STORY-status domain (state.Status). The runtime adapters
+	// own a different status vocabulary (runtime.State plus external strings like
+	// Docker's `docker inspect .State.Status`), and never write story statuses, so
+	// they are out of scope for this lint.
+	runtimeTree := filepath.Join(root, "internal", "runtime")
 	walkGoFiles(t, root, func(path, src string) {
+		if strings.HasPrefix(path, runtimeTree) {
+			return
+		}
 		for _, line := range strings.Split(src, "\n") {
 			if constDef.MatchString(line) {
 				continue // typed constant definition — the legal home

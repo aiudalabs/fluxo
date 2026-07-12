@@ -3,13 +3,17 @@
 # closes L-CQ-1). Credentials are the CLIENT's, on their org (BYO, zero COGS).
 id: claude
 runtimes: [github_actions, local_daemon, docker_isolated]
+# invoke keys are RUNTIME IDS (github_actions/local_daemon/docker_isolated) so the
+# dispatcher threads the right block per runtime with no name mapping.
 invoke:
   github_actions:
     workflow: claude.yml
     inputs:
       prompt: $prompt
       issues: $issues
-  local:
+  local_daemon:
+    argv: [claude, -p, --output-format, stream-json, --permission-mode, acceptEdits]
+  docker_isolated:
     argv: [claude, -p, --output-format, stream-json, --permission-mode, acceptEdits]
 credential:
   source: repo_secret
