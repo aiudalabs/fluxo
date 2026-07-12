@@ -26,7 +26,7 @@ export function useProject(): ProjectCtx {
   return ctx;
 }
 
-const FEATURES = ["studio", "board", "flow", "brain"] as const;
+const FEATURES = ["overview", "studio", "board", "flow", "brain"] as const;
 
 export function ProjectShell({ projectId, children }: { projectId: string; children: React.ReactNode }) {
   const { t } = useLocale();
