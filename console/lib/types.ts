@@ -32,3 +32,29 @@ export interface DispatchCandidate {
   model: string;
   executor: string;
 }
+
+// ── Diseño / Flow (portados de v1) — el grafo /flow deriva de estas shapes ──────
+export type DesignStepStatus = "QUEUED" | "RUNNING" | "DONE" | "AWAITING" | "FAILED";
+
+export interface DesignPhase {
+  stepId: string;  // "discovery" | "prd" | "architecture" | "ui" | "backlog" | "handoff"
+  name: string;    // "Descubrimiento", "PRD", etc.
+  gateId?: string; // id del human_gate de la fase; "" / undefined si no tiene
+  designStatus: DesignStepStatus; // estado del paso de diseño (el agente)
+  gateStatus: DesignStepStatus;   // estado del gate (human_gate)
+}
+
+// Sprint del backlog. Los sellos de ceremonia (unix-millis; 0/ausente = nunca):
+// *_at = ceremonia aplicada; *_run_id = run de la ceremonia (feature-detect de Flow).
+export interface Sprint {
+  id: string;
+  name: string;
+  goal: string;
+  project_id?: string;
+  planned_at?: number;
+  planning_run_id?: string;
+  reviewed_at?: number;
+  review_run_id?: string;
+  retro_at?: number;
+  retro_run_id?: string;
+}
