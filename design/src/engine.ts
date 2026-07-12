@@ -23,6 +23,7 @@ import { extractOpenQuestions } from "./openquestions.ts";
 export interface Artifact {
   path: string; // e.g. docs/BRIEF.md, docs/mockups/patient.html
   content: string;
+  kind?: string; // doc | mockup | config | file (set by the harvester; carried to Studio)
 }
 
 export interface PhaseRun {
