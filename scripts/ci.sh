@@ -62,6 +62,10 @@ stage_leak() {
     skip "leak test (no supabase/tests/*.sql yet — F1-05/F2-04)"
   elif [ -z "${DATABASE_URL:-}" ]; then
     skip "leak test (DATABASE_URL unset)"
+  elif ! command -v pg_prove >/dev/null; then
+    # Locally the canonical run is `supabase test db` (pg_prove in a container).
+    # Installing pg_prove + pgTAP into the CI Postgres is wired in F1-05.
+    skip "leak test (pg_prove not installed — use 'supabase test db'; CI wiring F1-05)"
   else
     pg_prove --ext .sql supabase/tests
     pass "leak test"
