@@ -13,11 +13,12 @@ import { useT } from "@/lib/i18n";
 import { KanbanBoard } from "@/components/tickets/KanbanBoard";
 import { LaneChip } from "@/components/tickets/LaneChip";
 import { TicketDetail } from "@/components/tickets/TicketDetail";
+import { DepGraph } from "@/components/tickets/DepGraph";
 import { statusToken } from "@/lib/statusToken";
 import type { OrchestratorTicket, TicketStatus } from "@/lib/types";
 
-type ViewKind = "kanban" | "tabla" | "sprints";
-const VIEWS: ViewKind[] = ["kanban", "tabla", "sprints"];
+type ViewKind = "kanban" | "tabla" | "sprints" | "grafo";
+const VIEWS: ViewKind[] = ["kanban", "tabla", "sprints", "grafo"];
 type SprintMeta = { id: string; name: string; goal: string };
 
 // v2 usa `review` y `blocked`; el board (statusToken) usa `in_review`. Adaptamos.
@@ -179,6 +180,8 @@ export default function Board() {
         <div className="tickets-canvas pad"><TicketsTable tickets={filtered} gates={gates} onOpenTicket={setOpenId} onOpenRun={() => {}} /></div>
       ) : view === "sprints" ? (
         <div className="tickets-canvas pad"><SprintsView tickets={filtered} meta={sprintMeta} onOpenTicket={setOpenId} /></div>
+      ) : view === "grafo" ? (
+        <div className="tickets-canvas"><DepGraph tickets={filtered} onOpenTicket={setOpenId} /></div>
       ) : (
         <div className="tickets-canvas">
           <KanbanBoard tickets={filtered} gates={gates} onOpenTicket={setOpenId} onOpenRun={() => {}} />
