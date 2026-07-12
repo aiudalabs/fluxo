@@ -42,9 +42,14 @@ L2 · AGENTES  diseño → Claude Agent SDK · ejecución → runtime (ver 02) �
 ### L2 — Agentes + Maestro
 - Diseño: **Claude Agent SDK** (el loop en el SDK; el rol en markdown).
 - Ejecución: la **capa de runtime** (`02-capa-runtime.md`).
-- **Maestro = reconciliador DETERMINISTA** (Edge Function, NO LLM): reacciona a webhooks (PR/checks/workflow_run) y
-  emite la próxima acción. **Histéresis desde el día 1**: una story solo se demota en un evento terminal explícito
-  (`failed/cancelled`), nunca por "no vi PR en este tick". Re-dispatch gateado por ausencia de sesión viva.
+- **Maestro = reconciliador DETERMINISTA** (NO LLM): reacciona a webhooks (PR/checks/workflow_run) y emite la próxima
+  acción. **Histéresis desde el día 1**: una story solo se demota en un evento terminal explícito (`failed/cancelled`),
+  nunca por "no vi PR en este tick". Re-dispatch gateado por ausencia de sesión viva.
+  - **Refinamiento de placement (F3-02):** la Edge Function `github-webhook` (F3-01) recibe/firma/idempotentiza los
+    webhooks; el **kernel de decisión** (histéresis, `Decide`/`ShouldDispatch`) vive en **Go** (`control/internal/maestro`)
+    porque el kernel es el moat y DEBE estar fuertemente testeado (golden rule 6) — y no hay `deno` para unit-testear la
+    Edge Function acá. El applier (delivery→story) se cablea con el mapping repo→project→story (F5-03) y el trigger por
+    Realtime (F3-04). El kernel es pure/total y se testea exhaustivamente primero.
 
 ### L3 — UI
 Next.js que lee Supabase directo (RLS + Realtime). Casi sin backend propio. Board, grafo de deps con
