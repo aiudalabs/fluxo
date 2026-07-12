@@ -4,17 +4,16 @@
 // (StudioEntry): el punto de arranque imposible-de-perder. Describís la idea, le ponés
 // nombre y repo, y un botón crea el proyecto y arranca el design run.
 //
-// Data re-point (lo ÚNICO distinto vs v1): v2 aún no tiene tabla `projects` ni el motor
-// de diseño (track F5, Edge Function + Agent SDK). Mientras eso aterriza, el launch
-// navega al Studio del proyecto dev — la superficie es 100% la de v1; el wiring real de
-// crear-proyecto + arrancar-run entra cuando el backend F5 exista.
+// Data re-point vs v1: el launch CREA un proyecto real (tabla projects, F5-P1) — RLS pone
+// el tenant_id desde el JWT — y aterriza en su Overview. El arranque del design run (motor
+// Agent SDK) entra en la siguiente tajada de F5; por ahora el proyecto nace vacío.
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { useT } from "@/lib/i18n";
+import { browserClient } from "@/lib/supabaseClient";
 import { Logo } from "@/components/Logo";
 
-const DEV_PROJECT = process.env.NEXT_PUBLIC_DEV_PROJECT_ID ?? "";
 const DEV_ORG = "aiudalabs";
 
 // Slugify una idea/nombre a un repo válido (minúsculas, guiones) — calcado de v1.
@@ -62,9 +61,20 @@ export default function HomePage() {
       return;
     }
     setBusy(true);
-    // Interim (ver cabecera): sin tabla projects ni motor de diseño, aterrizamos en el
-    // Studio del proyecto dev. El create-project + create-design-run reales entran con F5.
-    router.push(`/projects/${DEV_PROJECT}/studio`);
+    // Crea el proyecto real (tenant_id lo pone el default del JWT vía RLS) y navega a su
+    // Overview. El design run se arranca en la próxima tajada de F5.
+    const supabase = browserClient();
+    const { data, error: insErr } = await supabase
+      .from("projects")
+      .insert({ name: finalProjectName, description: trimmedIdea, org: DEV_ORG })
+      .select("id")
+      .single();
+    if (insErr || !data) {
+      setError(insErr?.message ?? String(insErr));
+      setBusy(false);
+      return;
+    }
+    router.push(`/projects/${data.id}/overview`);
   }
 
   return (

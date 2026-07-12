@@ -70,7 +70,7 @@ function upsertBy<T extends { id: string }>(setter: React.Dispatch<React.SetStat
 }
 
 export default function Studio() {
-  const { projectId, supabase } = useProject();
+  const { projectId, supabase, project } = useProject();
   const t = useT();
   const [run, setRun] = useState<Run | null>(null);
   const [phases, setPhases] = useState<Phase[]>([]);
@@ -177,7 +177,7 @@ export default function Studio() {
     <div className={`studio-shell${fullscreen ? " doc-full" : ""}${!railOpen ? " rail-collapsed" : ""}`}>
       {/* ── Topbar ── */}
       <header className="studio-topbar">
-        <h2 className="studio-proj">Rosa la peluquería</h2>
+        <h2 className="studio-proj">{project?.name ?? "…"}</h2>
         <span className="studio-branch"><span className="d" /> {t("studio.docs.onBranch")}</span>
         {!isTerminal && (
           <button className="studio-runchip" onClick={() => pickPhase(phases.findIndex((p) => p.status === "awaiting_gate"))}>

@@ -50,7 +50,7 @@ function sprintRows(tickets: OrchestratorTicket[]) {
 }
 
 export default function Overview() {
-  const { projectId, supabase } = useProject();
+  const { projectId, supabase, project } = useProject();
   const t = useT();
   const [tickets, setTickets] = useState<OrchestratorTicket[]>([]);
   const [docNames, setDocNames] = useState<string[]>([]);
@@ -101,8 +101,8 @@ export default function Overview() {
       <div className="ov-hero">
         <div>
           <div className="eyebrow acc">{t("overview.eyebrow")}</div>
-          <h2 className="ov-title">Rosa la peluquería</h2>
-          <p className="ov-desc">Una app donde la clienta reserva sola y Rosa administra su agenda — con recordatorios por WhatsApp y seña online.</p>
+          <h2 className="ov-title">{project?.name ?? "…"}</h2>
+          {project?.description && <p className="ov-desc">{project.description}</p>}
         </div>
         <div className="ov-progress">
           <div className="ov-progress-top">

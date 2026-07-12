@@ -59,7 +59,7 @@ function toDesignPhases(phases: PhaseRow[], gates: GateRow[]): DesignPhase[] {
 }
 
 export default function Flow() {
-  const { projectId, supabase } = useProject();
+  const { projectId, supabase, project } = useProject();
   const t = useT();
   const router = useRouter();
   const [phases, setPhases] = useState<DesignPhase[]>([]);
@@ -137,7 +137,7 @@ export default function Flow() {
   return (
     <div className="studio-shell">
       <header className="studio-topbar">
-        <h2 className="studio-proj">Rosa la peluquería</h2>
+        <h2 className="studio-proj">{project?.name ?? "…"}</h2>
         <div className="flow-tabs" style={{ display: "flex", gap: 4, marginLeft: 8 }}>
           {(["cycle", "graph"] as FlowTab[]).map((k) => (
             <button key={k} className={`btn ghost sm${tab === k ? " on" : ""}`} onClick={() => setTab(k)}>
