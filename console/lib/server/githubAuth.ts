@@ -61,11 +61,44 @@ export function verifySessionJwt(token: string): { sub: string; tenant: string }
   }
 }
 
-// getUserToken: el token OAuth guardado del usuario (para actuar como él). TODO refresh
-// cuando expires_at pasó (RefreshUserToken) — por ahora devuelve el guardado.
+// refreshUserToken: canjea el refresh_token por un access_token nuevo (los user-to-server de
+// una GitHub App expiran ~8h). GitHub rota también el refresh_token → hay que persistir ambos.
+async function refreshUserToken(refreshToken: string): Promise<OAuthToken> {
+  const res = await fetch("https://github.com/login/oauth/access_token", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Accept: "application/json" },
+    body: JSON.stringify({ client_id: CLIENT_ID, client_secret: CLIENT_SECRET, grant_type: "refresh_token", refresh_token: refreshToken }),
+  });
+  const data = (await res.json()) as OAuthToken & { error?: string; error_description?: string };
+  if (!res.ok || data.error || !data.access_token) throw new Error(`refresh: ${data.error_description ?? data.error ?? res.status}`);
+  return data;
+}
+
+// getUserToken: el token OAuth del usuario (para actuar como él). Si expiró y hay refresh_token,
+// lo refresca y persiste el par nuevo antes de devolverlo — así las rutas nunca pegan a GitHub
+// con un token vencido (el 401 que rompía el probe del canal / installations).
 export async function getUserToken(userId: string): Promise<string | null> {
-  const { data } = await admin().from("github_tokens").select("access_token").eq("user_id", userId).maybeSingle();
-  return (data?.access_token as string) ?? null;
+  const db = admin();
+  const { data } = await db.from("github_tokens").select("access_token,refresh_token,expires_at").eq("user_id", userId).maybeSingle();
+  if (!data?.access_token) return null;
+  const exp = data.expires_at ? new Date(data.expires_at as string).getTime() : 0;
+  // Válido (con 60s de colchón) → devolverlo tal cual. Sin expires_at (no expira) → tal cual.
+  if (!exp || exp - 60_000 > Date.now()) return data.access_token as string;
+  // Expirado. Sin refresh_token no hay nada que hacer (el llamador verá el 401 y re-loguea).
+  if (!data.refresh_token) return data.access_token as string;
+  try {
+    const tok = await refreshUserToken(data.refresh_token as string);
+    const expiresAt = tok.expires_in ? new Date(Date.now() + tok.expires_in * 1000).toISOString() : null;
+    await db.from("github_tokens").update({
+      access_token: tok.access_token,
+      refresh_token: tok.refresh_token ?? data.refresh_token,
+      expires_at: expiresAt,
+      updated_at: new Date().toISOString(),
+    }).eq("user_id", userId);
+    return tok.access_token;
+  } catch {
+    return data.access_token as string; // el refresh falló → devolver el viejo (fallará explícito)
+  }
 }
 
 export interface OAuthToken { access_token: string; refresh_token?: string; expires_in?: number; refresh_token_expires_in?: number; }
