@@ -74,17 +74,19 @@ async function refreshUserToken(refreshToken: string): Promise<OAuthToken> {
   return data;
 }
 
-// getUserToken: el token OAuth del usuario (para actuar como él). Si expiró y hay refresh_token,
-// lo refresca y persiste el par nuevo antes de devolverlo — así las rutas nunca pegan a GitHub
-// con un token vencido (el 401 que rompía el probe del canal / installations).
-export async function getUserToken(userId: string): Promise<string | null> {
+// getUserToken: el token OAuth del usuario (para actuar como él). Refresca si expiró (los
+// user-to-server duran ~8h) — así las rutas nunca pegan a GitHub con un token vencido (el 401
+// que rompía el probe / installations). `forceRefresh` refresca aunque no esté vencido: sirve
+// cuando el usuario ACABA de conceder un permiso nuevo a la App — su token guardado todavía no
+// lo trae hasta que se re-emite. El llamador lo usa como retry ante un 401/403 de permiso.
+export async function getUserToken(userId: string, forceRefresh = false): Promise<string | null> {
   const db = admin();
   const { data } = await db.from("github_tokens").select("access_token,refresh_token,expires_at").eq("user_id", userId).maybeSingle();
   if (!data?.access_token) return null;
   const exp = data.expires_at ? new Date(data.expires_at as string).getTime() : 0;
-  // Válido (con 60s de colchón) → devolverlo tal cual. Sin expires_at (no expira) → tal cual.
-  if (!exp || exp - 60_000 > Date.now()) return data.access_token as string;
-  // Expirado. Sin refresh_token no hay nada que hacer (el llamador verá el 401 y re-loguea).
+  const fresh = !exp || exp - 60_000 > Date.now();
+  if (fresh && !forceRefresh) return data.access_token as string;
+  // Refrescar (vencido o forzado). Sin refresh_token no hay nada que hacer.
   if (!data.refresh_token) return data.access_token as string;
   try {
     const tok = await refreshUserToken(data.refresh_token as string);

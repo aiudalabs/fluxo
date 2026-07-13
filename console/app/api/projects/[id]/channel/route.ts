@@ -36,17 +36,24 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ id: string 
   if (!project) return NextResponse.json({ error: "project not found" }, { status: 404 });
   const slug = slugOf(project.repo);
   if (!slug) return NextResponse.json({ channels: [], reason: "el proyecto todavía no tiene repo" });
-  const token = await getUserToken(session.sub);
+  let token = await getUserToken(session.sub);
   if (!token) return NextResponse.json({ error: "github no conectado" }, { status: 403 });
 
-  const H = { Authorization: `token ${token}`, Accept: "application/vnd.github+json", "User-Agent": "fluxo" };
-  const [wf, sec] = await Promise.all([
-    fetch(`https://api.github.com/repos/${slug}/contents/.github/workflows/claude.yml?ref=main`, { headers: H }),
-    fetch(`https://api.github.com/repos/${slug}/actions/secrets/${SECRET}`, { headers: H }),
+  const H = (t: string) => ({ Authorization: `token ${t}`, Accept: "application/vnd.github+json", "User-Agent": "fluxo" });
+  const secretUrl = `https://api.github.com/repos/${slug}/actions/secrets/${SECRET}`;
+  const [wf, sec0] = await Promise.all([
+    fetch(`https://api.github.com/repos/${slug}/contents/.github/workflows/claude.yml?ref=main`, { headers: H(token) }),
+    fetch(secretUrl, { headers: H(token) }),
   ]);
+  let sec = sec0;
+  // 401/403 en secrets puede ser (a) la App no tiene el permiso, o (b) el token guardado es
+  // ANTERIOR a que el usuario concediera el permiso (no lo trae hasta re-emitirse). Forzamos
+  // un refresh y reintentamos UNA vez: si sigue 401/403 es (a) de verdad; si no, era (b).
+  if (sec.status === 401 || sec.status === 403) {
+    const fresh = await getUserToken(session.sub, true);
+    if (fresh && fresh !== token) { token = fresh; sec = await fetch(secretUrl, { headers: H(token) }); }
+  }
   const workflowPresent = wf.ok;
-  // 401/403 en el endpoint de secrets = la App NO tiene el permiso Secrets (no es "falta el
-  // secret", es "no podemos verlo"). Lo señalamos para que el usuario agregue el permiso.
   const secretsPermMissing = sec.status === 401 || sec.status === 403;
   const secretPresent = sec.ok;
 
@@ -86,22 +93,30 @@ export async function PUT(req: NextRequest, ctx: { params: Promise<{ id: string 
 
   const { token } = (await req.json().catch(() => ({}))) as { token?: string };
   if (!token || token.length < 10) return NextResponse.json({ error: "token vacío o inválido" }, { status: 400 });
-  const ghToken = await getUserToken(session.sub);
+  let ghToken = await getUserToken(session.sub);
   if (!ghToken) return NextResponse.json({ error: "github no conectado" }, { status: 403 });
 
   // `gh secret set` cifra el valor con la public key del repo y lo sube. El token del usuario
   // (con el permiso Secrets de la App) autentica. NO se persiste en Fluxo — pasa a GitHub y ya.
+  const permRe = /401|403|Bad credentials|not accessible|Resource not accessible/i;
+  const seed = (t: string) => pexec("gh", ["secret", "set", SECRET, "--repo", slug, "--body", token], { env: { ...process.env, GH_TOKEN: t } });
   try {
-    await pexec("gh", ["secret", "set", SECRET, "--repo", slug, "--body", token], {
-      env: { ...process.env, GH_TOKEN: ghToken },
-    });
+    await seed(ghToken);
   } catch (e) {
+    // Un 401/403 puede ser un token anterior al permiso recién concedido → force-refresh + retry.
+    if (permRe.test(e instanceof Error ? e.message : String(e))) {
+      const fresh = await getUserToken(session.sub, true);
+      if (fresh && fresh !== ghToken) {
+        ghToken = fresh;
+        try { await seed(ghToken); return NextResponse.json({ saved: true }); } catch { /* cae al error de abajo */ }
+      }
+    }
     const msg = e instanceof Error ? e.message : String(e);
-    const permMissing = /401|403|Bad credentials|not accessible|Resource not accessible/i.test(msg);
+    const permMissing = permRe.test(msg);
     return NextResponse.json(
       {
         error: permMissing
-          ? "GitHub rechazó el secret: la Fluxo App necesita el permiso «Secrets: Read & write». Agregalo y reintentá."
+          ? "GitHub rechazó el secret: la Fluxo App necesita el permiso «Secrets: Read & write» (aprobalo en la instalación)."
           : `no se pudo setear el secret: ${msg.split("\n")[0]}`,
         permissionsUrl: permMissing ? APP_SETTINGS_PERMS : null,
       },
