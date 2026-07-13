@@ -217,17 +217,24 @@ async function reconcileBuild() {
 
       // Marcá running ANTES de disparar: la unidad sale del set despachable de inmediato → nunca un
       // doble-dispatch (doble run pago). Bypass del state machine (backlog→running directo, como v1
-      // SyncExternalStatus); limpia agent_lost al re-despachar. Si el disparo falla, se revierte.
+      // SyncExternalStatus); limpia agent_lost al re-despachar. Si el DISPARO falla, se revierte.
       try {
         for (const m of members) await projectExternalStatus(m.id, "running");
         await repo!.dispatchWorkflow("claude.yml", { prompt, issues: issuesCsv });
-        const sessionUrl = `${repo!.htmlUrl}/actions/workflows/claude.yml`;
-        for (const m of members) await rest(`/stories?id=eq.${m.id}`, { method: "PATCH", body: JSON.stringify({ session_url: sessionUrl }) });
-        console.log(`▶ build ${pol.executionUnit}: ${p.name}/${c.title} despachado (issues ${issuesCsv})`);
-        slots -= members.length;
       } catch (e) {
-        console.error(`  build ${p.name}/${c.id} falló: ${e instanceof Error ? e.message : e} — revirtiendo a backlog`);
+        console.error(`  build ${p.name}/${c.id} falló al disparar: ${e instanceof Error ? e.message : e} — revirtiendo a backlog`);
         for (const m of members) { try { await projectExternalStatus(m.id, "backlog"); } catch { /* best-effort */ } }
+        continue;
+      }
+      // PUNTO DE NO RETORNO: el run YA se disparó (money-critical). Nada de acá en adelante puede
+      // revertir a backlog — hacerlo re-despacharía y pagaría un segundo run. session_url es
+      // best-effort: un fallo se loguea pero NO toca el estado.
+      console.log(`▶ build ${pol.executionUnit}: ${p.name}/${c.title} despachado (issues ${issuesCsv})`);
+      slots -= members.length;
+      const sessionUrl = `${repo!.htmlUrl}/actions/workflows/claude.yml`;
+      for (const m of members) {
+        try { await rest(`/stories?id=eq.${m.id}`, { method: "PATCH", body: JSON.stringify({ session_url: sessionUrl }) }); }
+        catch (e) { console.error(`  session_url ${m.key}: ${e instanceof Error ? e.message : e}`); }
       }
     }
   }
