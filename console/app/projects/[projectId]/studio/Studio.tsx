@@ -172,7 +172,10 @@ export default function Studio() {
     ? activeVersions.find((v) => v.id === ver)?.content ?? ""
     : activeVersions[0]?.content ?? activeFile?.content ?? "";
   const activeStep = phases.find((p) => (p.artifacts ?? []).some((a) => a.path === active));
-  const approved = activeStep ? phaseState(activeStep.status) === "approved" : false;
+  // "Approved" solo si la fase terminó Y no tiene gate pendiente (si lo tiene, está ESPERANDO tu ok).
+  const approved = activeStep
+    ? phaseState(activeStep.status) === "approved" && !gates.some((g) => g.phase_id === activeStep.phase_id && g.status === "pending")
+    : false;
 
   return (
     <div className={`studio-shell${fullscreen ? " doc-full" : ""}${!railOpen ? " rail-collapsed" : ""}`}>
@@ -339,7 +342,7 @@ function PhasePanel({ phase, gate, onError }: { phase: Phase; gate: Gate | null;
     <>
       <div className="studio-doc-head" style={{ paddingLeft: 0, paddingRight: 0 }}>
         <span className="eyebrow">{phaseTitle(t, phase.phase_id, phase.label)}</span>
-        {phaseState(phase.status) === "approved" && <span className="doc-okchip">{t("studio.docs.approved")}</span>}
+        {phaseState(phase.status) === "approved" && !gate && <span className="doc-okchip">{t("studio.docs.approved")}</span>}
       </div>
 
       {doc && (
