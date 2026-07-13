@@ -72,8 +72,14 @@ export function TopBar({ currentProjectId }: { currentProjectId?: string }) {
         <div className={`sh-menu right${open === "user" ? " on" : ""}`}>
           <div className="sh-mh">{login ? `${login}` : "Sin sesión"}</div>
           {!login && <Link className="sh-mi new" href="/auth/github/start" onClick={() => setOpen(null)}>⚡ Continuar con GitHub</Link>}
-          <button className="sh-mi"><span className="grow">⚙ Ajustes</span></button>
-          <button className="sh-mi"><span className="grow">🔑 Canal Claude</span></button>
+          {currentProjectId ? (
+            <>
+              <Link className="sh-mi" href={`/projects/${currentProjectId}/settings`} onClick={() => setOpen(null)}><span className="grow">⚙ Settings del proyecto</span></Link>
+              <Link className="sh-mi" href={`/projects/${currentProjectId}/settings`} onClick={() => setOpen(null)}><span className="grow">🔑 Canal de build</span></Link>
+            </>
+          ) : (
+            <div className="sh-mi" style={{ opacity: 0.5 }}><span className="grow">⚙ Settings (abrí un proyecto)</span></div>
+          )}
           {installUrl && <a className="sh-mi" href={installUrl} target="_blank" rel="noreferrer"><span className="grow">⬇ Instalar App en otra org</span></a>}
           {login && <>
             <div className="sh-mdiv" />

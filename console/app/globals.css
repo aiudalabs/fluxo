@@ -4785,3 +4785,71 @@ main:has(.studio-shell) > .studio-shell {
 .ob-check.pend .ic{background:var(--amber);color:#fff}
 .ob-check .t{flex:1}.ob-check .t b{display:block;font-size:14px;color:var(--ink)}.ob-check .t span{font-size:12.5px;color:var(--ink4)}
 .ob-theme{position:fixed;top:16px;right:16px;width:34px;height:34px;border-radius:10px;border:1px solid var(--stroke);background:var(--panel);color:var(--ink3);font-size:14px;cursor:pointer}
+
+/* ── Settings del proyecto (F6P-Settings) ─────────────────────────────────────── */
+.stg { max-width: 860px; margin: 0 auto; padding: 28px 22px 80px; display: flex; flex-direction: column; gap: 18px; }
+.stg-head { display: flex; flex-direction: column; gap: 4px; }
+.stg-eye { font-family: var(--mono); font-size: 11px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--ink3); }
+.stg-head h1 { font-family: var(--display); font-size: 24px; font-weight: 800; color: var(--ink); }
+.stg-head p { font-size: 13.5px; line-height: 1.55; color: var(--ink2); max-width: 68ch; }
+.stg-msg { padding: 10px 14px; border-radius: var(--r); font-size: 13px; }
+.stg-msg.ok { background: var(--emerald-soft, rgba(16,140,88,0.1)); border: 1px solid var(--emerald, #108a58); color: var(--emerald, #108a58); }
+.stg-msg.err { background: var(--accent-soft); border: 1px solid var(--accent-line); color: var(--accent); }
+
+.stg-card { background: var(--panel); border: 1px solid var(--stroke); border-radius: 16px; padding: 20px 22px; display: flex; flex-direction: column; gap: 16px; }
+.stg-card-h { display: flex; flex-direction: column; gap: 3px; }
+.stg-card-h h2 { font-family: var(--display); font-size: 16px; font-weight: 700; color: var(--ink); }
+.stg-card-h span { font-size: 12.5px; color: var(--ink2); line-height: 1.5; }
+
+.stg-field { display: flex; flex-direction: column; gap: 5px; }
+.stg-field label { font-size: 12px; font-weight: 600; color: var(--ink2); }
+.stg-field select, .stg-field input, .stg-secret input, .stg-lane select {
+  padding: 9px 11px; border: 1px solid var(--stroke-strong); border-radius: 10px;
+  background: var(--bg); color: var(--ink); font-size: 13px; font-family: var(--display); outline: none;
+}
+.stg-field select:focus, .stg-field input:focus, .stg-secret input:focus { border-color: var(--accent); }
+.stg-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+
+.stg-chan { display: flex; flex-direction: column; gap: 8px; padding: 12px 14px; border: 1px solid var(--stroke); border-radius: 12px; background: var(--bg); }
+.stg-chan-row { display: flex; align-items: center; gap: 8px; font-size: 13.5px; color: var(--ink); }
+.stg-chan-reason { color: var(--ink3); font-size: 12px; margin-left: auto; text-align: right; }
+.stg-dot { width: 9px; height: 9px; border-radius: 50%; flex: none; }
+.stg-dot.on { background: var(--emerald, #108a58); box-shadow: 0 0 0 3px rgba(16,140,88,0.18); }
+.stg-dot.off { background: var(--amber, #c98a20); box-shadow: 0 0 0 3px rgba(201,138,32,0.18); }
+.stg-lbl { font-size: 12px; color: var(--ink2); margin-top: 2px; }
+.stg-secret { display: flex; gap: 8px; }
+.stg-secret input { flex: 1; font-family: var(--mono); }
+.stg-secret button, .stg-save-btn {
+  appearance: none; border: none; background: var(--ink); color: #fff; font-weight: 700; font-size: 13px;
+  padding: 0 18px; border-radius: 10px; cursor: pointer; white-space: nowrap; transition: 0.15s var(--ease);
+}
+.stg-secret button:hover:not(:disabled), .stg-save-btn:hover:not(:disabled) { background: var(--accent); }
+.stg-secret button:disabled, .stg-save-btn:disabled { opacity: 0.5; cursor: default; }
+.stg-perm { font-size: 12.5px; color: var(--accent); text-decoration: none; border-bottom: 1px dashed var(--accent-line); align-self: flex-start; }
+.stg-fine { font-size: 12px; color: var(--ink3); }
+
+.stg-presets { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+.stg-preset { text-align: left; display: flex; flex-direction: column; gap: 3px; padding: 12px 14px; border: 1px solid var(--stroke-strong); border-radius: 12px; background: var(--bg); cursor: pointer; transition: 0.15s var(--ease); }
+.stg-preset b { font-size: 13px; color: var(--ink); }
+.stg-preset span { font-size: 11.5px; color: var(--ink3); line-height: 1.4; }
+.stg-preset.on { border-color: var(--accent); background: var(--accent-soft); }
+.stg-preset:hover { border-color: var(--accent); }
+
+.stg-gh { display: flex; flex-direction: column; gap: 2px; }
+.stg-gh-row { display: flex; justify-content: space-between; align-items: center; padding: 9px 0; border-bottom: 1px solid var(--stroke); font-size: 13px; }
+.stg-gh-row:last-of-type { border-bottom: none; }
+.stg-gh-row .k { color: var(--ink2); }
+.stg-gh-row .v { color: var(--ink); font-family: var(--mono); font-size: 12.5px; }
+.stg-gh-row .v a { color: var(--accent); text-decoration: none; }
+.stg-ok { color: var(--emerald, #108a58); }
+.stg-warn { color: var(--amber, #c98a20); }
+.stg-install { font-size: 12.5px; color: var(--ink2); text-decoration: none; border-bottom: 1px dashed var(--stroke-strong); align-self: flex-start; margin-top: 6px; }
+.stg-install:hover { color: var(--accent); border-color: var(--accent); }
+
+.stg-lanes { display: flex; flex-direction: column; gap: 8px; }
+.stg-lane { display: grid; grid-template-columns: 1fr auto auto; gap: 10px; align-items: center; }
+.stg-lane-n { font-family: var(--mono); font-size: 13px; color: var(--ink); }
+
+.stg-save { position: sticky; bottom: 0; display: flex; justify-content: flex-end; padding-top: 10px; }
+.stg-save-btn { height: 40px; }
+@media (max-width: 640px) { .stg-grid, .stg-presets { grid-template-columns: 1fr; } .stg-lane { grid-template-columns: 1fr; } }

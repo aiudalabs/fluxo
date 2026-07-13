@@ -34,6 +34,7 @@ const FEATURES: { key: string; icon: string }[] = [
   { key: "board", icon: "▤" },
   { key: "flow", icon: "⟳" },
   { key: "brain", icon: "◈" },
+  { key: "settings", icon: "⚙" },
 ];
 
 export function ProjectShell({ projectId, children }: { projectId: string; children: React.ReactNode }) {
