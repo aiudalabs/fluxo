@@ -127,7 +127,22 @@ N=8 ticks sin PR/asignado/label Y con `liveRunCount==0` (evita el flap durante e
 - Meter `syncProject` como PRIMER paso del tick del worker, antes de `reconcileBuild`.
 - **Test:** un PR abierto con `Closes #1` → story #1 pasa a `review`; mergeado → `done`; deps se desbloquean. (Fixture o repo real.)
 
-### Fase 2 — DESPACHO ambos modos (story + sprint) desde Settings
+### Fase 2 — DESPACHO ambos modos (story + sprint) desde Settings — ✅ HECHA (2026-07-13, branch `feat/conductor-f2-dispatch`)
+
+**Entregado:** `design/src/dispatch.ts` — kernel PURO del despacho: `candidates()` (story mode + sprint
+goal-mode con gate cross-sprint), `channelFor`/`modelFor` (routing por lane), `storyPrompt`/`sprintPrompt`.
+`reconcileBuild` refactorizado en `worker.ts` para leer `projects.settings` → `Policy` (`execution_unit`,
+`max_concurrency`, `channel`, `lanes`); marca running vía el RPC bypass ANTES de disparar (anti-doble-dispatch)
+y revierte a backlog si el disparo falla; `session_url` → página de runs. 15 tests unitarios + verificación
+LIVE en dry-run contra Idearium (local DB, 20 stories/8 sprints): story mode → las 2 stories sin deps (issues
+1,2); sprint mode → SOLO SP1 (issues 1,2,3 como una unidad goal-mode), SP2–SP8 gated por deps cross-sprint.
+**Nota:** el label `agent:running` lo maneja el propio `claude.yml` (set al arrancar / clear en `always()`),
+así que el despacho NO lo toca; la proyección (F1) lee ese label + `liveRunCount`. **Copilot** aún no cableado
+en el cliente v2 → si una lane pide `copilot`, se avisa y se omite (no se finge). **Pendiente para dispatch
+real:** sembrar `CLAUDE_CODE_OAUTH_TOKEN` en el repo (Settings → Canal); sin el secret el run arranca y muere
+(el pre-check de capacidad `capacityBlock` de v1 es de Fase 5).
+
+
 - Refactor `reconcileBuild` → leer `settings.execution_unit`.
   - **story mode** (lo actual, pero leyendo el modo): un issue → `claude.yml`.
   - **sprint mode**: bundle del sprint entero → un `workflow_dispatch` con prompt goal-mode (`Closes #a, #b, …`), un branch, un PR. Espejar `dispatch.go` Candidates sprint + prompt goal-mode.

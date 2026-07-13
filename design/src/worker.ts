@@ -17,6 +17,7 @@ import { fileURLToPath } from "node:url";
 import { dirname, resolve } from "node:path";
 import { GithubApp, GithubRepo } from "./github.ts";
 import { Projector, type MirroredStory } from "./projection.ts";
+import { candidates, storyPrompt, sprintPrompt, type Policy, type DStory, type DSprint } from "./dispatch.ts";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const mainScript = resolve(here, "main.ts");
@@ -97,14 +98,6 @@ async function reconcileDesign() {
 
 // ── 2) Reconcile BUILD ──────────────────────────────────────────────────────────
 const issueNumOf = (ref: string | null): number | null => { const m = ref?.match(/#(\d+)$/); return m ? Number(m[1]) : null; };
-function buildPrompt(title: string, body: string | null, acceptance: string | null, n: number): string {
-  return [
-    `Implementá el issue #${n} de este repo: "${title}".`,
-    body ? `\n${body}` : "",
-    acceptance ? `\n## Criterios de aceptación\n${acceptance}` : "",
-    `\nLeé los docs de diseño en docs/ para el contexto. Implementá SOLO este issue, con tests. Abrí un PR y poné "Closes #${n}".`,
-  ].join("\n");
-}
 const tokenByOrg = new Map<string, string>();
 const repoTokenFor = async (org: string): Promise<string> => {
   let tok = tokenByOrg.get(org);
@@ -112,17 +105,41 @@ const repoTokenFor = async (org: string): Promise<string> => {
   return tok;
 };
 
+// projectExternalStatus: escritura vía el RPC que bypassa el state machine (Fase 1). La usa la
+// proyección (GitHub = verdad) Y el despacho (marcar running backlog→running directo, como v1
+// SyncExternalStatus). Compartida para no duplicar el shape de la llamada.
+const projectExternalStatus = async (storyId: string, status: string, prUrl: string | null = null, agentLost: string | null = null): Promise<void> => {
+  await rest(`/rpc/project_external_status`, {
+    method: "POST",
+    body: JSON.stringify({ p_story_id: storyId, p_status: status, p_pr_url: prUrl, p_agent_lost: agentLost }),
+  });
+};
+
+// projects.settings → Policy del despacho (Fase 2). Defaults: story mode, canal claude_action,
+// concurrencia = el flag --max si el proyecto no la fija (0 explícito = ilimitado).
+interface Settings {
+  channel?: string;
+  execution_unit?: "sprint" | "story";
+  max_concurrency?: number;
+  lanes?: Record<string, { channel?: string; model?: string }>;
+}
+function policyFrom(settings: Settings): Policy {
+  const modelByLane = new Map<string, string>();
+  const channelByLane = new Map<string, string>();
+  for (const [lane, cfg] of Object.entries(settings.lanes ?? {})) {
+    if (cfg?.model) modelByLane.set(lane, cfg.model);
+    if (cfg?.channel) channelByLane.set(lane, cfg.channel);
+  }
+  return {
+    executionUnit: settings.execution_unit === "sprint" ? "sprint" : "story",
+    channel: settings.channel || "claude_action",
+    maxConcurrency: settings.max_concurrency != null ? settings.max_concurrency : MAX,
+    modelByLane, channelByLane,
+  };
+}
+
 // ── 2a) Reconcile PROYECCIÓN (GitHub = verdad; corre ANTES del despacho) ──────────
-// El writer inyectado en el Projector: el RPC project_external_status (bypass del state machine).
-const projector = new Projector({
-  write: async (storyId, status, prUrl, agentLost) => {
-    await rest(`/rpc/project_external_status`, {
-      method: "POST",
-      body: JSON.stringify({ p_story_id: storyId, p_status: status, p_pr_url: prUrl ?? null, p_agent_lost: agentLost ?? null }),
-    });
-  },
-  log: (m) => console.log(m),
-});
+const projector = new Projector({ write: projectExternalStatus, log: (m) => console.log(m) });
 
 async function reconcileProjection() {
   if (!app) return;
@@ -150,37 +167,68 @@ async function reconcileProjection() {
 
 async function reconcileBuild() {
   if (!app) return; // sin credenciales de la App no hay build
-  const projects = await rest<Array<{ id: string; name: string; org: string | null; repo: string | null }>>(`/projects?select=id,name,org,repo&repo=not.is.null`);
+  const projects = await rest<Array<{ id: string; name: string; org: string | null; repo: string | null; settings: Settings | null }>>(`/projects?select=id,name,org,repo,settings&repo=not.is.null`);
   for (const p of projects) {
     if (!p.repo || !p.org) continue;
-    const stories = await rest<Array<{ key: string; status: string; blocked_by: string[]; external_ref: string | null; title: string; body: string | null; acceptance: string | null }>>(`/stories?project_id=eq.${p.id}&select=key,status,blocked_by,external_ref,title,body,acceptance`);
-    const uuids = await rest<Array<{ id: string; status: string }>>(`/stories?project_id=eq.${p.id}&select=id,status`);
-    const statusByUuid = new Map(uuids.map((r) => [r.id, r.status]));
-    const promoted: string[] = [];
-    for (const s of stories) {
-      if (s.status !== "backlog") continue;
-      if (!(s.blocked_by ?? []).every((u) => statusByUuid.get(u) === "done")) continue;
-      if (!dryRun) await rest(`/stories?project_id=eq.${p.id}&key=eq.${s.key}`, { method: "PATCH", body: JSON.stringify({ status: "ready" }) });
-      promoted.push(s.key);
-    }
-    const running = stories.filter((s) => s.status === "running").length;
-    let slots = Math.max(0, MAX - running);
-    const readyKeys = new Set([...stories.filter((s) => s.status === "ready").map((s) => s.key), ...promoted]);
-    if (slots === 0 || readyKeys.size === 0) continue;
+    const pol = policyFrom(p.settings ?? {});
+
+    // Stories + sprints del proyecto → el shape que el kernel de despacho (dispatch.ts) espera.
+    const rows = await rest<Array<{ id: string; key: string; title: string; lane: string | null; status: string; sprint_id: string | null; blocked_by: string[] | null; external_ref: string | null; body: string | null; acceptance: string | null }>>(
+      `/stories?project_id=eq.${p.id}&select=id,key,title,lane,status,sprint_id,blocked_by,external_ref,body,acceptance`,
+    );
+    const dstories: DStory[] = rows.map((r) => ({
+      id: r.id, key: r.key, title: r.title, lane: r.lane ?? "", status: r.status,
+      sprintId: r.sprint_id, deps: r.blocked_by ?? [], issue: issueNumOf(r.external_ref),
+      body: r.body, acceptance: r.acceptance,
+    }));
+    const sprintRows = await rest<Array<{ id: string; key: string; title: string | null }>>(`/sprints?project_id=eq.${p.id}&select=id,key,title`);
+    const sprintsById = new Map<string, DSprint>(sprintRows.map((s) => [s.id, { id: s.id, key: s.key, title: s.title ?? "" }]));
+
+    const cands = candidates(dstories, sprintsById, pol);
+    if (cands.length === 0) continue;
+
+    // Slots: cuántas stories running podemos SUMAR este tick (una unidad sprint puede pasarse del
+    // cupo, como en v1 — pero ninguna unidad nueva arranca una vez alcanzado). 0 = ilimitado.
+    const inFlight = dstories.filter((s) => s.status === "running").length;
+    let slots = pol.maxConcurrency > 0 ? Math.max(0, pol.maxConcurrency - inFlight) : Infinity;
+    if (slots <= 0) continue;
+
+    const byId = new Map(dstories.map((s) => [s.id, s]));
     let repo: GithubRepo | null = null;
     if (!dryRun) repo = GithubRepo.fromUrl(await repoTokenFor(p.org), p.repo);
-    for (const s of stories) {
-      if (slots === 0) break;
-      if (!readyKeys.has(s.key)) continue;
-      const n = issueNumOf(s.external_ref);
-      if (!n) continue;
-      if (dryRun) { console.log(`[dry] build: ${p.name}/${s.key} → issue #${n}`); slots--; continue; }
+
+    for (const c of cands) {
+      if (slots <= 0) break;
+      const members = c.stories.map((id) => byId.get(id)!).filter(Boolean);
+      if (members.length === 0) continue;
+      const prompt = c.kind === "sprint" ? sprintPrompt(c.title, members) : storyPrompt(members[0]);
+      const issuesCsv = c.issues.join(",");
+
+      // Canal por lane: hoy solo claude_action está cableado en v2 (copilot = permiso pendiente en
+      // el cliente). Respetamos el setting: si pide copilot, se avisa y se omite (no se finge).
+      if (c.channel !== "claude_action") {
+        console.log(`  ⚠ ${p.name}/${c.id}: canal "${c.channel}" no implementado aún en v2 (solo claude_action) — omitido`);
+        continue;
+      }
+      if (dryRun) {
+        console.log(`[dry] build ${pol.executionUnit}: ${p.name}/${c.title} → issues ${issuesCsv} (${members.length} story/s)`);
+        slots -= members.length; continue;
+      }
+
+      // Marcá running ANTES de disparar: la unidad sale del set despachable de inmediato → nunca un
+      // doble-dispatch (doble run pago). Bypass del state machine (backlog→running directo, como v1
+      // SyncExternalStatus); limpia agent_lost al re-despachar. Si el disparo falla, se revierte.
       try {
-        await repo!.dispatchWorkflow("claude.yml", { prompt: buildPrompt(s.title, s.body, s.acceptance, n), issues: String(n) });
-        await rest(`/stories?project_id=eq.${p.id}&key=eq.${s.key}`, { method: "PATCH", body: JSON.stringify({ status: "running" }) });
-        console.log(`▶ build: ${p.name}/${s.key} despachado issue #${n}`);
-        slots--;
-      } catch (e) { console.error(`  build ${p.name}/${s.key} falló: ${e instanceof Error ? e.message : e}`); }
+        for (const m of members) await projectExternalStatus(m.id, "running");
+        await repo!.dispatchWorkflow("claude.yml", { prompt, issues: issuesCsv });
+        const sessionUrl = `${repo!.htmlUrl}/actions/workflows/claude.yml`;
+        for (const m of members) await rest(`/stories?id=eq.${m.id}`, { method: "PATCH", body: JSON.stringify({ session_url: sessionUrl }) });
+        console.log(`▶ build ${pol.executionUnit}: ${p.name}/${c.title} despachado (issues ${issuesCsv})`);
+        slots -= members.length;
+      } catch (e) {
+        console.error(`  build ${p.name}/${c.id} falló: ${e instanceof Error ? e.message : e} — revirtiendo a backlog`);
+        for (const m of members) { try { await projectExternalStatus(m.id, "backlog"); } catch { /* best-effort */ } }
+      }
     }
   }
 }
