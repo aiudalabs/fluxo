@@ -85,7 +85,10 @@ export default function Studio() {
 
   useEffect(() => {
     let cancelled = false;
-    (async () => {
+    // Cargar SIEMPRE el run MÁS RECIENTE + sus fases/gates, y RE-CARGAR entero en cada cambio
+    // Realtime. Así el Studio muestra UN SOLO run (el último) — sin acumular fases de runs
+    // viejos y manejando bien los deletes (el bug de "varios árboles").
+    const load = async () => {
       const { data: runs, error: rErr } = await supabase
         .from("design_runs").select("*").eq("project_id", projectId)
         .order("created_at", { ascending: false }).limit(1);
@@ -105,18 +108,18 @@ export default function Studio() {
         setVersions(((ev as { id: number; payload: Record<string, string>; ts: string }[]) ?? []).map((e) => ({
           id: e.id, path: e.payload.path ?? "", message: e.payload.message ?? "", content: e.payload.content ?? "", ts: e.ts,
         })));
+      } else {
+        setPhases([]); setGates([]); setVersions([]);
       }
       setStatus("ready");
-    })();
+    };
+    void load();
 
     const channel = supabase
       .channel(`studio:${projectId}`)
-      .on("postgres_changes", { event: "*", schema: "public", table: "design_runs", filter: `project_id=eq.${projectId}` },
-        (p) => { if (p.eventType !== "DELETE") setRun(p.new as Run); })
-      .on("postgres_changes", { event: "*", schema: "public", table: "design_phases", filter: `project_id=eq.${projectId}` },
-        (p) => { if (p.eventType !== "DELETE") upsertBy(setPhases, p.new as Phase); })
-      .on("postgres_changes", { event: "*", schema: "public", table: "design_gates", filter: `project_id=eq.${projectId}` },
-        (p) => { if (p.eventType !== "DELETE") upsertBy(setGates, p.new as Gate); })
+      .on("postgres_changes", { event: "*", schema: "public", table: "design_runs", filter: `project_id=eq.${projectId}` }, () => void load())
+      .on("postgres_changes", { event: "*", schema: "public", table: "design_phases", filter: `project_id=eq.${projectId}` }, () => void load())
+      .on("postgres_changes", { event: "*", schema: "public", table: "design_gates", filter: `project_id=eq.${projectId}` }, () => void load())
       .subscribe();
     return () => { cancelled = true; void supabase.removeChannel(channel); };
   }, [projectId, supabase]);
@@ -200,7 +203,11 @@ export default function Studio() {
             <div className="rail-sec">
               <div className="rail-h">{t("studio.docs.phasesSec")}</div>
               {phases.map((p, i) => {
-                const st = phaseState(p.status);
+                // Si la fase tiene un gate PENDIENTE, está ESPERANDO tu aprobación — no
+                // "aprobada" (el agente terminó pero vos todavía no diste el ok). Fix del
+                // bug "se ve ✓ arriba antes de aprobar abajo".
+                const hasPendingGate = gates.some((g) => g.phase_id === p.phase_id && g.status === "pending");
+                const st = hasPendingGate ? "awaiting" : phaseState(p.status);
                 return (
                   <button key={p.phase_id} className={`v-phase v-${st}${selPhase === i ? " on" : ""}`} onClick={() => pickPhase(i)} title={p.label}>
                     <span className="v-g">{PHASE_ICON[st]}</span>
