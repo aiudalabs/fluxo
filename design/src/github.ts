@@ -119,6 +119,27 @@ export class GithubRepo {
     if (!res.ok) throw new Error(`PUT contents/${path} → ${res.status} ${await res.text()}`);
   }
 
+  // ensureLabel: crea el label con su color (Issues:write, idempotente). Si ya existe (422),
+  // hace PATCH para fijar color/description → re-exportar recolorea labels viejos gris-default.
+  async ensureLabel(name: string, color: string, description = ""): Promise<void> {
+    const post = await fetch(`${API}/repos/${this.owner}/${this.repo}/labels`, {
+      method: "POST",
+      headers: H(this.token),
+      body: JSON.stringify({ name, color, description }),
+    });
+    if (post.ok) return;
+    if (post.status === 422) {
+      const patch = await fetch(`${API}/repos/${this.owner}/${this.repo}/labels/${encodeURIComponent(name)}`, {
+        method: "PATCH",
+        headers: H(this.token),
+        body: JSON.stringify({ color, description }),
+      });
+      if (!patch.ok) throw new Error(`PATCH label ${name} → ${patch.status} ${await patch.text()}`);
+      return;
+    }
+    throw new Error(`POST label ${name} → ${post.status} ${await post.text()}`);
+  }
+
   // createIssue: (Issues:write). Devuelve número + url.
   async createIssue(title: string, body: string, labels: string[]): Promise<{ number: number; html_url: string }> {
     const res = await fetch(`${API}/repos/${this.owner}/${this.repo}/issues`, {

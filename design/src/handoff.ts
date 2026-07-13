@@ -12,6 +12,7 @@ import yaml from "js-yaml";
 import type { HandoffExecutor } from "./engine.ts";
 import type { SupabaseDesignStore, SprintSeed, StorySeed } from "./supabase.ts";
 import { GithubApp, GithubRepo } from "./github.ts";
+import { labelSpecsFor } from "./labels.ts";
 
 interface RawBacklog {
   epic?: { id?: string; title?: string; description?: string };
@@ -93,14 +94,23 @@ async function publishToGithub(store: SupabaseDesignStore, workdir: string, gh: 
     await repo.putFile(f.path, f.content, `scaffold: ${f.path}`);
   }
   await store.setProjectRepo(repo.htmlUrl);
+  // Pass 0 — labels de colores (sprint / lane / épica), deduplicados. Se ven de un vistazo en
+  // GitHub: cada sprint y cada lane su color. Idempotente (recolorea labels viejos gris).
+  const specs = new Map<string, { color: string; description: string }>();
+  for (const st of stories) for (const s of labelSpecsFor(st)) if (!specs.has(s.name)) specs.set(s.name, { color: s.color, description: s.description });
+  for (const [name, { color, description }] of specs) {
+    try { await repo.ensureLabel(name, color, description); } catch (e) { console.error(`  ⚠ label ${name}: ${e instanceof Error ? e.message : e}`); }
+  }
+  // Pass 1 — issues, etiquetados con los mismos nombres de label.
   let issues = 0;
   for (const st of stories) {
-    const { number } = await repo.createIssue(`[${st.key}] ${st.title}`, issueBody(st), [st.lane, st.sprint].filter((x): x is string => !!x));
+    const labels = labelSpecsFor(st).map((s) => s.name);
+    const { number } = await repo.createIssue(`[${st.key}] ${st.title}`, issueBody(st), labels);
     await store.setStoryRef(st.key, `github:${repo.owner}/${repo.repo}#${number}`, repo.htmlUrl);
     issues++;
   }
-  await store.brainAppend("repo_created", { repo: repo.htmlUrl, issues }, "engine:handoff");
-  console.log(`  ↪ GitHub: repo ${repo.htmlUrl} + ${issues} issues`);
+  await store.brainAppend("repo_created", { repo: repo.htmlUrl, issues, labels: specs.size }, "engine:handoff");
+  console.log(`  ↪ GitHub: repo ${repo.htmlUrl} + ${issues} issues + ${specs.size} labels`);
 }
 
 // makeHandoff: el HandoffExecutor completo. Publica al board SIEMPRE (Supabase); si se pasa
