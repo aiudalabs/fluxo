@@ -32,8 +32,9 @@ export async function GET(req: NextRequest) {
     const gh = await fetchGithubUser(tok.access_token);
     const { userId, tenantId } = await upsertUser(gh, tok);
     const session = mintSessionJwt(tenantId, userId);
+    // → onboarding (conectar/instalar); si el usuario ya está seteado, esa pantalla lo salta.
     // Fragment: no llega al server (ni a sus logs). El cliente lo levanta y lo guarda.
-    const res = NextResponse.redirect(`${origin}/#gh_session=${session}&login=${encodeURIComponent(gh.login)}`);
+    const res = NextResponse.redirect(`${origin}/onboarding#gh_session=${session}&login=${encodeURIComponent(gh.login)}`);
     res.cookies.delete("gh_oauth_state");
     return res;
   } catch (e) {

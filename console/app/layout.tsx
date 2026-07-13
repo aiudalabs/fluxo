@@ -14,6 +14,8 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html lang="es">
       <head>
+        {/* Anti-flash: aplica el tema guardado antes del primer paint (Fluxo default light). */}
+        <script dangerouslySetInnerHTML={{ __html: `try{if(localStorage.getItem('fluxo_theme')==='dark')document.documentElement.setAttribute('data-theme','dark')}catch(e){}` }} />
         <link rel="preconnect" href="https://api.fontshare.com" crossOrigin="" />
         <link href="https://api.fontshare.com/v2/css?f[]=satoshi@400,500,700,900&display=swap" rel="stylesheet" />
         <link rel="preconnect" href="https://fonts.googleapis.com" />

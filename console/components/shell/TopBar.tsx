@@ -9,6 +9,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { browserClient, sessionToken, clearSession } from "@/lib/supabaseClient";
 import { LanguageSwitcher } from "@/components/LanguageSwitcher";
+import { ThemeToggle } from "@/components/shell/ThemeToggle";
 
 type Proj = { id: string; name: string; org: string | null };
 
@@ -57,12 +58,13 @@ export function TopBar({ currentProjectId }: { currentProjectId?: string }) {
           ))}
           <div className="sh-mdiv" />
           <Link className="sh-mi" href="/projects" onClick={() => setOpen(null)}><span className="grow">Ver todos los proyectos</span><span className="mini">⤢</span></Link>
-          <Link className="sh-mi new" href="/" onClick={() => setOpen(null)}>＋ Nuevo proyecto</Link>
+          <Link className="sh-mi new" href="/new" onClick={() => setOpen(null)}>＋ Nuevo proyecto</Link>
         </div>
       </div>
 
       <div className="sh-sp" />
       <div className="sh-spend" title="Gasto de hoy (próximamente)">◷ Hoy <b>$0.00</b></div>
+      <ThemeToggle />
       <LanguageSwitcher />
 
       <div className="sh-switcher">
@@ -75,7 +77,7 @@ export function TopBar({ currentProjectId }: { currentProjectId?: string }) {
           {installUrl && <a className="sh-mi" href={installUrl} target="_blank" rel="noreferrer"><span className="grow">⬇ Instalar App en otra org</span></a>}
           {login && <>
             <div className="sh-mdiv" />
-            <button className="sh-mi" onClick={() => { clearSession(); window.location.href = "/"; }}><span className="grow">↪ Cerrar sesión</span></button>
+            <button className="sh-mi" onClick={() => { clearSession(); window.location.href = "/login"; }}><span className="grow">↪ Cerrar sesión</span></button>
           </>}
         </div>
       </div>

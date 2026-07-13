@@ -62,19 +62,19 @@ export default function ProjectsPage() {
             <h1>Tus proyectos</h1>
           </div>
           <span className="sub">{active} activos{gatesWaiting > 0 ? ` · ${gatesWaiting} esperando tu decisión` : ""}</span>
-          <Link href="/" className="dash-cta">＋ Nuevo proyecto</Link>
+          <Link href="/new" className="dash-cta">＋ Nuevo proyecto</Link>
         </div>
 
         {loading ? (
           <p style={{ color: "var(--ink4)" }}>Cargando…</p>
         ) : projects.length === 0 ? (
           <div className="pcard newp" style={{ maxWidth: 340 }}>
-            <Link href="/" style={{ textDecoration: "none", color: "inherit" }}>＋ Creá tu primer proyecto</Link>
+            <Link href="/new" style={{ textDecoration: "none", color: "inherit" }}>＋ Creá tu primer proyecto</Link>
           </div>
         ) : (
           <div className="dash-grid">
             {projects.map((p) => <Card key={p.id} p={p} st={stats.get(p.id)} designing={designing.has(p.id)} gate={gated.has(p.id)} />)}
-            <Link href="/" className="pcard newp">＋ Nuevo proyecto</Link>
+            <Link href="/new" className="pcard newp">＋ Nuevo proyecto</Link>
           </div>
         )}
       </div>
