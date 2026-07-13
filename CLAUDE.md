@@ -12,6 +12,25 @@ LATAM**. Este repo es el **rebuild v2** — un sustrato nuevo que reemplaza al k
 
 ---
 
+## ▶ PRÓXIMA SESIÓN — correr el E2E del conductor (pedido explícito del usuario, 2026-07-13)
+
+El **port del conductor F1–F4 ya está en `main`** (proyección + despacho story/sprint + reviewer scaffold +
+auto-merge gated; commit 47a647e). **El loop nunca se corrió end-to-end de verdad** — solo unit tests (94/94).
+La tarea pedida para una sesión con contexto limpio: **ejecutar el E2E real y verlo funcionar.**
+
+1. **LEÉ `docs/E2E-conductor.md`** — es el runbook paso a paso (prerrequisitos, comandos, qué observar,
+   criterios de éxito, rollback). NO es un test Playwright (v2 no tiene harness de browser); es una corrida
+   real del worker observada vía `gh`/API/DB + el board.
+2. Contexto del port: `docs/PLAN-conductor-port.md` (spec + mapa de v1). Decisiones: `~/.devtrace/decisions/fluxo.md`.
+3. **Requiere acciones del usuario** (pediles antes de arrancar): sembrar el `CLAUDE_CODE_OAUTH_TOKEN` ROTADO en
+   Settings → Canal de build de Idearium, y OK para escribir a su repo (`nmlemus/idearium`) en el re-scaffold.
+4. ⚠️ **Cuesta plata** (dispara un agente Claude real en las Actions del repo con el token del usuario) → empezá
+   con UNA story (story-mode, sin deps) antes de sprint-mode / auto-merge.
+5. Pendiente además: Fase 5 (workflow_approval `auto_if_safe` + guard docs-on-main) y Fase 6 (UI: botón de
+   despacho manual + monitor Agentes). El E2E va PRIMERO — valida lo que ya está en main.
+
+---
+
 ## La tesis (por qué v2 existe)
 
 v1 construyó su propio sustrato (store SQLite, conductor serial, aislamiento a mano, minting de tokens, canales
