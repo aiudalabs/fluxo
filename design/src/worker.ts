@@ -16,6 +16,7 @@ import { spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { dirname, resolve } from "node:path";
 import { GithubApp, GithubRepo } from "./github.ts";
+import { Projector, type MirroredStory } from "./projection.ts";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const mainScript = resolve(here, "main.ts");
@@ -105,6 +106,48 @@ function buildPrompt(title: string, body: string | null, acceptance: string | nu
   ].join("\n");
 }
 const tokenByOrg = new Map<string, string>();
+const repoTokenFor = async (org: string): Promise<string> => {
+  let tok = tokenByOrg.get(org);
+  if (!tok) { tok = await app!.installationToken(org); tokenByOrg.set(org, tok); }
+  return tok;
+};
+
+// ── 2a) Reconcile PROYECCIÓN (GitHub = verdad; corre ANTES del despacho) ──────────
+// El writer inyectado en el Projector: el RPC project_external_status (bypass del state machine).
+const projector = new Projector({
+  write: async (storyId, status, prUrl, agentLost) => {
+    await rest(`/rpc/project_external_status`, {
+      method: "POST",
+      body: JSON.stringify({ p_story_id: storyId, p_status: status, p_pr_url: prUrl ?? null, p_agent_lost: agentLost ?? null }),
+    });
+  },
+  log: (m) => console.log(m),
+});
+
+async function reconcileProjection() {
+  if (!app) return;
+  const projects = await rest<Array<{ id: string; name: string; org: string | null; repo: string | null }>>(`/projects?select=id,name,org,repo&repo=not.is.null`);
+  for (const p of projects) {
+    if (!p.repo || !p.org) continue;
+    const rows = await rest<Array<{ id: string; key: string; status: string; external_ref: string | null; pr_url: string | null }>>(
+      `/stories?project_id=eq.${p.id}&select=id,key,status,external_ref,pr_url`,
+    );
+    const mirrored: MirroredStory[] = [];
+    for (const r of rows) {
+      const issue = issueNumOf(r.external_ref);
+      if (!issue) continue; // no espejada en GitHub → no la proyecta
+      mirrored.push({ id: r.id, key: r.key, status: r.status, issue, prUrl: r.pr_url });
+    }
+    if (mirrored.length === 0) continue;
+    if (dryRun) { console.log(`[dry] proyección: ${p.name} (${mirrored.length} stories espejadas)`); continue; }
+    try {
+      const repo = GithubRepo.fromUrl(await repoTokenFor(p.org), p.repo);
+      const { changes } = await projector.syncProject(repo, mirrored);
+      if (changes.length) console.log(`⟳ proyección ${p.name}: ${changes.length} cambio(s)`);
+    } catch (e) { console.error(`  proyección ${p.name} falló: ${e instanceof Error ? e.message : e}`); }
+  }
+}
+
 async function reconcileBuild() {
   if (!app) return; // sin credenciales de la App no hay build
   const projects = await rest<Array<{ id: string; name: string; org: string | null; repo: string | null }>>(`/projects?select=id,name,org,repo&repo=not.is.null`);
@@ -125,10 +168,7 @@ async function reconcileBuild() {
     const readyKeys = new Set([...stories.filter((s) => s.status === "ready").map((s) => s.key), ...promoted]);
     if (slots === 0 || readyKeys.size === 0) continue;
     let repo: GithubRepo | null = null;
-    if (!dryRun) {
-      let tok = tokenByOrg.get(p.org); if (!tok) { tok = await app.installationToken(p.org); tokenByOrg.set(p.org, tok); }
-      repo = GithubRepo.fromUrl(tok, p.repo);
-    }
+    if (!dryRun) repo = GithubRepo.fromUrl(await repoTokenFor(p.org), p.repo);
     for (const s of stories) {
       if (slots === 0) break;
       if (!readyKeys.has(s.key)) continue;
@@ -147,7 +187,11 @@ async function reconcileBuild() {
 
 async function tick() {
   try { await reconcileDesign(); } catch (e) { console.error("reconcileDesign:", e instanceof Error ? e.message : e); }
-  if (!noBuild) { try { await reconcileBuild(); } catch (e) { console.error("reconcileBuild:", e instanceof Error ? e.message : e); } }
+  if (!noBuild) {
+    // Orden del conductor de v1: PROYECTAR (GitHub = verdad) antes de DESPACHAR.
+    try { await reconcileProjection(); } catch (e) { console.error("reconcileProjection:", e instanceof Error ? e.message : e); }
+    try { await reconcileBuild(); } catch (e) { console.error("reconcileBuild:", e instanceof Error ? e.message : e); }
+  }
 }
 
 console.log(`⚙  worker Fluxo · tick ${intervalMs / 1000}s · workflow=${workflow} · build=${!noBuild && !!app ? "on" : "off"}${dryRun ? " · DRY-RUN" : ""}`);

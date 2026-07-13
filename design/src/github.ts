@@ -151,4 +151,64 @@ export class GithubRepo {
     const r = (await res.json()) as { number: number; html_url: string };
     return { number: r.number, html_url: r.html_url };
   }
+
+  // ── Lectura para la PROYECCIÓN (GhSource) ───────────────────────────────────
+  // Pagina hasta agotar (cap defensivo de 10 páginas × 100 = 1000). El endpoint de issues
+  // devuelve también los PRs (tienen `pull_request`); los filtramos.
+  private async paginate<T>(path: string): Promise<T[]> {
+    const out: T[] = [];
+    for (let page = 1; page <= 10; page++) {
+      const res = await fetch(`${API}/repos/${this.owner}/${this.repo}/${path}&per_page=100&page=${page}`, { headers: H(this.token) });
+      if (!res.ok) throw new Error(`GET ${path} → ${res.status} ${await res.text()}`);
+      const batch = (await res.json()) as T[];
+      out.push(...batch);
+      if (batch.length < 100) break;
+    }
+    return out;
+  }
+
+  // listIssues: estado de cada issue (open/closed) + asignados + labels. Excluye PRs.
+  async listIssues(): Promise<import("./projection.ts").GhIssue[]> {
+    type Raw = { number: number; state: "open" | "closed"; pull_request?: unknown; assignees?: Array<{ login: string }>; labels?: Array<{ name: string } | string> };
+    const raw = await this.paginate<Raw>("issues?state=all");
+    return raw
+      .filter((i) => !i.pull_request)
+      .map((i) => ({
+        number: i.number,
+        state: i.state,
+        assignees: (i.assignees ?? []).map((a) => a.login),
+        labels: (i.labels ?? []).map((l) => (typeof l === "string" ? l : l.name)),
+      }));
+  }
+
+  // listPulls: PRs con draft/merged + los issues que cierran (parseados del body).
+  async listPulls(): Promise<import("./projection.ts").GhPr[]> {
+    type Raw = { number: number; state: "open" | "closed"; draft?: boolean; merged_at?: string | null; body?: string | null; html_url: string };
+    const raw = await this.paginate<Raw>("pulls?state=all");
+    const { parseIssueRefs } = await import("./projection.ts");
+    return raw.map((p) => {
+      const refs = parseIssueRefs(p.body ?? "");
+      return {
+        number: p.number,
+        state: p.state,
+        draft: Boolean(p.draft),
+        merged: Boolean(p.merged_at),
+        url: p.html_url,
+        closes: refs.closes,
+        mentions: refs.mentions,
+      };
+    });
+  }
+
+  // liveRunCount: cantidad de workflow runs vivos (queued|in_progress) en el repo. Es la señal
+  // "hay un agente trabajando" que evita marcar agent_lost prematuramente durante el trabajo real.
+  async liveRunCount(): Promise<number> {
+    let total = 0;
+    for (const status of ["queued", "in_progress"]) {
+      const res = await fetch(`${API}/repos/${this.owner}/${this.repo}/actions/runs?status=${status}&per_page=1`, { headers: H(this.token) });
+      if (!res.ok) throw new Error(`GET actions/runs?status=${status} → ${res.status} ${await res.text()}`);
+      total += ((await res.json()) as { total_count?: number }).total_count ?? 0;
+    }
+    return total;
+  }
 }

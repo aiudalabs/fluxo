@@ -109,7 +109,18 @@ backlog → `Candidates` (sprint sin deps cross-sprint) → `Dispatch` (`fireCha
 
 > Todo en el worker TS (`design/src/`) + scaffold en `registry/templates/`. Poll (tick del worker) primero; webhooks después. Los knobs salen de `projects.settings`.
 
-### Fase 1 — PROYECCIÓN (la piedra angular; sin esto nada avanza)
+### Fase 1 — PROYECCIÓN (la piedra angular; sin esto nada avanza) — ✅ HECHA (2026-07-13, branch `feat/conductor-f1-projection`)
+
+**Entregado:** `design/src/projection.ts` (`derive` puro + `Projector` con histéresis), lectura GitHub en
+`design/src/github.ts` (`listIssues`/`listPulls`/`liveRunCount`), migración
+`20260713150000_project_external_status.sql` (RPC `project_external_status` SECURITY DEFINER + GUC
+transaction-local `fluxo.external_sync` que bypassa el trigger SOLO para service_role), y el paso
+`reconcileProjection` cableado ANTES de `reconcileBuild` en el tick del worker. 19 tests unitarios +
+verificación funcional en Postgres local (trigger intacto para el tenant, bypass no fuga entre txns).
+**Decisión resuelta:** bypass = RPC dedicado (no relajar el trigger). **Histéresis:** agent_lost solo tras
+N=8 ticks sin PR/asignado/label Y con `liveRunCount==0` (evita el flap durante el trabajo real del agente).
+
+
 - **Nuevo** `design/src/projection.ts`: `syncProject(repo, stories)` que lee issues+PRs de GitHub (installation token, `GithubRepo`), liga por `external_ref` (`github:owner/repo#N`) + `Closes #N` / mención de ID, y deriva `running / review / done / backlog` (espejar `projection.go:494-542`).
 - Escribir con un `syncExternalStatus` que **bypassa el trigger** del state machine (equivalente a `SyncExternalStatus`): probablemente un RPC `SECURITY DEFINER` o un update service_role que el trigger permita para transiciones GitHub. **DECISIÓN**: cómo bypassar el trigger limpio (RPC dedicado `project_external_status(story, status, pr_url)`).
 - Recuperación: label `agent:running` stale (contador N ticks) → backlog + nota `agent_lost` (v2 ya tiene `agentLost.ts` en console + campo `agent_lost`).
