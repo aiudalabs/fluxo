@@ -94,21 +94,34 @@ export async function fetchGithubUser(token: string): Promise<GithubUser> {
   return (await res.json()) as GithubUser;
 }
 
-// Owners: las orgs donde el usuario puede crear repos — primero DONDE está instalada la App
-// (fuente autoritativa), unido a sus orgs, con el login personal primero.
-export async function fetchOwners(token: string): Promise<string[]> {
-  const H = { Authorization: `token ${token}`, Accept: "application/vnd.github+json", "User-Agent": "fluxo" };
-  const j = async (u: string) => { const r = await fetch(u, { headers: H }); return r.ok ? r.json() : null; };
-  const [me, insts, orgs] = await Promise.all([
-    j("https://api.github.com/user"),
-    j("https://api.github.com/user/installations"),
-    j("https://api.github.com/user/orgs"),
-  ]);
-  const set = new Set<string>();
-  if (me?.login) set.add(me.login as string);
-  for (const i of (insts?.installations ?? []) as Array<{ account?: { login?: string } }>) if (i.account?.login) set.add(i.account.login);
-  for (const o of (orgs ?? []) as Array<{ login?: string }>) if (o.login) set.add(o.login);
-  return [...set];
+// Installation: una cuenta/org DONDE la Fluxo App está instalada = exactamente donde el
+// usuario puede crear repos (personal u org). Es la fuente AUTORITATIVA — no `user/orgs`,
+// que lista orgs SIN la App (ahí la creación de repo falla con 403). El personal (type User)
+// va primero. Lección cara (Idearium): crear un repo requiere la App instalada en la cuenta.
+export interface Installation {
+  login: string;
+  type: "User" | "Organization";
+  avatarUrl: string;
+}
+
+export async function fetchInstallations(token: string): Promise<Installation[]> {
+  const res = await fetch("https://api.github.com/user/installations", {
+    headers: { Authorization: `token ${token}`, Accept: "application/vnd.github+json", "User-Agent": "fluxo" },
+  });
+  if (!res.ok) return [];
+  const data = (await res.json()) as { installations?: Array<{ account?: { login?: string; type?: string; avatar_url?: string } }> };
+  const list = (data.installations ?? [])
+    .filter((i): i is { account: { login: string; type?: string; avatar_url?: string } } => !!i.account?.login)
+    .map((i) => ({ login: i.account.login, type: (i.account.type === "User" ? "User" : "Organization") as Installation["type"], avatarUrl: i.account.avatar_url ?? "" }));
+  // Personal (type User) primero — la cuenta por defecto para la mayoría de los usuarios.
+  return list.sort((a, b) => (a.type === b.type ? 0 : a.type === "User" ? -1 : 1));
+}
+
+// ownerHasInstallation: gate autoritativo del server — ¿la App está instalada en `owner`?
+// Re-consulta GitHub (no confía en el body del cliente) antes de dejar crear un proyecto ahí.
+export async function ownerHasInstallation(token: string, owner: string): Promise<boolean> {
+  const insts = await fetchInstallations(token);
+  return insts.some((i) => i.login.toLowerCase() === owner.toLowerCase());
 }
 
 // upsertUser: liga la identidad GitHub a un app_user (por gh_id) y guarda sus tokens.

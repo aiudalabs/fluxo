@@ -6,6 +6,7 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import { browserClient, sessionToken } from "@/lib/supabaseClient";
 import { ThemeToggle } from "@/components/shell/ThemeToggle";
 
@@ -14,7 +15,8 @@ export default function OnboardingPage() {
   const [step, setStep] = useState<1 | 2>(1);
   const [login, setLogin] = useState<string | null>(null);
   const [installUrl, setInstallUrl] = useState("");
-  const [orgs, setOrgs] = useState<string[]>([]);
+  // Cuentas/orgs DONDE la App está instalada (autoritativo). Solo ahí se puede crear.
+  const [orgs, setOrgs] = useState<Array<{ login: string; type: string }>>([]);
 
   useEffect(() => {
     const s = sessionToken();
@@ -24,7 +26,10 @@ export default function OnboardingPage() {
       .then(({ data }) => { if (data && data.length > 0) router.replace("/projects"); });
     const headers = { Authorization: `Bearer ${s}` };
     void fetch("/auth/github/status", { headers }).then((r) => r.json()).then((d) => { setLogin(d.login ?? null); setInstallUrl(d.installUrl ?? ""); }).catch(() => {});
-    void fetch("/api/github/orgs", { headers }).then((r) => r.json()).then((d) => setOrgs(Array.isArray(d.orgs) ? d.orgs : [])).catch(() => {});
+    void fetch("/api/github/installations", { headers }).then((r) => r.json()).then((d) => {
+      if (Array.isArray(d.installations)) setOrgs(d.installations);
+      if (d.installUrl) setInstallUrl(d.installUrl);
+    }).catch(() => {});
   }, [router]);
 
   return (
@@ -40,12 +45,12 @@ export default function OnboardingPage() {
             <div className="ob-eye">Paso 2 · Conectar GitHub</div>
             <h1>¿Dónde va a trabajar Fluxo?</h1>
             <p className="ob-lead">Fluxo trabaja <b>dentro de tus repos</b>: crea el repo del proyecto, abre PRs y corre el build. Elegí la organización.</p>
-            {orgs.length === 0 && <p className="ob-fine" style={{ marginBottom: 12 }}>Cargando tus organizaciones…</p>}
-            {orgs.map((o, i) => (
-              <button key={o} className="ob-org" onClick={() => setStep(2)}>
-                <span className="av">{o.slice(0, 1).toUpperCase()}</span>
-                <span className="n">{o}</span>
-                <span className={`st ${i === 0 ? "ok" : ""}`}>{i === 0 ? "✓ lista" : "usar"}</span>
+            {orgs.length === 0 && <p className="ob-fine" style={{ marginBottom: 12 }}>Aún no detectamos la app instalada en ninguna cuenta. Instalala abajo 👇</p>}
+            {orgs.map((o) => (
+              <button key={o.login} className="ob-org" onClick={() => setStep(2)}>
+                <span className="av">{o.login.slice(0, 1).toUpperCase()}</span>
+                <span className="n">{o.login}{o.type === "User" ? " (personal)" : ""}</span>
+                <span className="st ok">✓ lista</span>
               </button>
             ))}
             {installUrl && (
@@ -63,8 +68,8 @@ export default function OnboardingPage() {
             <div className="ob-check ok"><span className="ic">✓</span><div className="t"><b>GitHub conectado</b><span>{login ?? "—"} · {orgs.length} organización(es)</span></div></div>
             <div className="ob-check ok"><span className="ic">✓</span><div className="t"><b>La App puede crear repos, issues y PRs</b><span>en las orgs donde la instalaste</span></div></div>
             <div className="ob-check pend"><span className="ic">!</span><div className="t"><b>Canal de build · Claude / Copilot</b><span>opcional — se configura por proyecto, cuando lo necesites</span></div></div>
-            <a className="ob-pri" href="/" style={{ marginTop: 8 }}>Ir a mis proyectos →</a>
-            <a className="ob-ghost" href="/">Lo configuro después</a>
+            <Link className="ob-pri" href="/" style={{ marginTop: 8 }}>Ir a mis proyectos →</Link>
+            <Link className="ob-ghost" href="/">Lo configuro después</Link>
           </div>
         )}
       </div>
