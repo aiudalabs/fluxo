@@ -15,6 +15,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { browserClient, activeToken } from "./supabaseClient";
 import { useLocale } from "./locale";
+import { TopBar } from "@/components/shell/TopBar";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 export type ProjectMeta = { id: string; name: string; description: string | null; org: string | null; repo: string | null };
@@ -27,13 +28,20 @@ export function useProject(): ProjectCtx {
   return ctx;
 }
 
-const FEATURES = ["overview", "studio", "board", "flow", "brain"] as const;
+const FEATURES: { key: string; icon: string }[] = [
+  { key: "overview", icon: "◇" },
+  { key: "studio", icon: "✎" },
+  { key: "board", icon: "▤" },
+  { key: "flow", icon: "⟳" },
+  { key: "brain", icon: "◈" },
+];
 
 export function ProjectShell({ projectId, children }: { projectId: string; children: React.ReactNode }) {
   const { t } = useLocale();
   const pathname = usePathname();
   const supabase = useMemo(() => browserClient(), []);
   const [project, setProject] = useState<ProjectMeta | null>(null);
+  const [collapsed, setCollapsed] = useState(false);
 
   // Arm the tenant token on the realtime socket once for the whole project context. The
   // feature views subscribe through the same client, so their streams are tenant-scoped.
@@ -52,26 +60,29 @@ export function ProjectShell({ projectId, children }: { projectId: string; child
 
   return (
     <Ctx.Provider value={{ projectId, supabase, project }}>
-      <header style={{ display: "flex", alignItems: "center", gap: 16, padding: "0 20px", borderBottom: "1px solid var(--stroke)", background: "#fff", position: "sticky", top: 0, zIndex: 20 }}>
-        <Link href="/projects" style={{ fontSize: 13, color: "var(--ink4)", textDecoration: "none" }}>← {t("nav.projects")}</Link>
-        <span style={{ fontSize: 13, fontWeight: 700, color: "var(--ink)" }}>{project?.name ?? `${projectId.slice(0, 8)}…`}</span>
-        <nav style={{ display: "flex", gap: 4, marginLeft: 12 }}>
+      <TopBar currentProjectId={projectId} />
+      <div className={`sh-shell${collapsed ? " collapsed" : ""}`}>
+        <aside className="sh-rail">
+          <div className="sh-rail-h">Proyecto</div>
           {FEATURES.map((f) => {
-            const href = `/projects/${projectId}/${f}`;
+            const href = `/projects/${projectId}/${f.key}`;
             const active = pathname === href;
             return (
-              <Link key={f} href={href} style={{
-                fontSize: 14, fontWeight: 600, padding: "18px 12px", textDecoration: "none",
-                color: active ? "var(--ink)" : "var(--ink4)",
-                borderBottom: `2px solid ${active ? "var(--accent)" : "transparent"}`, marginBottom: -1,
-              }}>
-                {t(`nav.${f}`)}
+              <Link key={f.key} href={href} className={`sh-nav${active ? " on" : ""}`} title={t(`nav.${f.key}`)}>
+                <span className="ic">{f.icon}</span>
+                <span className="lb">{t(`nav.${f.key}`)}</span>
               </Link>
             );
           })}
-        </nav>
-      </header>
-      <main>{children}</main>
+          <button className="sh-nav" style={{ marginTop: 8 }} onClick={() => setCollapsed((c) => !c)} title="Colapsar">
+            <span className="ic">⇤</span><span className="lb">Colapsar</span>
+          </button>
+          {project?.repo && (
+            <div className="sh-rail-foot">Repo: <a href={project.repo} target="_blank" rel="noreferrer" style={{ color: "var(--ink3)" }}>{project.repo.replace(/^https?:\/\/github\.com\//, "")}</a></div>
+          )}
+        </aside>
+        <main>{children}</main>
+      </div>
     </Ctx.Provider>
   );
 }
