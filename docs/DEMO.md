@@ -13,21 +13,19 @@ supabase db reset              # aplica migraciones (OJO: borra datos; re-seedea
 ```
 El `.env` en la raíz ya tiene: `SUPABASE_*`, `CLAUDE_CODE_OAUTH_TOKEN`, y la GitHub App.
 
-## 1. Prender el trigger automático (workflow lean para el demo)
-En otra terminal:
+## 1. Correr Fluxo (console + WORKER)
+El **worker** es lo que hace que "crear proyecto → arranca el diseño" funcione. Sin él, un
+proyecto nuevo queda inerte. La forma correcta de correr Fluxo local levanta ambos:
 ```bash
 cd ~/projects/genai/fluxo
-set -a; source .env; set +a
-# override a Supabase local por si el .env apunta a prod:
-export SUPABASE_URL=http://127.0.0.1:54321
-export SUPABASE_ANON_KEY="$(supabase status | awk '/anon key/{print $NF}')"
-export SUPABASE_SERVICE_ROLE_KEY="$(supabase status | awk '/service_role key/{print $NF}')"
-export SUPABASE_JWT_SECRET="$(supabase status | awk '/JWT secret/{print $NF}')"
-
-node --experimental-strip-types design/src/watch.ts --workflow=demo-design
+WORKFLOW=demo-design ./scripts/dev.sh    # console (:3000) + worker, workflow lean (demo)
+# ./scripts/dev.sh                        # workflow de diseño completo (8 fases)
 ```
-El poller queda escuchando. `demo-design` = 3 fases (Descubrimiento → PRD → Backlog) y 3
-gates — ágil para demo. (Sin `--workflow` usa `design`, el completo de 8 fases.)
+`demo-design` = 3 fases (Descubrimiento → PRD → Backlog) y 3 gates — ágil/barato para demo.
+
+> Solo el worker (si el console ya corre aparte): `cd design && npm run worker -- --workflow=demo-design`
+> El worker reconcilia por tick: proyecto nuevo (sin design_run ni stories) → diseño; story
+> `ready` → build. Es infra backend; en prod es un servicio desplegado, no un script manual.
 
 ## 2. Crear un proyecto desde la UI
 1. Abrí **http://localhost:3000**.

@@ -7,7 +7,8 @@
   "scripts": {
     "test": "node --experimental-strip-types --test src/*.test.ts",
     "typecheck": "tsc --noEmit",
-    "run-agent": "node --experimental-strip-types src/run.ts"
+    "run-agent": "node --experimental-strip-types src/run.ts",
+    "worker": "node --experimental-strip-types src/worker.ts"
   },
   "dependencies": {
     "@anthropic-ai/claude-agent-sdk": "^0.1.0",

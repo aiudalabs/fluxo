@@ -11,10 +11,11 @@
 
 import { fileURLToPath } from "node:url";
 import { dirname, resolve, join } from "node:path";
-import { mkdtempSync, existsSync, readFileSync } from "node:fs";
+import { mkdtempSync, existsSync, readFileSync, mkdirSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { loadWorkflow, designPhases } from "./workflow.ts";
-import { runDesign } from "./engine.ts";
+import { loadWorkflow, designPhases, type Workflow } from "./workflow.ts";
+import { runDesign, type ResumeState } from "./engine.ts";
+import { recordOutput, type StepContext } from "./resolve.ts";
 import { makeSdkRunner } from "./sdkRunner.ts";
 import { SupabaseDesignStore } from "./supabase.ts";
 import { makeHandoff, type GithubTarget } from "./handoff.ts";
@@ -30,8 +31,11 @@ const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 const projectId = process.argv[2];
 const args = process.argv.slice(3);
 const wfArg = args.find((a) => a.startsWith("--workflow="));
-const workflowId = wfArg ? wfArg.split("=")[1] : "design"; // demo-design = lean (3 fases)
+let workflowId = wfArg ? wfArg.split("=")[1] : "design"; // demo-design = lean (3 fases)
 const ideaOverride = args.find((a) => !a.startsWith("--"));
+// --resume=<runId>: re-adopt un run CAÍDO (crash-resume, Opción B) en vez de crear uno nuevo.
+// El worker lo pasa cuando detecta un run huérfano (status no terminal, sin proceso vivo).
+const resumeRunId = args.find((a) => a.startsWith("--resume="))?.split("=")[1];
 
 if (!url || !anonKey || !jwtSecret || !serviceKey) {
   console.error("need SUPABASE_URL, SUPABASE_ANON_KEY, SUPABASE_JWT_SECRET, SUPABASE_SERVICE_ROLE_KEY (source .env)");
@@ -71,15 +75,39 @@ if (!project) {
 }
 const idea = ideaOverride ?? project.description ?? project.name;
 
-// 2) Cargar el workflow + sembrar las fases (todas las de tipo design, en orden).
+// 2) Store primero (mintea su propio tenant JWT → RLS real, sin service_role). En un resume
+//    leemos el run para usar SU workflow (el del run caído), no el default del worker.
+const store = new SupabaseDesignStore({ url, anonKey, jwtSecret, tenant: project.tenant_id, project: projectId });
+if (resumeRunId) {
+  const run = await store.loadRun(resumeRunId);
+  if (!run) { console.error(`resume: el run ${resumeRunId} no existe`); process.exit(1); }
+  if (run.status === "done" || run.status === "failed") { console.log(`resume: el run ${resumeRunId} ya está ${run.status} — nada que reanudar`); process.exit(0); }
+  workflowId = run.workflow;
+}
+
+// 3) Cargar el workflow + sembrar las fases (todas las de tipo design, en orden).
 const wf = loadWorkflow(registryDir, workflowId);
 const phaseSeeds = designPhases(wf).map((p, i) => ({ phase_id: p.id, label: p.label, ord: i }));
-
-// 3) Store (mintea su propio tenant JWT → RLS real, sin service_role) + runner (Agent SDK).
-const store = new SupabaseDesignStore({ url, anonKey, jwtSecret, tenant: project.tenant_id, project: projectId });
-const runId = await store.createRun(workflowId, phaseSeeds);
 const workdir = mkdtempSync(join(tmpdir(), "fluxo-design-"));
 const runner = makeSdkRunner(registryDir, workdir);
+
+// 4) Fresh → createRun (inserta run + fases). Resume → adoptRun + re-hidratar ctx/workdir
+//    desde el estado durable (design_phases.artifacts) y calcular dónde reanudar (Opción B).
+let runId: string;
+let resumeState: ResumeState | undefined;
+if (resumeRunId) {
+  store.adoptRun(resumeRunId);
+  runId = resumeRunId;
+  resumeState = await buildResumeState(store, wf, workdir, { instructions: idea, project_id: projectId, repo: "" });
+  console.log(`↻ resume run ${runId}: ${Object.keys(resumeState.phaseRuns).length} fase(s) done, reanudo en step #${resumeState.startIndex}`);
+} else {
+  runId = await store.createRun(workflowId, phaseSeeds);
+}
+
+// Heartbeat/lease (Opción B): renueva heartbeat_at cada 30s mientras este proceso vive, para
+// que el worker NO re-adopte este run como huérfano. unref → no impide que el proceso termine.
+const heartbeat = setInterval(() => { void store.heartbeat().catch(() => {}); }, 30_000);
+heartbeat.unref?.();
 
 console.log(`▶ design run ${runId} para "${project.name}" (${projectId})`);
 console.log(`  tenant ${project.tenant_id} · ${phaseSeeds.length} fases · workdir ${workdir}`);
@@ -115,12 +143,59 @@ try {
     wf,
     { instructions: idea, project_id: projectId, repo: "" },
     { runner, resolver: store.resolver, sink: store.sink, handoff },
+    resumeState,
   );
+  clearInterval(heartbeat);
   await store.setRunStatus(res.status);
   console.log(`\n✓ design run ${runId} terminó: ${res.status}`);
   for (const [phase, n] of Object.entries(res.phaseRuns)) console.log(`  ${phase}: ${n} corrida(s)`);
 } catch (err) {
+  clearInterval(heartbeat);
   await store.setRunStatus("failed");
   console.error(`\n✗ design run ${runId} falló:`, err instanceof Error ? err.message : err);
   process.exit(1);
+}
+
+// buildResumeState re-hidrata un run caído desde Postgres (Opción B): re-materializa los docs
+// cosechados de cada fase DONE al workdir (los agentes y el handoff re-leen docs/), siembra el
+// ctx con su output, y calcula el step donde reanudar = el primero NO satisfecho (fase no-done,
+// gate no-aprobado —pending/ausente—, o el handoff si el run no terminó). En los workflows
+// lineales esto cae exactamente en el punto del crash (fase corriendo o gate congelado).
+async function buildResumeState(
+  store: SupabaseDesignStore,
+  wf: Workflow,
+  workdir: string,
+  trigger: Record<string, unknown>,
+): Promise<ResumeState> {
+  const [phases, gates] = await Promise.all([store.loadPhases(), store.loadGates()]);
+  const doneP = new Set(phases.filter((p) => p.status === "done").map((p) => p.phase_id));
+  const approvedGates = new Set(
+    gates.filter((g) => g.status === "resolved" && g.outcome === "approve").map((g) => g.gate_id),
+  );
+
+  const ctx: StepContext = { trigger };
+  const phaseRuns: Record<string, number> = {};
+  for (const p of phases) {
+    if (p.status !== "done") continue;
+    phaseRuns[p.phase_id] = 1;
+    for (const a of p.artifacts) {
+      const abs = join(workdir, a.path);
+      mkdirSync(dirname(abs), { recursive: true });
+      writeFileSync(abs, a.content);
+    }
+    // El texto exacto del agente no se persiste (solo artifacts); el primer doc aproxima el
+    // output para que $<fase>.output.text resuelva no-vacío. Igual los agentes RE-LEEN docs/
+    // del workdir (bug #16/D2) — eso es lo que de verdad da el contexto.
+    recordOutput(ctx, p.phase_id, p.artifacts[0]?.content ?? "");
+  }
+
+  let startIndex = wf.steps.length;
+  for (let i = 0; i < wf.steps.length; i++) {
+    const s = wf.steps[i];
+    if (s.kind === "design") { if (doneP.has(s.id)) continue; startIndex = i; break; }
+    if (s.kind === "gate") { if (approvedGates.has(s.id)) continue; startIndex = i; break; }
+    if (s.kind === "validate") continue;
+    startIndex = i; break; // handoff → reanudar aquí (re-publica; es idempotente)
+  }
+  return { ctx, phaseRuns, startIndex };
 }

@@ -11,6 +11,7 @@
 
 import { createHmac } from "node:crypto";
 import type {
+  Artifact,
   EngineSink,
   GateResolver,
   GateRequest,
@@ -125,10 +126,45 @@ export class SupabaseDesignStore {
     return this.runId;
   }
 
+  // adoptRun re-attaches this store to an EXISTING run (crash-resume). No insert — the run +
+  // its phases already live in the DB; we just point setRunStatus/patchPhase/resolver at it.
+  adoptRun(runId: string): void {
+    this.runId = runId;
+  }
+
+  // loadRun reads the run row (status + workflow) so a resume uses the run's OWN workflow.
+  async loadRun(runId: string): Promise<{ status: string; workflow: string } | null> {
+    const res = await this.rest(`/design_runs?id=eq.${runId}&select=status,workflow`, { method: "GET", prefer: "count=none" });
+    const [row] = (await res.json()) as Array<{ status: string; workflow: string }>;
+    return row ?? null;
+  }
+
+  // loadPhases returns each phase's status + harvested artifacts (the durable design output).
+  async loadPhases(): Promise<Array<{ phase_id: string; status: string; artifacts: Artifact[] }>> {
+    const res = await this.rest(`/design_phases?run_id=eq.${this.runId}&select=phase_id,status,artifacts,ord&order=ord`, { method: "GET", prefer: "count=none" });
+    return ((await res.json()) as Array<{ phase_id: string; status: string; artifacts: Artifact[] | null; ord: number }>)
+      .map((p) => ({ phase_id: p.phase_id, status: p.status, artifacts: p.artifacts ?? [] }));
+  }
+
+  // loadGates returns the run's gate rows (to know which gates were already approved).
+  async loadGates(): Promise<Array<{ gate_id: string; status: string; outcome: string | null }>> {
+    const res = await this.rest(`/design_gates?run_id=eq.${this.runId}&select=gate_id,status,outcome`, { method: "GET", prefer: "count=none" });
+    return (await res.json()) as Array<{ gate_id: string; status: string; outcome: string | null }>;
+  }
+
   async setRunStatus(status: string): Promise<void> {
     await this.rest(`/design_runs?id=eq.${this.runId}`, {
       method: "PATCH",
       body: JSON.stringify({ status, updated_at: new Date().toISOString() }),
+    });
+  }
+
+  // heartbeat renueva el lease del run (Opción B): mientras main.ts vive lo llama en timer;
+  // el worker usa la frescura de heartbeat_at para no re-adoptar un proceso que sigue vivo.
+  async heartbeat(): Promise<void> {
+    await this.rest(`/design_runs?id=eq.${this.runId}`, {
+      method: "PATCH",
+      body: JSON.stringify({ heartbeat_at: new Date().toISOString() }),
     });
   }
 
@@ -250,21 +286,32 @@ export class SupabaseDesignStore {
   get resolver(): GateResolver {
     return {
       resolve: async (req: GateRequest): Promise<GateDecision> => {
-        const res = await this.rest("/design_gates", {
-          method: "POST",
-          prefer: "return=representation",
-          body: JSON.stringify({
-            ...this.scope(),
-            run_id: this.runId,
-            phase_id: req.phaseId,
-            gate_id: req.gateId,
-            reason: req.reason,
-            open_questions: req.openQuestions,
-            attempt: req.attempt,
-            status: "pending",
-          }),
-        });
-        const [row] = (await res.json()) as Array<{ id: string }>;
+        // Find-or-create: on a crash-resume the run is frozen at a gate whose PENDING row
+        // already exists — adopt it (poll it) instead of inserting a duplicate that would
+        // show two gates in Studio. Fresh gates (no pending row) insert as before.
+        const existing = await this.rest(
+          `/design_gates?run_id=eq.${this.runId}&gate_id=eq.${req.gateId}&status=eq.pending&select=id&order=created_at.desc&limit=1`,
+          { method: "GET", prefer: "count=none" },
+        );
+        let rowId = ((await existing.json()) as Array<{ id: string }>)[0]?.id;
+        if (!rowId) {
+          const res = await this.rest("/design_gates", {
+            method: "POST",
+            prefer: "return=representation",
+            body: JSON.stringify({
+              ...this.scope(),
+              run_id: this.runId,
+              phase_id: req.phaseId,
+              gate_id: req.gateId,
+              reason: req.reason,
+              open_questions: req.openQuestions,
+              attempt: req.attempt,
+              status: "pending",
+            }),
+          });
+          rowId = ((await res.json()) as Array<{ id: string }>)[0].id;
+        }
+        const row = { id: rowId };
         await this.setRunStatus("awaiting_gate");
 
         // Poll until the human resolves the gate in Studio.

@@ -99,6 +99,18 @@ export interface EngineDeps {
   sink?: EngineSink;
 }
 
+// ResumeState re-hydrates a CRASHED run from durable Postgres state (design_phases +
+// design_gates): a pre-seeded ctx (the done phases' output.text), the per-phase run counts,
+// and the step index to resume AT (the first unsatisfied step — a running phase or a pending
+// gate). The kernel stays pure: WHO computes the resume point is the caller (main.ts), not
+// the engine — the engine just honours the seed. This is the durable-execution-lite move:
+// state already lives in the DB, so we re-derive the position instead of a workflow log.
+export interface ResumeState {
+  ctx: StepContext; // already includes $trigger + recorded outputs of done phases
+  phaseRuns: Record<string, number>;
+  startIndex: number;
+}
+
 export class GateExhaustedError extends Error {
   gateId: string;
   phaseId: string;
@@ -123,16 +135,18 @@ export async function runDesign(
   wf: Workflow,
   trigger: Record<string, unknown>,
   deps: EngineDeps,
+  resume?: ResumeState,
 ): Promise<RunResult> {
   const { runner, resolver, handoff, sink } = deps;
   const steps = wf.steps;
-  const ctx: StepContext = { trigger };
-  const phaseRuns: Record<string, number> = {};
+  // On resume, ctx already carries $trigger + the done phases' recorded outputs; else fresh.
+  const ctx: StepContext = resume ? resume.ctx : { trigger };
+  const phaseRuns: Record<string, number> = resume ? { ...resume.phaseRuns } : {};
   // Corrections queued for a phase by a prior gate reject (feedback + answers).
   const pending: Record<string, { feedback?: string; answers?: QA[] }> = {};
   const gateAttempts: Record<string, number> = {};
 
-  let i = 0;
+  let i = resume?.startIndex ?? 0;
   while (i < steps.length) {
     const step = steps[i];
 

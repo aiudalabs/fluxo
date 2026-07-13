@@ -14,6 +14,7 @@ import {
   type GateDecision,
   type HandoffExecutor,
 } from "./engine.ts";
+import { recordOutput, type StepContext } from "./resolve.ts";
 
 const registryDir = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..", "registry");
 
@@ -148,4 +149,42 @@ test("real design.yaml: auto-approving every gate walks all phases to the handof
   // docs_pr is the first handoff (type: pr) → the design halts there awaiting F5-03.
   assert.equal(res.status, "awaiting_handoff");
   assert.deepEqual(phaseOrder, ["discovery", "constitution", "prd", "data_model", "architecture", "ui", "mockups", "backlog"]);
+});
+
+// ── Crash-resume (Opción B) ──────────────────────────────────────────────────────
+// The kernel honours a ResumeState: a pre-seeded ctx (done phases) + startIndex, so a
+// resumed run does NOT re-run completed phases or re-ask already-approved gates.
+const twoPhase = parseWorkflow({
+  id: "t2",
+  steps: [
+    { id: "p1", type: "design", label: "P1", agent: "a", inputs: {} },
+    { id: "g1", type: "human_gate", inputs: { reason: "?" }, on_fail: { goto: "p1", max: 5 } },
+    { id: "p2", type: "design", label: "P2", agent: "b", inputs: {} },
+    { id: "g2", type: "human_gate", inputs: { reason: "?" }, on_fail: { goto: "p2", max: 5 } },
+  ],
+});
+
+test("resume: startIndex past a done phase skips it — only p2 runs, only g2 is asked", async () => {
+  const runner = fakeRunner();
+  const resolver = scriptedResolver({ g2: [{ outcome: "approve" }] });
+  const ctx: StepContext = { trigger: { instructions: "idea" } };
+  recordOutput(ctx, "p1", "brief ya generado antes del crash");
+  const res = await runDesign(twoPhase, { instructions: "idea" }, { runner, resolver }, { ctx, phaseRuns: { p1: 1 }, startIndex: 2 });
+  assert.equal(res.status, "done");
+  assert.deepEqual(runner.calls.map((c) => c.phaseId), ["p2"]); // p1 NOT re-run
+  assert.deepEqual(resolver.seen.map((r) => r.gateId), ["g2"]); // g1 NOT re-asked
+  assert.equal(res.phaseRuns.p1, 1); // preserved from the seed
+  assert.equal(res.phaseRuns.p2, 1);
+});
+
+test("resume: startIndex AT a frozen gate re-asks that gate, then continues", async () => {
+  // Crash while frozen at g1: p1 done, g1 pending → resume AT g1 (index 1).
+  const runner = fakeRunner();
+  const resolver = scriptedResolver({ g1: [{ outcome: "approve" }], g2: [{ outcome: "approve" }] });
+  const ctx: StepContext = { trigger: { instructions: "idea" } };
+  recordOutput(ctx, "p1", "brief");
+  const res = await runDesign(twoPhase, { instructions: "idea" }, { runner, resolver }, { ctx, phaseRuns: { p1: 1 }, startIndex: 1 });
+  assert.equal(res.status, "done");
+  assert.deepEqual(resolver.seen.map((r) => r.gateId), ["g1", "g2"]); // g1 resolved on resume
+  assert.deepEqual(runner.calls.map((c) => c.phaseId), ["p2"]); // p1 stayed done, only p2 ran
 });
