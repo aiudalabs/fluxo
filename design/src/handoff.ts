@@ -68,6 +68,9 @@ export interface GithubTarget {
   org: string;
   repoName: string; // se slugifica
   description?: string;
+  // Archivos de scaffold a commitear al repo (ej. .github/workflows/claude.yml — el canal
+  // de build del conductor). {path, content}. Vienen del registry (main.ts los lee).
+  scaffold?: Array<{ path: string; content: string }>;
 }
 
 // Docs que commiteamos al repo si existen en el workdir (orden de lectura).
@@ -81,6 +84,10 @@ async function publishToGithub(store: SupabaseDesignStore, workdir: string, gh: 
   for (const f of REPO_DOCS) {
     const p = join(workdir, "docs", f);
     if (existsSync(p)) await repo.putFile(`docs/${f}`, readFileSync(p, "utf8"), `design: ${f}`);
+  }
+  // Scaffold: el canal de build (.github/workflows/claude.yml, etc.) — Workflows:write.
+  for (const f of gh.scaffold ?? []) {
+    await repo.putFile(f.path, f.content, `scaffold: ${f.path}`);
   }
   await store.setProjectRepo(repo.htmlUrl);
   let issues = 0;

@@ -69,6 +69,24 @@ export class GithubRepo {
   }
   get htmlUrl() { return `https://github.com/${this.owner}/${this.repo}`; }
 
+  // fromUrl: adopta un repo existente desde su URL https://github.com/owner/repo.
+  static fromUrl(token: string, url: string): GithubRepo {
+    const m = url.replace(/\/$/, "").match(/github\.com\/([^/]+)\/([^/]+?)(?:\.git)?$/);
+    if (!m) throw new Error(`repo url inválida: ${url}`);
+    return new GithubRepo(token, m[1], m[2]);
+  }
+
+  // dispatchWorkflow: dispara un workflow_dispatch (Actions:write). El conductor manda el
+  // prompt de la story + los issues (para el label agent:running).
+  async dispatchWorkflow(workflowFile: string, inputs: Record<string, string>, ref = "main"): Promise<void> {
+    const res = await fetch(`${API}/repos/${this.owner}/${this.repo}/actions/workflows/${workflowFile}/dispatches`, {
+      method: "POST",
+      headers: H(this.token),
+      body: JSON.stringify({ ref, inputs }),
+    });
+    if (!res.ok) throw new Error(`POST workflow dispatch → ${res.status} ${await res.text()}`);
+  }
+
   // create: crea el repo en la org (necesita permiso Administration:write). Si ya existe
   // (422), lo adopta. Devuelve el GithubRepo.
   static async create(token: string, org: string, name: string, opts: { private?: boolean; description?: string } = {}): Promise<GithubRepo> {

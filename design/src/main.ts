@@ -11,7 +11,7 @@
 
 import { fileURLToPath } from "node:url";
 import { dirname, resolve, join } from "node:path";
-import { mkdtempSync } from "node:fs";
+import { mkdtempSync, existsSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { loadWorkflow, designPhases } from "./workflow.ts";
 import { runDesign } from "./engine.ts";
@@ -86,13 +86,18 @@ const ghAppId = process.env.GITHUB_APP_ID;
 const ghKeyPath = process.env.GITHUB_APP_PRIVATE_KEY_PATH;
 const ghKey = process.env.GITHUB_APP_PRIVATE_KEY;
 if (ghAppId && (ghKeyPath || ghKey) && project.org) {
+  // Scaffold del build: el canal claude.yml (workflow_dispatch → claude-code-action → PR).
+  const scaffold: Array<{ path: string; content: string }> = [];
+  const claudeYml = resolve(registryDir, "templates", "github-native", ".github", "workflows", "claude.yml");
+  if (existsSync(claudeYml)) scaffold.push({ path: ".github/workflows/claude.yml", content: readFileSync(claudeYml, "utf8") });
   github = {
     app: new GithubApp({ appId: ghAppId, privateKeyPath: ghKeyPath, privateKey: ghKey }),
     org: project.org,
     repoName: project.name,
     description: idea.slice(0, 200),
+    scaffold,
   };
-  console.log(`  handoff GitHub: org ${project.org} · repo ${project.name}`);
+  console.log(`  handoff GitHub: org ${project.org} · repo ${project.name} · scaffold ${scaffold.length} archivo(s)`);
 }
 const handoff = makeHandoff(store, workdir, github);
 try {
