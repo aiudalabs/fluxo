@@ -11,12 +11,10 @@
 // salen del brain (brain_events append-only, kind=artifact) en vez de la historia git.
 
 import { useEffect, useMemo, useState } from "react";
-import Link from "next/link";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { useProject } from "@/lib/project";
 import { useT } from "@/lib/i18n";
-import { LanguageSwitcher } from "@/components/LanguageSwitcher";
 
 type Artifact = { path: string; kind: string; content: string };
 type Run = { id: string; project_id: string; status: string; workflow: string; created_at: string };
@@ -176,8 +174,10 @@ export default function Studio() {
   return (
     <div className={`studio-shell${fullscreen ? " doc-full" : ""}${!railOpen ? " rail-collapsed" : ""}`}>
       {/* ── Topbar ── */}
+      {/* Barra propia del Studio: SOLO estado + control de fases (el nombre/nav vive en el
+          TopBar del shell). Adelgazada para que el shell se sienta de una pieza. */}
       <header className="studio-topbar">
-        <h2 className="studio-proj">{project?.name ?? "…"}</h2>
+        <span className="studio-eyebrow">Diseño</span>
         <span className="studio-branch"><span className="d" /> {t("studio.docs.onBranch")}</span>
         {!isTerminal && (
           <button className="studio-runchip" onClick={() => pickPhase(phases.findIndex((p) => p.status === "awaiting_gate"))}>
@@ -186,15 +186,11 @@ export default function Studio() {
           </button>
         )}
         <div className="sp" />
-        <LanguageSwitcher />
         {(phases.length > 0 || files.length > 0) && !fullscreen && (
           <button className={`btn ghost sm${!railOpen ? " on" : ""}`} onClick={() => setRailOpen((v) => !v)} title={t("studio.docs.railToggle")}>
             ⇤ {t("studio.docs.railToggle")}
           </button>
         )}
-        <Link href={`/projects/${projectId}/board`} className="btn primary sm" style={{ textDecoration: "none" }}>
-          {t("nav.board.title")} →
-        </Link>
       </header>
 
       {/* ── Cuerpo: riel | main ── */}

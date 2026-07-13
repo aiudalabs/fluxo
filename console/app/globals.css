@@ -4638,3 +4638,7 @@ main:has(.studio-shell) > .studio-shell {
    (bajo el TopBar de 56px), no en 100vh. El riel queda siempre visible. */
 .sh-shell > main{min-width:0;overflow:auto}
 .sh-shell .studio-shell{height:calc(100vh - 56px)}
+
+/* Eyebrow de las barras propias de Studio/Flow (F6P-06): un label chico, sin repetir el
+   nombre del proyecto (eso vive en el TopBar del shell). */
+.studio-eyebrow{font-family:var(--mono);font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--ink4);font-weight:600}

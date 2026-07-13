@@ -7,7 +7,6 @@
 // arma desde Supabase (sprints/stories/design_phases + design_gates) en vez del REST /flow.
 
 import { useEffect, useMemo, useState } from "react";
-import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { ReactFlow, Background, Controls } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
@@ -136,9 +135,10 @@ export default function Flow() {
 
   return (
     <div className="studio-shell">
+      {/* Barra propia de Flow: SOLO las tabs Ciclo/Grafo (nombre/nav en el TopBar del shell). */}
       <header className="studio-topbar">
-        <h2 className="studio-proj">{project?.name ?? "…"}</h2>
-        <div className="flow-tabs" style={{ display: "flex", gap: 4, marginLeft: 8 }}>
+        <span className="studio-eyebrow">Flow</span>
+        <div className="flow-tabs" style={{ display: "flex", gap: 4, marginLeft: 4 }}>
           {(["cycle", "graph"] as FlowTab[]).map((k) => (
             <button key={k} className={`btn ghost sm${tab === k ? " on" : ""}`} onClick={() => setTab(k)}>
               {t(`flow.tab.${k}`) === `flow.tab.${k}` ? (k === "cycle" ? "Ciclo" : "Grafo") : t(`flow.tab.${k}`)}
@@ -146,9 +146,6 @@ export default function Flow() {
           ))}
         </div>
         <div className="sp" />
-        <Link href={`/projects/${projectId}/board`} className="btn primary sm" style={{ textDecoration: "none" }}>
-          {t("nav.board.title")} →
-        </Link>
       </header>
 
       <div className="studio-body" style={{ display: "block", position: "relative" }}>

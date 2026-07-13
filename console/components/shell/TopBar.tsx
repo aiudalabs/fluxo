@@ -8,6 +8,7 @@ import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { browserClient, sessionToken, clearSession } from "@/lib/supabaseClient";
+import { LanguageSwitcher } from "@/components/LanguageSwitcher";
 
 type Proj = { id: string; name: string; org: string | null };
 
@@ -62,6 +63,7 @@ export function TopBar({ currentProjectId }: { currentProjectId?: string }) {
 
       <div className="sh-sp" />
       <div className="sh-spend" title="Gasto de hoy (próximamente)">◷ Hoy <b>$0.00</b></div>
+      <LanguageSwitcher />
 
       <div className="sh-switcher">
         <button className="sh-ava" onClick={() => setOpen(open === "user" ? null : "user")} title={login ?? "Cuenta"}>{initials}</button>
