@@ -151,10 +151,20 @@ real:** sembrar `CLAUDE_CODE_OAUTH_TOKEN` en el repo (Settings → Canal); sin e
 - **Canal/model por lane**: `settings.lanes` + `settings.channel`.
 - **Test:** sprint sin deps se despacha; el dependiente espera; en story-mode una story a la vez.
 
-### Fase 3 — SCAFFOLD del reviewer (para gate del auto-merge)
-- Portar templates a `registry/templates/github-native/`: `claude-review.yml` (reviewer cross-modelo), `ui-verify.yml` (opcional, lanes UI), `suite-integrity`.
-- El handoff (`handoff.ts` scaffold) los commitea junto a `claude.yml`.
-- **Test:** un PR nuevo dispara `claude-review`; un REQUEST_CHANGES se refleja en `reviewDecision`.
+### Fase 3 — SCAFFOLD del reviewer (para gate del auto-merge) — ✅ HECHA (2026-07-13, branch `feat/conductor-f3-reviewer`)
+
+**Entregado:** portados a `registry/templates/github-native/.github/workflows/`: `claude-review.yml`
+(reviewer cross-modelo, `--model claude-opus-4-8`, `allowed_bots:"*"`, REQUEST_CHANGES ante BLOCKER →
+bloquea el merge; sprint=1 PR ⇒ review por-sprint) y `suite-integrity.yml` (el conteo de tests no baja).
+Nuevo `design/src/scaffold.ts` (`buildScaffold` + sustitución `{{project_name}}`, testeable) reemplaza el
+scaffold inline de `main.ts` — ahora commitea los 3 workflows (claude + review + suite-integrity). 8 tests
+(scaffold set, sustitución, YAML válido, triggers). Nuevo `design/src/rescaffold.ts` para re-aplicar el
+scaffold a repos YA creados (idempotente vía putFile; dry-run validado contra Idearium).
+**+ money-fix** (commit aparte): el PATCH de `session_url` salió del try que revierte a backlog → un fallo
+tras un dispatch exitoso ya no re-despacha (evita doble-run pago).
+**Scope:** `ui-verify.yml` DIFERIDO (lanes UI, persona art-director — necesita el harness de verify visual
+que v2 aún no tiene cableado). **Pendiente:** re-scaffoldear Idearium (`node design/src/rescaffold.ts <pid>`)
+para que tenga el `claude-review.yml`; el review real se ve cuando un dispatch abra un PR (necesita el secret).
 
 ### Fase 4 — AUTO-MERGE gated (detrás de `merge_mode: auto`)
 - **Nuevo** paso en el tick: por story `review` con `pr_url`, leer merge info (`gh pr view` / API: `mergeStateStatus`, `reviewDecision`, `state`, `draft`) y mergear (`gh pr merge --squash --delete-branch` o API) **solo si** `!draft && state==OPEN && mergeStateStatus==CLEAN && reviewDecision != CHANGES_REQUESTED`. Retries acotados.

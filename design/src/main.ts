@@ -20,6 +20,7 @@ import { makeSdkRunner } from "./sdkRunner.ts";
 import { SupabaseDesignStore } from "./supabase.ts";
 import { makeHandoff, type GithubTarget } from "./handoff.ts";
 import { GithubApp } from "./github.ts";
+import { buildScaffold } from "./scaffold.ts";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const registryDir = resolve(here, "..", "..", "registry");
@@ -123,10 +124,9 @@ const ghAppId = process.env.GITHUB_APP_ID;
 const ghKeyPath = process.env.GITHUB_APP_PRIVATE_KEY_PATH;
 const ghKey = process.env.GITHUB_APP_PRIVATE_KEY;
 if (ghAppId && (ghKeyPath || ghKey) && project.org) {
-  // Scaffold del build: el canal claude.yml (workflow_dispatch → claude-code-action → PR).
-  const scaffold: Array<{ path: string; content: string }> = [];
-  const claudeYml = resolve(registryDir, "templates", "github-native", ".github", "workflows", "claude.yml");
-  if (existsSync(claudeYml)) scaffold.push({ path: ".github/workflows/claude.yml", content: readFileSync(claudeYml, "utf8") });
+  // Scaffold del build: el canal de despacho (claude.yml) + los gates de review (claude-review.yml
+  // cross-modelo + suite-integrity.yml) que en Fase 4 habilitan el auto-merge. Ver scaffold.ts.
+  const scaffold = buildScaffold(registryDir, { projectName: project.name });
   github = {
     app: new GithubApp({ appId: ghAppId, privateKeyPath: ghKeyPath, privateKey: ghKey }),
     org: project.org,
