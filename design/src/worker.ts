@@ -18,6 +18,7 @@ import { dirname, resolve } from "node:path";
 import { GithubApp, GithubRepo } from "./github.ts";
 import { Projector, type MirroredStory } from "./projection.ts";
 import { candidates, storyPrompt, sprintPrompt, type Policy, type DStory, type DSprint } from "./dispatch.ts";
+import { AutoMerger, prNumFromUrl } from "./automerge.ts";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const mainScript = resolve(here, "main.ts");
@@ -121,6 +122,7 @@ interface Settings {
   channel?: string;
   execution_unit?: "sprint" | "story";
   max_concurrency?: number;
+  merge_mode?: "manual" | "auto";
   lanes?: Record<string, { channel?: string; model?: string }>;
 }
 function policyFrom(settings: Settings): Policy {
@@ -162,6 +164,33 @@ async function reconcileProjection() {
       const { changes } = await projector.syncProject(repo, mirrored);
       if (changes.length) console.log(`⟳ proyección ${p.name}: ${changes.length} cambio(s)`);
     } catch (e) { console.error(`  proyección ${p.name} falló: ${e instanceof Error ? e.message : e}`); }
+  }
+}
+
+// ── 2b) Reconcile AUTO-MERGE (gated por merge_mode:auto; corre ENTRE proyección y despacho) ──────
+// Orden del conductor de v1: proyectar → auto-merge → despachar. Solo mergea; NO toca el estado de
+// la story — el issue cierra al mergear y la PROYECCIÓN la marca `done` en el próximo tick, lo que
+// desbloquea los sprints dependientes. Un solo AutoMerger (estado de retries entre ticks); las
+// claves se scopean por proyecto porque los números de PR no son únicos entre repos.
+const autoMerger = new AutoMerger({ log: (m) => console.log(m) });
+
+async function reconcileAutoMerge() {
+  if (!app) return;
+  const projects = await rest<Array<{ id: string; name: string; org: string | null; repo: string | null; settings: Settings | null }>>(`/projects?select=id,name,org,repo,settings&repo=not.is.null`);
+  for (const p of projects) {
+    if (!p.repo || !p.org) continue;
+    if ((p.settings?.merge_mode ?? "manual") !== "auto") continue; // default manual = el humano mergea
+
+    const rows = await rest<Array<{ pr_url: string | null }>>(`/stories?project_id=eq.${p.id}&status=eq.review&pr_url=not.is.null&select=pr_url`);
+    const prNums = rows.map((r) => prNumFromUrl(r.pr_url)).filter((n): n is number => n != null);
+    if (prNums.length === 0) continue;
+    if (dryRun) { console.log(`[dry] auto-merge: ${p.name} (${new Set(prNums).size} PR/s en review)`); continue; }
+
+    try {
+      const repo = GithubRepo.fromUrl(await repoTokenFor(p.org), p.repo);
+      const { merged } = await autoMerger.reconcile(repo, prNums, p.id);
+      if (merged.length) console.log(`⤳ auto-merge ${p.name}: ${merged.length} PR(s) mergeado(s) [${merged.join(", ")}]`);
+    } catch (e) { console.error(`  auto-merge ${p.name} falló: ${e instanceof Error ? e.message : e}`); }
   }
 }
 
@@ -243,8 +272,9 @@ async function reconcileBuild() {
 async function tick() {
   try { await reconcileDesign(); } catch (e) { console.error("reconcileDesign:", e instanceof Error ? e.message : e); }
   if (!noBuild) {
-    // Orden del conductor de v1: PROYECTAR (GitHub = verdad) antes de DESPACHAR.
+    // Orden del conductor de v1: PROYECTAR (GitHub = verdad) → AUTO-MERGE (gated) → DESPACHAR.
     try { await reconcileProjection(); } catch (e) { console.error("reconcileProjection:", e instanceof Error ? e.message : e); }
+    try { await reconcileAutoMerge(); } catch (e) { console.error("reconcileAutoMerge:", e instanceof Error ? e.message : e); }
     try { await reconcileBuild(); } catch (e) { console.error("reconcileBuild:", e instanceof Error ? e.message : e); }
   }
 }

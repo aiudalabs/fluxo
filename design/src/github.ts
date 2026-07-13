@@ -211,4 +211,47 @@ export class GithubRepo {
     }
     return total;
   }
+
+  // ── AUTO-MERGE (F4 · MergeSource) ────────────────────────────────────────────
+  // prMergeInfo: estado de merge del PR vía GraphQL. `mergeStateStatus` y `reviewDecision` NO existen
+  // en REST v3 — son campos de GraphQL. `state` (OPEN/CLOSED/MERGED), `isDraft`, `mergeStateStatus`
+  // (CLEAN sii todos los checks requeridos verdes), `reviewDecision` (lo pone claude-review con su
+  // review APPROVE/REQUEST_CHANGES), `headRefName` (branch a borrar tras el merge).
+  async prMergeInfo(n: number): Promise<import("./automerge.ts").PrMergeInfo> {
+    const query = `query($owner:String!,$repo:String!,$n:Int!){repository(owner:$owner,name:$repo){pullRequest(number:$n){number state isDraft mergeStateStatus reviewDecision headRefName}}}`;
+    const res = await fetch(`${API}/graphql`, {
+      method: "POST",
+      headers: H(this.token),
+      body: JSON.stringify({ query, variables: { owner: this.owner, repo: this.repo, n } }),
+    });
+    if (!res.ok) throw new Error(`POST /graphql prMergeInfo #${n} → ${res.status} ${await res.text()}`);
+    const json = (await res.json()) as { data?: { repository?: { pullRequest?: Record<string, unknown> | null } }; errors?: unknown };
+    const pr = json.data?.repository?.pullRequest;
+    if (!pr) throw new Error(`prMergeInfo #${n}: PR no encontrado (${JSON.stringify(json.errors ?? json)})`);
+    return {
+      number: Number(pr.number),
+      state: String(pr.state),
+      isDraft: Boolean(pr.isDraft),
+      mergeStateStatus: String(pr.mergeStateStatus),
+      reviewDecision: pr.reviewDecision == null ? null : String(pr.reviewDecision),
+      headRefName: String(pr.headRefName),
+    };
+  }
+
+  // mergePr: squash-merge (REST PUT) + borra la head branch — faithful a v1 (`gh pr merge --squash
+  // --delete-branch`). El borrado de la branch es best-effort: si falla DESPUÉS del merge se avisa
+  // pero NO se lanza (el PR ya está mergeado; relanzar solo re-contaría un fallo falso).
+  async mergePr(n: number, headRef: string): Promise<void> {
+    const res = await fetch(`${API}/repos/${this.owner}/${this.repo}/pulls/${n}/merge`, {
+      method: "PUT",
+      headers: H(this.token),
+      body: JSON.stringify({ merge_method: "squash" }),
+    });
+    if (!res.ok) throw new Error(`PUT pulls/${n}/merge → ${res.status} ${await res.text()}`);
+    if (!headRef) return;
+    const del = await fetch(`${API}/repos/${this.owner}/${this.repo}/git/refs/heads/${headRef}`, { method: "DELETE", headers: H(this.token) });
+    if (!del.ok && del.status !== 404 && del.status !== 422) {
+      console.warn(`  ⚠ PR #${n} mergeado, pero DELETE branch ${headRef} → ${del.status} ${await del.text()}`);
+    }
+  }
 }

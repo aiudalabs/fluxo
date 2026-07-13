@@ -166,10 +166,25 @@ tras un dispatch exitoso ya no re-despacha (evita doble-run pago).
 que v2 aún no tiene cableado). **Pendiente:** re-scaffoldear Idearium (`node design/src/rescaffold.ts <pid>`)
 para que tenga el `claude-review.yml`; el review real se ve cuando un dispatch abra un PR (necesita el secret).
 
-### Fase 4 — AUTO-MERGE gated (detrás de `merge_mode: auto`)
+### Fase 4 — AUTO-MERGE gated (detrás de `merge_mode: auto`) — ✅ HECHA (2026-07-13, `feat/f5-projects`)
+
+**Entregado:** `design/src/automerge.ts` — predicado PURO `shouldMerge(info)` (espeja `app.go:762`:
+`!draft && state==OPEN && mergeStateStatus==CLEAN && reviewDecision != CHANGES_REQUESTED`) + clase
+`AutoMerger` con **dedup por PR** (un sprint = 1 PR que cierra N issues → mergea 1 vez, no N) y
+**retries acotados** (`maxFails=3`, contador entre ticks scopeado por proyecto — los números de PR no
+son únicos entre repos). `GithubRepo` implementa `MergeSource`: `prMergeInfo(n)` (GraphQL — `state`,
+`isDraft`, `mergeStateStatus`, `reviewDecision`, `headRefName`; esos 2 campos NO están en REST v3) y
+`mergePr(n, headRef)` (REST PUT `squash` + borra la branch, best-effort). Nuevo paso
+`reconcileAutoMerge` en el tick **entre proyección y despacho** (orden v1: proyectar → mergear →
+despachar), gated por `settings.merge_mode === "auto"` (default `manual` = el humano mergea). Tras el
+merge NO toca el estado de la story: el issue cierra → la proyección la marca `done` en el próximo
+tick → desbloquea los sprints dependientes (no se duplica esa lógica). 14 tests nuevos (94 total),
+typecheck limpio.
+
 - **Nuevo** paso en el tick: por story `review` con `pr_url`, leer merge info (`gh pr view` / API: `mergeStateStatus`, `reviewDecision`, `state`, `draft`) y mergear (`gh pr merge --squash --delete-branch` o API) **solo si** `!draft && state==OPEN && mergeStateStatus==CLEAN && reviewDecision != CHANGES_REQUESTED`. Retries acotados.
 - Requiere permiso `pull_requests: write` (la App ya lo tiene).
 - **Test:** PR con checks verdes + review aprobado → auto-merge; con CHANGES_REQUESTED o check rojo → NO mergea.
+- **CAVEAT (E2E):** el gate real depende de **branch protection** en el repo del cliente. `mergeStateStatus==CLEAN` solo bloquea por checks *requeridos*, y `reviewDecision` solo es no-null si el repo exige reviews. Sin branch protection que marque `claude-review`/`suite-integrity` como required checks + review requerido, un PR podría dar CLEAN sin que el reviewer haya aprobado. El predicado es faithful a v1; **asegurar la branch protection al scaffoldear el repo es trabajo pendiente** (F3 solo commitea los workflows). Validar en E2E con un PR vivo + el secret sembrado.
 
 ### Fase 5 — GUARDS + workflow approval
 - `workflow_approval: auto_if_safe`: aprobar runs `action_required` salvo que el diff toque `.github/workflows/**` (espejar `approve.go`). Requiere `actions: write` (la App lo tiene).
