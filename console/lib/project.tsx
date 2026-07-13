@@ -13,7 +13,7 @@
 import { createContext, useContext, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { browserClient, devTenantToken } from "./supabaseClient";
+import { browserClient, activeToken } from "./supabaseClient";
 import { useLocale } from "./locale";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
@@ -38,7 +38,8 @@ export function ProjectShell({ projectId, children }: { projectId: string; child
   // Arm the tenant token on the realtime socket once for the whole project context. The
   // feature views subscribe through the same client, so their streams are tenant-scoped.
   useEffect(() => {
-    if (devTenantToken) void supabase.realtime.setAuth(devTenantToken);
+    const tok = activeToken();
+    if (tok) void supabase.realtime.setAuth(tok);
   }, [supabase]);
 
   // Cargar la metadata del proyecto (nombre/descr/org/repo) — RLS la scopea al tenant.

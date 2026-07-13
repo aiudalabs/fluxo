@@ -3,31 +3,44 @@ import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 const url = process.env.NEXT_PUBLIC_SUPABASE_URL ?? "";
 const anon = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? "";
 
-// DEV-SHIM (F1-04): a pre-minted tenant JWT so the browser can read brain_events
-// under RLS before real auth exists. The real path is GitHub OAuth → a session
-// JWT carrying a `tenant` claim (a later auth task); when that lands, this var and
-// the accessToken hook go away and the client uses the user's real session.
+// La sesión real (F5-P8 A): tras el login con GitHub, el callback deja el JWT de sesión en
+// el fragment y AuthCapture lo guarda en localStorage("fluxo_session"). Ese JWT (role=
+// authenticated + claim tenant del usuario) es el access token de Supabase → RLS por-usuario.
+const SESSION_KEY = "fluxo_session";
+export function sessionToken(): string | null {
+  if (typeof window === "undefined") return null;
+  return window.localStorage.getItem(SESSION_KEY);
+}
+export function setSessionToken(jwt: string) {
+  if (typeof window !== "undefined") window.localStorage.setItem(SESSION_KEY, jwt);
+}
+export function clearSession() {
+  if (typeof window !== "undefined") window.localStorage.removeItem(SESSION_KEY);
+}
+
+// DEV-SHIM: un tenant JWT pre-minteado como FALLBACK mientras no haya sesión real (dev sin
+// login). Con sesión, gana la sesión. Cuando el auth esté 100%, se puede quitar.
 const devToken = process.env.NEXT_PUBLIC_DEV_TENANT_JWT;
+
+// El token efectivo: sesión del usuario si existe, si no el dev-shim.
+export function activeToken(): string | undefined {
+  return sessionToken() ?? devToken ?? undefined;
+}
 
 let client: SupabaseClient | null = null;
 
-// browserClient returns a singleton. When a dev token is present it is used as the
-// access token for PostgREST reads (RLS applies). The REALTIME socket token is armed
-// once by the project layout (lib/project.tsx → ProjectProvider), not here — the
-// project context is the single place that establishes the tenant session, so the
-// feature views (studio/board/brain) never re-arm it. Real GitHub-OAuth auth will feed
-// the user's session in the same one place.
+// browserClient (singleton). accessToken se evalúa por-request → toma la sesión más reciente
+// (login/logout sin recargar). El realtime lo arma el project layout con activeToken().
 export function browserClient(): SupabaseClient {
   if (client) return client;
   client = createClient(url, anon, {
     auth: { persistSession: false, autoRefreshToken: false },
-    ...(devToken ? { accessToken: async () => devToken } : {}),
+    accessToken: async () => activeToken() ?? "",
   });
   return client;
 }
 
-// devTenantToken is the pre-minted tenant JWT (dev-shim) the project layout arms on the
-// realtime socket. Exported so the ProjectProvider is the one caller of setAuth.
+// devTenantToken se mantiene por compat (ProjectShell lo usaba); preferí activeToken().
 export const devTenantToken = devToken;
 
 export type BrainEvent = {
