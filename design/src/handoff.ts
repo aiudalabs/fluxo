@@ -68,6 +68,7 @@ export interface GithubTarget {
   org: string;
   repoName: string; // se slugifica
   description?: string;
+  userToken?: string; // token OAuth del dueño — crea el repo en su cuenta personal O su org
   // Archivos de scaffold a commitear al repo (ej. .github/workflows/claude.yml — el canal
   // de build del conductor). {path, content}. Vienen del registry (main.ts los lee).
   scaffold?: Array<{ path: string; content: string }>;
@@ -79,7 +80,9 @@ const REPO_DOCS = ["BRIEF.md", "CONSTITUTION.md", "PRD.md", "DATA_MODEL.md", "AR
 // publishToGithub: crea el repo (Administration:write), commitea los docs (Contents:write),
 // y crea un issue por story (Issues:write), reconciliando project.repo + story.external_ref.
 async function publishToGithub(store: SupabaseDesignStore, workdir: string, gh: GithubTarget, stories: StorySeed[]): Promise<void> {
-  const token = await gh.app.installationToken(gh.org);
+  // El token OAuth del dueño crea el repo en su cuenta personal O su org; si no hay, cae al
+  // installation token (solo orgs con la App instalada). Los issues/docs usan el mismo token.
+  const token = gh.userToken ?? await gh.app.installationToken(gh.org);
   const repo = await GithubRepo.create(token, gh.org, slugify(gh.repoName), { private: true, description: gh.description });
   for (const f of REPO_DOCS) {
     const p = join(workdir, "docs", f);

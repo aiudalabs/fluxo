@@ -48,14 +48,23 @@ if (!projectId) {
 
 // 1) Leer el proyecto con service_role (el worker es backend/confiable) → tenant + idea.
 const base = url.replace(/\/$/, "") + "/rest/v1";
-const pres = await fetch(`${base}/projects?id=eq.${projectId}&select=tenant_id,name,description,org`, {
-  headers: { apikey: serviceKey, Authorization: `Bearer ${serviceKey}` },
+const svcHeaders = { apikey: serviceKey, Authorization: `Bearer ${serviceKey}` };
+const pres = await fetch(`${base}/projects?id=eq.${projectId}&select=tenant_id,name,description,org,owner_id`, {
+  headers: svcHeaders,
 });
 if (!pres.ok) {
   console.error(`no pude leer el proyecto: ${pres.status} ${await pres.text()}`);
   process.exit(1);
 }
-const [project] = (await pres.json()) as Array<{ tenant_id: string; name: string; description: string | null; org: string | null }>;
+const [project] = (await pres.json()) as Array<{ tenant_id: string; name: string; description: string | null; org: string | null; owner_id: string | null }>;
+
+// Token OAuth del dueño (para crear el repo COMO él — cuenta personal u org). Lo lee por
+// owner_id de github_tokens (service_role). Sin él, el handoff cae al installation token.
+let ownerToken: string | undefined;
+if (project?.owner_id) {
+  const tr = await fetch(`${base}/github_tokens?user_id=eq.${project.owner_id}&select=access_token`, { headers: svcHeaders });
+  if (tr.ok) ownerToken = ((await tr.json()) as Array<{ access_token: string }>)[0]?.access_token;
+}
 if (!project) {
   console.error(`proyecto ${projectId} no existe`);
   process.exit(1);
@@ -96,8 +105,9 @@ if (ghAppId && (ghKeyPath || ghKey) && project.org) {
     repoName: project.name,
     description: idea.slice(0, 200),
     scaffold,
+    userToken: ownerToken,
   };
-  console.log(`  handoff GitHub: org ${project.org} · repo ${project.name} · scaffold ${scaffold.length} archivo(s)`);
+  console.log(`  handoff GitHub: org ${project.org} · repo ${project.name} · scaffold ${scaffold.length} archivo(s) · owner-token ${ownerToken ? "sí" : "no"}`);
 }
 const handoff = makeHandoff(store, workdir, github);
 try {

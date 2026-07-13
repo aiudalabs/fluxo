@@ -87,16 +87,21 @@ export class GithubRepo {
     if (!res.ok) throw new Error(`POST workflow dispatch → ${res.status} ${await res.text()}`);
   }
 
-  // create: crea el repo en la org (necesita permiso Administration:write). Si ya existe
-  // (422), lo adopta. Devuelve el GithubRepo.
-  static async create(token: string, org: string, name: string, opts: { private?: boolean; description?: string } = {}): Promise<GithubRepo> {
-    const res = await fetch(`${API}/orgs/${org}/repos`, {
+  // create: crea el repo bajo `owner`, detectando si es ORG (POST /orgs/{owner}/repos) o
+  // CUENTA PERSONAL (POST /user/repos → va a la cuenta del token). Con el token OAuth del
+  // usuario funciona en ambas; con el installation token solo en orgs con la App instalada.
+  // Si ya existe (422), lo adopta.
+  static async create(token: string, owner: string, name: string, opts: { private?: boolean; description?: string } = {}): Promise<GithubRepo> {
+    const who = await fetch(`${API}/users/${owner}`, { headers: H(token) });
+    const isOrg = who.ok && ((await who.json()) as { type?: string }).type === "Organization";
+    const url = isOrg ? `${API}/orgs/${owner}/repos` : `${API}/user/repos`;
+    const res = await fetch(url, {
       method: "POST",
       headers: H(token),
       body: JSON.stringify({ name, private: opts.private ?? true, description: opts.description ?? "", auto_init: true }),
     });
-    if (res.status === 422) return new GithubRepo(token, org, name); // ya existe → adoptar
-    if (!res.ok) throw new Error(`POST /orgs/${org}/repos → ${res.status} ${await res.text()}`);
+    if (res.status === 422) return new GithubRepo(token, owner, name); // ya existe → adoptar
+    if (!res.ok) throw new Error(`POST ${url} → ${res.status} ${await res.text()}`);
     const r = (await res.json()) as { name: string; owner: { login: string } };
     return new GithubRepo(token, r.owner.login, r.name);
   }
