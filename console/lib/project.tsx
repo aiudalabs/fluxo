@@ -35,6 +35,7 @@ const FEATURES: { key: string; icon: string }[] = [
   { key: "agents", icon: "◎" },
   { key: "flow", icon: "⟳" },
   { key: "brain", icon: "◈" },
+  { key: "registry", icon: "▦" },
   { key: "settings", icon: "⚙" },
 ];
 
