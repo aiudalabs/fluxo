@@ -220,6 +220,42 @@ async function reconcileApprovals() {
   }
 }
 
+// ── 2d) Reconcile COSTOS (F-spend) ────────────────────────────────────────────────
+// Lee los comentarios de issues del repo, extrae los marcadores fluxo:cost que postea el claude.yml
+// (modelUsage/costUSD de claude-code-action) y hace UPSERT en run_costs (idempotente por run_id, via
+// on_conflict ignore-duplicates). El tenant lo lee por RLS; escribimos con service_role.
+const COST_RE = /<!--\s*fluxo:cost\s*(\{[\s\S]*?\})\s*-->/;
+
+async function reconcileCosts() {
+  if (!app) return;
+  const projects = await rest<Array<{ id: string; name: string; org: string | null; repo: string | null; tenant_id: string }>>(`/projects?select=id,name,org,repo,tenant_id&repo=not.is.null`);
+  for (const p of projects) {
+    if (!p.repo || !p.org || dryRun) continue;
+    try {
+      const repo = GithubRepo.fromUrl(await repoTokenFor(p.org), p.repo);
+      const comments = await repo.listRepoIssueComments();
+      let stored = 0;
+      for (const c of comments) {
+        const m = c.body.match(COST_RE);
+        if (!m) continue;
+        let data: { run?: unknown; usd?: unknown; in?: unknown; out?: unknown; cacheRead?: unknown; issues?: unknown };
+        try { data = JSON.parse(m[1]); } catch { continue; }
+        if (data.run == null) continue;
+        const res = await fetch(`${base}/run_costs?on_conflict=project_id,run_id`, {
+          method: "POST",
+          headers: { ...svc, Prefer: "resolution=ignore-duplicates" },
+          body: JSON.stringify({
+            tenant_id: p.tenant_id, project_id: p.id, run_id: String(data.run), issues: data.issues != null ? String(data.issues) : null,
+            usd: Number(data.usd) || 0, input_tokens: Number(data.in) || 0, output_tokens: Number(data.out) || 0, cache_read_tokens: Number(data.cacheRead) || 0,
+          }),
+        });
+        if (res.ok || res.status === 201) stored++;
+      }
+      if (stored) console.log(`💰 costos ${p.name}: ${stored} marcador(es) procesado(s) (upsert idempotente)`);
+    } catch (e) { console.error(`  costos ${p.name} falló: ${e instanceof Error ? e.message : e}`); }
+  }
+}
+
 async function reconcileBuild() {
   if (!app) return; // sin credenciales de la App no hay build
   const projects = await rest<Array<{ id: string; name: string; org: string | null; repo: string | null; settings: Settings | null }>>(`/projects?select=id,name,org,repo,settings&repo=not.is.null`);
@@ -318,6 +354,7 @@ async function tick() {
     // (gated) → DESPACHAR. Aprobar antes de mergear: destraba el CI para que los checks corran y el
     // auto-merge los vea CLEAN en el próximo tick.
     try { await reconcileProjection(); } catch (e) { console.error("reconcileProjection:", e instanceof Error ? e.message : e); }
+    try { await reconcileCosts(); } catch (e) { console.error("reconcileCosts:", e instanceof Error ? e.message : e); }
     try { await reconcileApprovals(); } catch (e) { console.error("reconcileApprovals:", e instanceof Error ? e.message : e); }
     try { await reconcileAutoMerge(); } catch (e) { console.error("reconcileAutoMerge:", e instanceof Error ? e.message : e); }
     try { await reconcileBuild(); } catch (e) { console.error("reconcileBuild:", e instanceof Error ? e.message : e); }

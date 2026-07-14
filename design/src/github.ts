@@ -287,6 +287,21 @@ export class GithubRepo {
     if (!res.ok) throw new Error(`POST actions/runs/${runId}/approve → ${res.status} ${await res.text()}`);
   }
 
+  // listRepoIssueComments: todos los comentarios de issues del repo (paginado, recientes primero).
+  // Lo usa reconcileCosts (F-spend) para encontrar los marcadores <!-- fluxo:cost {...} -->. Acotado
+  // a 10 páginas (1000 comentarios) — de sobra para un repo de proyecto.
+  async listRepoIssueComments(): Promise<Array<{ body: string }>> {
+    const out: Array<{ body: string }> = [];
+    for (let page = 1; page <= 10; page++) {
+      const res = await fetch(`${API}/repos/${this.owner}/${this.repo}/issues/comments?per_page=100&page=${page}&sort=created&direction=desc`, { headers: H(this.token) });
+      if (!res.ok) throw new Error(`GET issues/comments → ${res.status} ${await res.text()}`);
+      const batch = (await res.json()) as Array<{ body?: string }>;
+      for (const c of batch) if (c.body) out.push({ body: c.body });
+      if (batch.length < 100) break;
+    }
+    return out;
+  }
+
   // fileOnRef: ¿existe `path` en `ref`? Lo usa el guard docs-on-main (Fase 5): no despachar si el
   // PRD no está en `main`. 404 → false; otro error se propaga (el caller hace fail-open capturando).
   async fileOnRef(path: string, ref: string): Promise<boolean> {
