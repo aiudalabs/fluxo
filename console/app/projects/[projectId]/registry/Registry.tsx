@@ -7,6 +7,8 @@
 // diferido). Estilo: clases del board/wrap de v1; contenido crudo en <pre> (sin deps de markdown).
 
 import { useCallback, useEffect, useState } from "react";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 import { useProject } from "@/lib/project";
 import { activeToken } from "@/lib/supabaseClient";
 import { useT } from "@/lib/i18n";
@@ -121,7 +123,12 @@ export default function Registry() {
               <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
                 <h3 style={{ margin: 0 }}>{sel.id}</h3>
                 {detail.yaml && (<><div className="eyebrow acc">{t("registry.detail.meta")}</div><Pre text={detail.yaml} /></>)}
-                {detail.md && (<><div className="eyebrow acc">{t("registry.detail.persona")}</div><Pre text={detail.md} /></>)}
+                {detail.md && (
+                  <>
+                    <div className="eyebrow acc">{t("registry.detail.persona")}</div>
+                    <article className="docs-md artifact-md"><ReactMarkdown remarkPlugins={[remarkGfm]}>{detail.md}</ReactMarkdown></article>
+                  </>
+                )}
               </div>
             )}
           </div>
