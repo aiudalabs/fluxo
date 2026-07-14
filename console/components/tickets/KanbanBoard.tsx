@@ -213,7 +213,9 @@ interface KanbanBoardProps {
 }
 
 export function KanbanBoard({ tickets, gates, candidates, onDispatch, onOpenTicket, onOpenRun }: KanbanBoardProps) {
-  // Agrupar tickets por estado
+  // Agrupar tickets por estado. El estado `ready` (derivado de candidates()) ya viene resuelto en
+  // tk.status desde Board.tsx (una sola fuente para las 4 vistas + grafo), así que acá solo
+  // agrupamos por status — sin lógica de "ready" duplicada.
   const byStatus = new Map<TicketStatus, OrchestratorTicket[]>();
   for (const s of STATUS_ORDER) byStatus.set(s, []);
   for (const tk of tickets) {

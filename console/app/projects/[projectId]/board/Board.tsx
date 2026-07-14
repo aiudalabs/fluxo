@@ -152,20 +152,32 @@ export default function Board() {
     return () => { cancelled = true; void supabase.removeChannel(ch); };
   }, [projectId, supabase, refreshCandidates]);
 
-  const gates = useMemo(() => waitingBySprint(tickets), [tickets]);
-  const sprintOpts = useMemo(() => [...new Set(tickets.map((tk) => tk.sprint_id).filter(Boolean) as string[])].sort(), [tickets]);
-  const laneOpts = useMemo(() => [...new Set(tickets.map((tk) => tk.owner).filter(Boolean) as string[])].sort(), [tickets]);
+  // displayTickets — DERIVA el estado `ready` en UN SOLO lugar, para las 4 vistas + grafo + leyenda.
+  // En v2 el conductor despacha `backlog→running` directo (el estado `ready` en DB queda vestigial:
+  // la proyección nunca lo escribe). Pero una story `backlog` que ES CANDIDATO despachable AHORA
+  // (candidates(): deps cumplidas + espejada a issue + sprint no gateado + hay cupo) es exactamente
+  // el "ready" de v1. Al reescribir su status a `ready` acá, TODO consumo aguas abajo (Kanban, Tabla,
+  // Sprints, Grafo, leyenda, minimapa, filtro) lo pinta igual — reusando el statusToken portado de v1
+  // (mismo esquema de colores) — sin tocar el estado real en DB ni reabrir la máquina de estados.
+  const displayTickets = useMemo(
+    () => tickets.map((tk) => (tk.status === "backlog" && candidates.has(tk.id) ? { ...tk, status: "ready" as TicketStatus } : tk)),
+    [tickets, candidates],
+  );
+
+  const gates = useMemo(() => waitingBySprint(displayTickets), [displayTickets]);
+  const sprintOpts = useMemo(() => [...new Set(displayTickets.map((tk) => tk.sprint_id).filter(Boolean) as string[])].sort(), [displayTickets]);
+  const laneOpts = useMemo(() => [...new Set(displayTickets.map((tk) => tk.owner).filter(Boolean) as string[])].sort(), [displayTickets]);
 
   const filtered = useMemo(() => {
     const needle = q.trim().toLowerCase();
-    return tickets.filter((tk) => {
+    return displayTickets.filter((tk) => {
       if (fStatus !== "all" && tk.status !== fStatus) return false;
       if (fSprint !== "all" && (tk.sprint_id || "") !== fSprint) return false;
       if (fLane !== "all" && (tk.owner || "") !== fLane) return false;
       if (needle && !`${tk.id} ${tk.title} ${tk.body ?? ""}`.toLowerCase().includes(needle)) return false;
       return true;
     });
-  }, [tickets, fStatus, fSprint, fLane, q]);
+  }, [displayTickets, fStatus, fSprint, fLane, q]);
 
   const hasFilter = q.trim() !== "" || fStatus !== "all" || fSprint !== "all" || fLane !== "all";
   const viewDesc = t(`tickets.desc.${view}`);
@@ -234,7 +246,9 @@ export default function Board() {
       )}
 
       <TicketDetail
-        ticket={openId ? tickets.find((tk) => tk.id === openId) ?? null : null}
+        ticket={openId ? displayTickets.find((tk) => tk.id === openId) ?? null : null}
+        candidate={openId ? candidates.get(openId) : undefined}
+        onDispatch={onDispatch}
         onClose={() => setOpenId(null)}
         onOpenTicket={setOpenId}
       />
