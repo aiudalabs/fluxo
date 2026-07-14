@@ -78,8 +78,9 @@ export function isAgentAssignee(login: string): boolean {
 export type Derivation =
   | { kind: "done" }
   | { kind: "review"; prUrl: string }
-  | { kind: "running" } // señal fuerte: PR draft, asignado agente, o label agent:running
-  | { kind: "idle" };   // sin señal positiva
+  | { kind: "running" }  // señal fuerte: PR draft, asignado agente, o label agent:running
+  | { kind: "failed" }   // señal TERMINAL explícita: run vacío (claude.yml puso agent:failed) → requeue YA
+  | { kind: "idle" };    // sin señal positiva
 
 // derive: espeja el switch projection.go:494-542.
 //   issue closed                    → done
@@ -94,6 +95,11 @@ export function derive(issue: GhIssue | undefined, prs: GhPr[]): Derivation {
   const open = prs.filter((p) => p.state === "open");
   const nonDraft = open.find((p) => !p.draft);
   if (nonDraft) return { kind: "review", prUrl: nonDraft.url };
+  // Señal TERMINAL explícita (L-AUTO-5): el rescate del claude.yml marcó agent:failed porque el run
+  // terminó SIN trabajo (ni commits ni PR — p.ej. el agente intentó delegar a un subagente). Un PR
+  // real (review/done, arriba) SIEMPRE gana; si no lo hay, el fallo terminal degrada YA — sin
+  // histéresis y sin depender de liveRunCount repo-level (que era la Grieta B del stuck lento).
+  if (issue.labels.includes("agent:failed")) return { kind: "failed" };
   if (open.some((p) => p.draft)) return { kind: "running" };
   if (issue.assignees.some(isAgentAssignee)) return { kind: "running" };
   if (issue.labels.includes("agent:running")) return { kind: "running" };
@@ -157,6 +163,19 @@ export class Projector {
     if (d.kind === "running") {
       this.stale.delete(s.id);
       if (s.status !== "running") { await this.write(s.id, "running", null, null); record("running"); this.log(`  ▶ ${s.key}: ${s.status} → running (agente activo)`); }
+      return;
+    }
+    // failed: evento terminal explícito (agent:failed) → requeue INMEDIATO de una story viva, sin
+    // histéresis ni dependencia de liveRunCount. Solo degrada running/review (una story ya en backlog
+    // con el label rezagado es no-op; el próximo dispatch limpia agent:failed). Espeja L-ARCH-2
+    // "democión solo por evento terminal explícito".
+    if (d.kind === "failed") {
+      this.stale.delete(s.id);
+      if (s.status === "running" || s.status === "review") {
+        await this.write(s.id, "backlog", null, "run vacío: el agente terminó sin producir trabajo (fallo terminal)");
+        record("backlog", "run_vacío");
+        this.log(`  ⚠ ${s.key}: ${s.status} → backlog (run terminal vacío: agent:failed)`);
+      }
       return;
     }
 

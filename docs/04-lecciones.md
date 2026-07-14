@@ -22,6 +22,17 @@ construcción** o **cubrir con un test**. Los códigos `L-*` los referencia `03-
   → v2: requeue desde `running` con confirmación; transición legal.
 - **L-AUTO-4** · Liveness de Copilot leída de la Agent-tasks API: 404 = "sin veredicto" → sesión colgada. → v2:
   **liveness declarada por `workflow_run`** (robusta), no por la API frágil.
+- **L-AUTO-5** (2026-07-14, cazada en el E2E) · **Run vacío / fire-and-forget en headless**: el agente dentro
+  de `claude-code-action` se va de costado —intentó **delegar a un subagente** (tool Agent/Task), que en un runner
+  efímero no se ejecuta— y la action **terminó SIN trabajo** (ni commits ni PR). Misma familia que el bug que nos
+  trajo de v1 (*"mandó a construir APKs en background y terminó el action"*). Dos fallas: (a) el Rescue checkpoint
+  solo cubría *"trabajó pero no pusheó"*, no *"no trabajó"*; (b) el requeue dependía de la histéresis con
+  `liveRunCount` **repo-level** → la story quedaba `running` hasta que TODO el repo quedara quieto (stuck lento).
+  → v2: **enforcement, no disciplina** — `claude.yml` pasa `--disallowedTools Task` (el subagente no puede
+  spawnearse); el rescate, ante un run vacío, marca el label **`agent:failed`** (evento terminal explícito) y la
+  proyección lo degrada a `backlog` **YA**, desacoplado de `liveRunCount`. Guard por prompt (`HEADLESS_GUARD` en
+  `dispatch.ts`) como cinturón. **Test:** `projection.test.ts` — `agent:failed` degrada `running→backlog` aunque
+  `liveRuns>0`; y es no-op si la story ya está en `backlog`.
 - **L-AUTO-3** · Gate de merge **verde-pero-vacío**: e2e-verify `continue-on-error`, ui-verify SKIP por `{{app_path}}`
   sin renderizar → el humano era el único QA. → v2: verify como **check REQUERIDO** + `app_path` poblado + juez-visión.
 

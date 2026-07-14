@@ -142,10 +142,23 @@ export function candidates(stories: DStory[], sprintsById: Map<string, DSprint>,
 
 // ── Prompts ────────────────────────────────────────────────────────────────────
 // storyPrompt: apunta a UN issue (su body ya lleva el spec + ACs del handoff). v1 buildPrompt story.
+// HEADLESS_GUARD — guard de ejecución en runner efímero (L-AUTO-5). En claude-code-action el agente
+// corre headless SIN sub-agentes ni procesos en background: si delega a un subagente (tool Agent/Task)
+// o lanza un build/proceso "en background" y no lo espera, la action termina SIN trabajo y la story
+// queda trabada (fue el bug que nos trajo de v1: "APK en background → action terminó"; reapareció con
+// un spawn de subagente). El enforcement DURO vive en claude.yml (`--disallowedTools Task` +
+// rescate que señaliza `agent:failed` en run vacío → requeue inmediato); esto es el cinturón por prompt.
+export const HEADLESS_GUARD =
+  "IMPORTANTE — runner headless efímero: trabajá VOS DIRECTAMENTE en esta sesión (leé, editá, testeá, " +
+  "commiteá y abrí el PR acá mismo). NO delegues a subagentes (no uses el tool Agent/Task) ni lances " +
+  "procesos en background que no esperes — en este runner no se ejecutan y la corrida termina sin trabajo. " +
+  "Nada de fire-and-forget.";
+
 export function storyPrompt(s: Pick<DStory, "key" | "title" | "body" | "acceptance" | "issue">): string {
   const n = s.issue;
   const parts = [
     `Resolvé el issue #${n} (${s.key} — ${s.title}).`,
+    `\n${HEADLESS_GUARD}`,
     s.body ? `\n${s.body.trim()}` : "",
     s.acceptance ? `\n## Criterios de aceptación\n${s.acceptance.trim()}` : "",
     `\nImplementá EXACTAMENTE lo que especifican los criterios de aceptación — cada checkbox, nada más. ` +
@@ -167,6 +180,7 @@ export function sprintPrompt(
     "Estás implementando un SPRINT ENTERO en un solo run, en una sola rama, que se convierte en UN pull request. " +
     "Trabajá cada story de abajo EN EL ORDEN DADO — están en orden de dependencias. " +
     "No abras ramas ni PRs separados por story.\n");
+  b.push(HEADLESS_GUARD + "\n");
   b.push("Leé los docs de diseño en docs/ para el contexto.\n");
   b.push("Stories (en orden):\n");
   const closes: string[] = [];

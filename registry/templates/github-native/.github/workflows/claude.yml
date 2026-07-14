@@ -50,6 +50,9 @@ jobs:
           for n in "${NUMS[@]}"; do
             n="${n// /}"
             [ -z "$n" ] && continue
+            # Limpia una señal de fallo previa (L-AUTO-5): este despacho fresco reintenta la story,
+            # así que el agent:failed de un run vacío anterior ya no aplica.
+            gh issue edit "$n" --remove-label "agent:failed" -R "${{ github.repository }}" 2>/dev/null || true
             gh issue edit "$n" --add-label "agent:running" -R "${{ github.repository }}" || true
           done
 
@@ -64,7 +67,12 @@ jobs:
           # CI headless: el runner es efímero y aislado — el agente necesita
           # escribir/commitear/pushear sin prompts interactivos (sin esto la
           # sesión "trabaja" 40 turnos y muere sin poder crear un archivo).
-          claude_args: "--permission-mode bypassPermissions"
+          # `--disallowedTools Task` (L-AUTO-5, ENFORCEMENT): el agente NO puede
+          # delegar a subagentes — un spawn de subagente en headless no se ejecuta
+          # y la corrida termina sin trabajo (mismo modo de fallo que el "APK en
+          # background" que nos trajo de v1). El guard por prompt es el cinturón;
+          # esto es el tirante.
+          claude_args: "--permission-mode bypassPermissions --disallowedTools Task"
 
       # Checkpoint de rescate DETERMINISTA (cazado en vivo dos veces: sesiones
       # que implementan durante 100+ turnos y terminan sin pushear — por
@@ -76,6 +84,7 @@ jobs:
         if: always()
         env:
           GH_TOKEN: ${{ github.token }}
+          ISSUES: ${{ inputs.issues }}
         run: |
           set -e
           git config user.name "fluxo conductor"
@@ -87,7 +96,24 @@ jobs:
             AHEAD=$(git rev-list --count origin/main..HEAD 2>/dev/null || echo 0)
           fi
           if [ -z "$DIRTY" ] && [ "$AHEAD" = "0" ]; then
-            echo "sin trabajo que rescatar"; exit 0
+            # RUN VACÍO (L-AUTO-5): ni cambios ni commits ni PR — el agente no produjo NADA (p.ej.
+            # intentó delegar a un subagente que en headless no corre). Señalizamos un fallo TERMINAL
+            # explícito con el label agent:failed en los issues → la proyección del conductor lo
+            # degrada a backlog YA (sin esperar la histéresis repo-level). Sin esto la story quedaba
+            # "running" hasta que TODO el repo quedara quieto (el bug del stuck lento).
+            echo "sin trabajo que rescatar → señalizando agent:failed (run vacío) para requeue inmediato"
+            if [ -n "$ISSUES" ]; then
+              gh label create "agent:failed" -c B60205 \
+                -d "El run del agente terminó SIN trabajo (fluxo conductor) — requeue" \
+                -R "${{ github.repository }}" --force || true
+              IFS=',' read -ra NUMS <<< "$ISSUES"
+              for n in "${NUMS[@]}"; do
+                n="${n// /}"
+                [ -z "$n" ] && continue
+                gh issue edit "$n" --add-label "agent:failed" -R "${{ github.repository }}" || true
+              done
+            fi
+            exit 0
           fi
           if [ "$BR" = "main" ] || [ "$BR" = "HEAD" ]; then
             BR="claude/rescue-${{ github.run_id }}"

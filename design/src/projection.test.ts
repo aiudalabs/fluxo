@@ -147,3 +147,34 @@ test("syncProject: un PR draft mueve backlog→running (arranque detectado)", as
   await p.syncProject(s, [story({ status: "backlog" })]);
   assert.deepEqual(writes, [{ id: "s1", status: "running", prUrl: null, agentLost: null }]);
 });
+
+// ── L-AUTO-5: señal terminal explícita agent:failed (run vacío) ────────────────────
+test("derive: label agent:failed sin PR → { kind: failed }", () => {
+  assert.deepEqual(derive(issue({ labels: ["agent:failed"] }), []), { kind: "failed" });
+});
+
+test("derive: un PR real GANA sobre agent:failed (label rezagado no pisa trabajo real)", () => {
+  assert.deepEqual(
+    derive(issue({ labels: ["agent:failed"] }), [pr({ url: "https://pr/9", closes: [1] })]),
+    { kind: "review", prUrl: "https://pr/9" },
+  );
+});
+
+test("syncProject: agent:failed degrada running → backlog YA, aunque haya runs vivos (Grieta B)", async () => {
+  const { writes, write } = capture();
+  const p = new Projector({ write, threshold: 8 });
+  // liveRuns=5 (otro sprint corriendo): la histéresis normal NO degradaría, pero el evento terminal sí.
+  const s = fakeSource([issue({ number: 1, labels: ["agent:failed"] })], [], /*liveRuns*/ 5);
+  await p.syncProject(s, [story({ status: "running" })]);
+  assert.equal(writes.length, 1);
+  assert.equal(writes[0].status, "backlog");
+  assert.ok(writes[0].agentLost, "marca agent_lost con el motivo del run vacío");
+});
+
+test("syncProject: agent:failed en una story YA en backlog → no-op (label rezagado)", async () => {
+  const { writes, write } = capture();
+  const p = new Projector({ write });
+  const s = fakeSource([issue({ number: 1, labels: ["agent:failed"] })], [], 0);
+  await p.syncProject(s, [story({ status: "backlog" })]);
+  assert.deepEqual(writes, []); // no re-degrada una story que ya volvió al backlog
+});
