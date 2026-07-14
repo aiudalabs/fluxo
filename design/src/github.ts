@@ -254,4 +254,45 @@ export class GithubRepo {
       console.warn(`  ⚠ PR #${n} mergeado, pero DELETE branch ${headRef} → ${del.status} ${await del.text()}`);
     }
   }
+
+  // ── WORKFLOW APPROVAL (F5 · WorkflowApprover) ────────────────────────────────
+  // listActionRequiredRuns: runs de CI retenidos en `action_required` (GitHub los frena porque un
+  // agente podría editar el CI) con los PRs detrás de cada uno. `run.pull_requests` viene poblado
+  // para PRs del MISMO repo — el caso del agente (empuja su branch al repo, no a un fork).
+  async listActionRequiredRuns(): Promise<import("./approve.ts").PendingRun[]> {
+    const res = await fetch(`${API}/repos/${this.owner}/${this.repo}/actions/runs?status=action_required&per_page=50`, { headers: H(this.token) });
+    if (!res.ok) throw new Error(`GET actions/runs?status=action_required → ${res.status} ${await res.text()}`);
+    const data = (await res.json()) as { workflow_runs?: Array<{ id: number; pull_requests?: Array<{ number: number }> | null }> };
+    return (data.workflow_runs ?? []).map((r) => ({ id: r.id, prNumbers: (r.pull_requests ?? []).map((p) => p.number) }));
+  }
+
+  // listPRFiles: los paths que cambia un PR (paginado). El guard de approve.ts marca inseguro si
+  // alguno cae bajo .github/workflows/**.
+  async listPRFiles(pr: number): Promise<string[]> {
+    const out: string[] = [];
+    for (let page = 1; ; page++) {
+      const res = await fetch(`${API}/repos/${this.owner}/${this.repo}/pulls/${pr}/files?per_page=100&page=${page}`, { headers: H(this.token) });
+      if (!res.ok) throw new Error(`GET pulls/${pr}/files → ${res.status} ${await res.text()}`);
+      const batch = (await res.json()) as Array<{ filename: string }>;
+      out.push(...batch.map((f) => f.filename));
+      if (batch.length < 100) break;
+    }
+    return out;
+  }
+
+  // approveRun: aprueba un run `action_required` (POST .../approve) — lo mismo que el botón manual
+  // del console, pero disparado por el sweep auto_if_safe del conductor.
+  async approveRun(runId: number): Promise<void> {
+    const res = await fetch(`${API}/repos/${this.owner}/${this.repo}/actions/runs/${runId}/approve`, { method: "POST", headers: H(this.token) });
+    if (!res.ok) throw new Error(`POST actions/runs/${runId}/approve → ${res.status} ${await res.text()}`);
+  }
+
+  // fileOnRef: ¿existe `path` en `ref`? Lo usa el guard docs-on-main (Fase 5): no despachar si el
+  // PRD no está en `main`. 404 → false; otro error se propaga (el caller hace fail-open capturando).
+  async fileOnRef(path: string, ref: string): Promise<boolean> {
+    const res = await fetch(`${API}/repos/${this.owner}/${this.repo}/contents/${path}?ref=${ref}`, { headers: H(this.token) });
+    if (res.status === 404) return false;
+    if (!res.ok) throw new Error(`GET contents/${path}?ref=${ref} → ${res.status} ${await res.text()}`);
+    return true;
+  }
 }

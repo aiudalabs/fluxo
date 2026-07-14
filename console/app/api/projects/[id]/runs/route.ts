@@ -6,6 +6,7 @@
 // Ownership server-side por el tenant de la sesión; el token del usuario (la App tiene actions:write).
 import { NextRequest, NextResponse } from "next/server";
 import { verifySessionJwt, getUserToken, admin } from "@/lib/server/githubAuth";
+import { safeToApproveOne, type WorkflowApprover } from "../../../../../../design/src/approve.ts";
 
 const API = "https://api.github.com";
 const H = (t: string) => ({ Authorization: `token ${t}`, Accept: "application/vnd.github+json", "User-Agent": "fluxo" });
@@ -70,6 +71,27 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
 
   const token = await getUserToken(session.sub);
   if (!token) return NextResponse.json({ error: "github no conectado" }, { status: 403 });
+
+  // Guard de seguridad (Fase 5, faithful a v1 ApproveOne): el guard de workflows aplica AUNQUE haya
+  // un click humano. Reusa el kernel testeado approve.ts con un WorkflowApprover sobre el token del
+  // usuario. Un PR que toca .github/workflows/** NO se aprueba desde acá — hay que hacerlo en GitHub.
+  const gh: WorkflowApprover = {
+    async listActionRequiredRuns() {
+      const r = await fetch(`${API}/repos/${slug}/actions/runs?status=action_required&per_page=50`, { headers: H(token) });
+      if (!r.ok) throw new Error(`runs → ${r.status}`);
+      const d = (await r.json()) as { workflow_runs?: Array<{ id: number; pull_requests?: Array<{ number: number }> | null }> };
+      return (d.workflow_runs ?? []).map((w) => ({ id: w.id, prNumbers: (w.pull_requests ?? []).map((p) => p.number) }));
+    },
+    async listPRFiles(n) {
+      const r = await fetch(`${API}/repos/${slug}/pulls/${n}/files?per_page=100`, { headers: H(token) });
+      if (!r.ok) throw new Error(`files → ${r.status}`);
+      return ((await r.json()) as Array<{ filename: string }>).map((f) => f.filename);
+    },
+    async approveRun() { /* no usado: el approve real va abajo con el mismo token */ },
+  };
+  const { found: runFound, safe } = await safeToApproveOne(gh, body.runId);
+  if (!runFound) return NextResponse.json({ error: "el run ya no está pendiente de aprobación" }, { status: 409 });
+  if (!safe) return NextResponse.json({ approved: false, blocked: true, reason: "el PR toca .github/workflows/** — aprobalo a mano en GitHub" }, { status: 200 });
 
   const res = await fetch(`${API}/repos/${slug}/actions/runs/${body.runId}/approve`, { method: "POST", headers: H(token) });
   if (!res.ok) return NextResponse.json({ error: `approve → ${res.status} ${(await res.text()).split("\n")[0]}` }, { status: 502 });

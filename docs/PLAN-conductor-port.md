@@ -186,10 +186,12 @@ typecheck limpio.
 - **Test:** PR con checks verdes + review aprobado → auto-merge; con CHANGES_REQUESTED o check rojo → NO mergea.
 - **CAVEAT (E2E):** el gate real depende de **branch protection** en el repo del cliente. `mergeStateStatus==CLEAN` solo bloquea por checks *requeridos*, y `reviewDecision` solo es no-null si el repo exige reviews. Sin branch protection que marque `claude-review`/`suite-integrity` como required checks + review requerido, un PR podría dar CLEAN sin que el reviewer haya aprobado. El predicado es faithful a v1; **asegurar la branch protection al scaffoldear el repo es trabajo pendiente** (F3 solo commitea los workflows). Validar en E2E con un PR vivo + el secret sembrado.
 
-### Fase 5 — GUARDS + workflow approval
-- `workflow_approval: auto_if_safe`: aprobar runs `action_required` salvo que el diff toque `.github/workflows/**` (espejar `approve.go`). Requiere `actions: write` (la App lo tiene).
-- Guard `docs-on-main`: no despachar si `docs/PRD.md` no está en `main` (fail-open).
-- **Test:** un PR que toca workflows NO se auto-aprueba; sin PRD en main no despacha.
+### Fase 5 — GUARDS + workflow approval — ✅ HECHA (2026-07-13)
+- `workflow_approval: auto_if_safe`: aprobar runs `action_required` salvo que el diff toque `.github/workflows/**` (espejar `approve.go`). Requiere `actions: write` (la App lo tiene). → kernel puro `design/src/approve.ts` (unsafePath/prDiffSafe/Approver.sweep/safeToApproveOne) + `reconcileApprovals` en el tick (entre proyección y auto-merge), gated por settings.workflow_approval.
+- Guard `docs-on-main`: no despachar si `docs/PRD.md` no está en `main` (fail-open). → `docsGuardOk` en dispatch.ts + `GithubRepo.fileOnRef` + chequeo en reconcileBuild.
+- El guard aplica TAMBIÉN al approve manual del console (runs/route.ts reusa `safeToApproveOne`).
+- **Test:** ✅ un PR que toca workflows NO se auto-aprueba; sin PRD en main no despacha. design 107/107 + console build ok.
+- ⚠️ Activación: setear `settings.workflow_approval=auto_if_safe` + reiniciar el worker (el que corre tiene el código previo; los paths F5 están gated-off por default).
 
 ### Fase 6 (UI) — botón de despacho manual + monitor
 - Cablear `candidates`/`onDispatch` en `Board.tsx` → endpoint `POST /api/projects/[id]/dispatch` que corre la lógica de `Dispatch` para un candidate.

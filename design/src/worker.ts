@@ -17,8 +17,9 @@ import { fileURLToPath } from "node:url";
 import { dirname, resolve } from "node:path";
 import { GithubApp, GithubRepo } from "./github.ts";
 import { Projector, type MirroredStory } from "./projection.ts";
-import { candidates, storyPrompt, sprintPrompt, type Policy, type DStory, type DSprint } from "./dispatch.ts";
+import { candidates, storyPrompt, sprintPrompt, docsGuardOk, type Policy, type DStory, type DSprint } from "./dispatch.ts";
 import { AutoMerger, prNumFromUrl } from "./automerge.ts";
+import { Approver } from "./approve.ts";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const mainScript = resolve(here, "main.ts");
@@ -124,6 +125,7 @@ interface Settings {
   max_concurrency?: number;
   merge_mode?: "manual" | "auto";
   dispatch_mode?: "auto" | "manual";
+  workflow_approval?: "off" | "auto_if_safe";
   lanes?: Record<string, { channel?: string; model?: string }>;
 }
 function policyFrom(settings: Settings): Policy {
@@ -195,6 +197,29 @@ async function reconcileAutoMerge() {
   }
 }
 
+// ── 2c) Reconcile WORKFLOW APPROVAL (Fase 5; gated por workflow_approval:auto_if_safe) ──────────
+// Los runs de CI de los PRs de agentes quedan `action_required`. Bajo auto_if_safe el conductor los
+// aprueba SOLO si su diff no toca `.github/workflows/**` (approve.ts). Corre ANTES del auto-merge:
+// aprobar destraba el CI → los checks corren → el próximo tick el auto-merge los ve CLEAN. Default
+// (off / ausente) = el humano aprueba desde la vista Agentes. GithubRepo implementa WorkflowApprover.
+const approver = new Approver({ log: (m) => console.log(m) });
+
+async function reconcileApprovals() {
+  if (!app) return;
+  const projects = await rest<Array<{ id: string; name: string; org: string | null; repo: string | null; settings: Settings | null }>>(`/projects?select=id,name,org,repo,settings&repo=not.is.null`);
+  for (const p of projects) {
+    if (!p.repo || !p.org) continue;
+    if ((p.settings?.workflow_approval ?? "off") !== "auto_if_safe") continue; // default: aprueba el humano
+    if (dryRun) { console.log(`[dry] approval sweep: ${p.name}`); continue; }
+    try {
+      const repo = GithubRepo.fromUrl(await repoTokenFor(p.org), p.repo);
+      const { approved, blocked } = await approver.sweep(repo);
+      if (approved.length) console.log(`✓ approve ${p.name}: ${approved.length} run(s) auto-aprobado(s) [${approved.join(", ")}]`);
+      if (blocked.length) console.log(`⛔ approve ${p.name}: ${blocked.length} run(s) tocan workflows/sin-PR → quedan al humano [${blocked.join(", ")}]`);
+    } catch (e) { console.error(`  approve ${p.name} falló: ${e instanceof Error ? e.message : e}`); }
+  }
+}
+
 async function reconcileBuild() {
   if (!app) return; // sin credenciales de la App no hay build
   const projects = await rest<Array<{ id: string; name: string; org: string | null; repo: string | null; settings: Settings | null }>>(`/projects?select=id,name,org,repo,settings&repo=not.is.null`);
@@ -207,6 +232,14 @@ async function reconcileBuild() {
     // La PROYECCIÓN y el AUTO-MERGE no se ven afectados (corren en sus propios reconcilers): en
     // modo manual el worker sigue moviendo review→done y mergeando; solo cede el disparo al humano.
     if ((p.settings?.dispatch_mode ?? "auto") === "manual") continue;
+
+    // Guard docs-on-main (Fase 5): no despachar si el PRD del proyecto no está en `main` (evita
+    // arrancar agentes sobre un repo sin el contrato de diseño publicado). Fail-open: un error de
+    // red al chequear NO frena el build (docsGuardOk(null) === true).
+    let prdOnMain: boolean | null = null;
+    try { prdOnMain = await GithubRepo.fromUrl(await repoTokenFor(p.org), p.repo).fileOnRef("docs/PRD.md", "main"); }
+    catch (e) { console.warn(`  docs-guard ${p.name}: chequeo falló (${e instanceof Error ? e.message : e}) → fail-open`); }
+    if (!docsGuardOk(prdOnMain)) { console.log(`  ⏸ ${p.name}: docs/PRD.md no está en main → no despacho (guard docs-on-main)`); continue; }
 
     const pol = policyFrom(p.settings ?? {});
 
@@ -281,8 +314,11 @@ async function reconcileBuild() {
 async function tick() {
   try { await reconcileDesign(); } catch (e) { console.error("reconcileDesign:", e instanceof Error ? e.message : e); }
   if (!noBuild) {
-    // Orden del conductor de v1: PROYECTAR (GitHub = verdad) → AUTO-MERGE (gated) → DESPACHAR.
+    // Orden del conductor de v1: PROYECTAR (GitHub = verdad) → APROBAR (auto_if_safe) → AUTO-MERGE
+    // (gated) → DESPACHAR. Aprobar antes de mergear: destraba el CI para que los checks corran y el
+    // auto-merge los vea CLEAN en el próximo tick.
     try { await reconcileProjection(); } catch (e) { console.error("reconcileProjection:", e instanceof Error ? e.message : e); }
+    try { await reconcileApprovals(); } catch (e) { console.error("reconcileApprovals:", e instanceof Error ? e.message : e); }
     try { await reconcileAutoMerge(); } catch (e) { console.error("reconcileAutoMerge:", e instanceof Error ? e.message : e); }
     try { await reconcileBuild(); } catch (e) { console.error("reconcileBuild:", e instanceof Error ? e.message : e); }
   }

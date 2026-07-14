@@ -181,3 +181,11 @@ export function sprintPrompt(
   b.push("Los criterios de aceptación de TODAS las stories deben pasar juntos; escribí tests honestos por criterio.");
   return b.join("\n");
 }
+
+// docsGuardOk — el guard `docs-on-main` (Fase 5): no despachar si el PRD del proyecto no está en
+// `main`. Fail-open: `prdOnMain === false` ⇒ NO despacha; `true` o `null` (el chequeo a GitHub
+// falló) ⇒ despacha igual (no bloqueamos el build por un error transitorio de red). Faithful a v1
+// (guard que fail-open, no fail-closed).
+export function docsGuardOk(prdOnMain: boolean | null): boolean {
+  return prdOnMain !== false;
+}

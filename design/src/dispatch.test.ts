@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
-  candidates, storyPrompt, sprintPrompt, channelFor, modelFor,
+  candidates, storyPrompt, sprintPrompt, channelFor, modelFor, docsGuardOk,
   type Policy, type DStory, type DSprint,
 } from "./dispatch.ts";
 
@@ -147,4 +147,11 @@ test("sprintPrompt: goal-mode, una rama/PR, Closes de TODAS", () => {
   assert.match(p, /Closes #11, Closes #12/);
   // las dos stories, en orden
   assert.ok(p.indexOf("S1-01") < p.indexOf("S1-02"));
+});
+
+// ── docsGuardOk (guard docs-on-main, Fase 5) ──────────────────────────────────────
+test("docsGuardOk: sin PRD en main NO despacha; con PRD sí; chequeo fallado = fail-open", () => {
+  assert.equal(docsGuardOk(false), false); // PRD ausente en main → no despacha
+  assert.equal(docsGuardOk(true), true);   // PRD presente → despacha
+  assert.equal(docsGuardOk(null), true);   // chequeo a GitHub falló → fail-open, despacha
 });
