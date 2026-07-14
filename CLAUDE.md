@@ -12,28 +12,48 @@ LATAM**. Este repo es el **rebuild v2** — un sustrato nuevo que reemplaza al k
 
 ---
 
-## ▶ PRÓXIMA SESIÓN — correr el E2E BROWSER-DRIVEN del conductor (pedido explícito del usuario)
+## ▶ AL REINICIAR — levantá TODA la infra y corré el E2E BROWSER-DRIVEN (pedido explícito del usuario)
 
-El **conductor F1–F4 + la UI F6 (despacho manual + monitor Agentes) ya están en `main`**
-(proyección + despacho story/sprint + reviewer scaffold + auto-merge gated + botón ▶ en el board +
-vista Agentes + `dispatch_mode:manual`). **El loop nunca se corrió end-to-end de verdad** — solo
-unit tests (design 94/94, console 8/8) + smoke de GET /candidates contra Idearium local. La tarea
-pedida para una sesión con contexto limpio: **ejecutar el E2E real, ahora BROWSER-DRIVEN, y verlo
-funcionar** (clickear ▶ Despachar en el board en vez de correr el worker a mano).
+**DÓNDE ESTAMOS (2026-07-13):** el conductor completo está en `main` (y `origin/main`):
+**F1–F4 (motor)** proyección GitHub→story · despacho story/sprint · scaffold reviewer · auto-merge gated —
+y **F6 (UI)** botón ▶ Despachar en el board + vista Agentes (monitor). **Ya se opera TODO desde el browser**:
+crear proyecto → diseñar (Studio+gates) → despachar desde el board → monitorear en Agentes. Verificado con
+unit tests (design 94/94, console 8/8, next build ok) — pero **el loop NUNCA se corrió end-to-end de verdad**.
+**Esa es la tarea pendiente #1: probarlo E2E con un run real.**
 
-1. **LEÉ `docs/E2E-conductor.md`** — runbook paso a paso, ya actualizado a browser-driven
-   (dispatch_mode=manual: el humano despacha desde el board, el worker corre SOLO para proyectar +
-   auto-mergear). NO es un test Playwright (v2 no tiene harness de browser); se observa en el console + `gh`/API/DB.
-2. Contexto del port: `docs/PLAN-conductor-port.md` (spec + mapa de v1). Decisiones: `~/.devtrace/decisions/fluxo.md`.
-3. **Requiere acciones del usuario** (pediles antes de arrancar): (a) login con GitHub en el console
-   (para que POST /dispatch actúe como el usuario), (b) sembrar el `CLAUDE_CODE_OAUTH_TOKEN` ROTADO en
-   Settings → Canal de build de Idearium, (c) OK para escribir a su repo (`nmlemus/idearium`) en el re-scaffold,
-   (d) setear `dispatch_mode:manual` en Settings del proyecto (por ahora vía DB — ver runbook §3).
-4. ⚠️ **Cuesta plata** (dispara un agente Claude real en las Actions del repo con el token del usuario) → empezá
-   con UNA story (story-mode, sin deps: S1-01 o S1-02) antes de sprint-mode / auto-merge.
-5. Pendiente además: **Fase 5** (workflow_approval `auto_if_safe` automático + guard docs-on-main; F6b hace
-   el approve MANUAL desde Agentes, que alcanza para operar). Toggle de `dispatch_mode` en la UI de Settings
-   (hoy solo por DB). Canal Copilot sin cablear. El E2E va PRIMERO — valida lo que ya está en main.
+### Paso 1 — LEVANTAR LA INFRA (cuando reinicies la máquina / sesión nueva)
+```bash
+cd ~/projects/genai/fluxo
+# 1) Supabase local (Postgres+RLS+Realtime). Chequeá/arrancá:
+supabase status || supabase start
+# 2) env + overrides a local:
+set -a; source .env; set +a
+export SUPABASE_URL=http://127.0.0.1:54321
+export SUPABASE_ANON_KEY="$(supabase status | awk '/anon key/{print $NF}')"
+export SUPABASE_SERVICE_ROLE_KEY="$(supabase status | awk '/service_role key/{print $NF}')"
+export SUPABASE_JWT_SECRET="$(supabase status | awk '/JWT secret/{print $NF}')"
+# 3) Console (:3000) + worker JUNTOS (o por separado):
+./scripts/dev.sh                 # console + worker
+#   … o separados:
+#   (cd console && npm run dev)   # :3000  (el botón ▶ y la vista Agentes)
+#   node --experimental-strip-types design/src/worker.ts --interval=20   # projection + auto-merge
+```
+
+### Paso 2 — ACCIONES DEL USUARIO (pediles al humano ANTES de despachar)
+- (a) **Login con GitHub** en el console (para que POST /dispatch actúe como él).
+- (b) **Sembrar el `CLAUDE_CODE_OAUTH_TOKEN` ROTADO** en Settings → Canal de build de Idearium (probe 🟢).
+- (c) **OK para escribir a su repo** (`nmlemus/idearium`) — el re-scaffold agrega claude-review.yml.
+- (d) **`dispatch_mode:manual`** en Settings del proyecto (hoy por DB — ver runbook §3).
+
+### Paso 3 — CORRER EL E2E
+**Seguí `docs/E2E-conductor.md`** (runbook browser-driven, paso a paso). ⚠️ **Cuesta plata** (dispara un
+agente Claude real en las Actions con el token del usuario) → empezá con **UNA story** (story-mode, sin
+deps: S1-01 o S1-02) antes de sprint-mode / auto-merge. Contexto: `docs/PLAN-conductor-port.md` +
+`~/.devtrace/decisions/fluxo.md`.
+
+**Pendiente además (no bloquea el E2E):** Fase 5 (auto-aprobar workflows seguros + guard docs-on-main;
+el approve MANUAL desde Agentes ya alcanza para operar), toggle de `dispatch_mode` en la UI de Settings,
+canal Copilot. El E2E va PRIMERO — valida lo que ya está en main.
 
 ---
 
