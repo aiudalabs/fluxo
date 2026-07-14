@@ -7,15 +7,16 @@
 // de Supabase (RLS + Realtime); el adaptador mapea el schema v2 (uuids, review/blocked) a
 // OrchestratorTicket (ids/deps/sprint por KEY; review→in_review).
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useProject } from "@/lib/project";
+import { activeToken } from "@/lib/supabaseClient";
 import { useT } from "@/lib/i18n";
 import { KanbanBoard } from "@/components/tickets/KanbanBoard";
 import { LaneChip } from "@/components/tickets/LaneChip";
 import { TicketDetail } from "@/components/tickets/TicketDetail";
 import { DepGraph } from "@/components/tickets/DepGraph";
 import { statusToken } from "@/lib/statusToken";
-import type { OrchestratorTicket, TicketStatus } from "@/lib/types";
+import type { DispatchCandidate, OrchestratorTicket, TicketStatus } from "@/lib/types";
 
 type ViewKind = "kanban" | "tabla" | "sprints" | "grafo";
 const VIEWS: ViewKind[] = ["kanban", "tabla", "sprints", "grafo"];
@@ -61,6 +62,49 @@ export default function Board() {
   const [fSprint, setFSprint] = useState("all");
   const [fLane, setFLane] = useState("all");
   const [openId, setOpenId] = useState<string | null>(null);
+  // Despacho manual (F6a): unidades despachables AHORA, keyed por story KEY (una unidad sprint
+  // mapea su candidato a CADA card miembro → el botón ▶ aparece en todas). `busy` evita el
+  // doble-click (doble run pago) mientras un POST /dispatch está en vuelo.
+  const [candidates, setCandidates] = useState<Map<string, DispatchCandidate>>(new Map());
+  const [busy, setBusy] = useState(false);
+
+  // refreshCandidates: corre el kernel candidates() server-side (GET /candidates, DB-only). Se
+  // llama al cargar y tras cada cambio (Realtime) → el botón desaparece cuando la unidad ya no
+  // está lista (p.ej. quedó running). Falla silenciosa = sin botones (nunca despacho a ciegas).
+  const refreshCandidates = useCallback(async () => {
+    const tok = activeToken();
+    try {
+      const res = await fetch(`/api/projects/${projectId}/candidates`, { headers: tok ? { Authorization: `Bearer ${tok}` } : {} });
+      if (!res.ok) { setCandidates(new Map()); return; }
+      const data = (await res.json()) as { candidates: DispatchCandidate[] };
+      const map = new Map<string, DispatchCandidate>();
+      for (const c of data.candidates) for (const k of c.stories) map.set(k, c);
+      setCandidates(map);
+    } catch { setCandidates(new Map()); }
+  }, [projectId]);
+
+  // onDispatch: confirma → POST /dispatch (server re-deriva y matchea el candidato, marca running
+  // ANTES de disparar). Optimista via Realtime: la card se moverá sola a `running`. Un 409 = la
+  // unidad dejó de estar lista (recargar). Reusa la MISMA verdad del kernel — no reimplementa nada.
+  const onDispatch = useCallback(async (c: DispatchCandidate) => {
+    if (busy) return;
+    const n = c.stories.length;
+    const msg = c.kind === "sprint"
+      ? t("tickets.dispatch.confirmSprint", { id: c.id, n, executor: c.executor, model: c.model || "auto" })
+      : t("tickets.dispatch.confirmStory", { id: c.id, executor: c.executor, model: c.model || "auto" });
+    if (!window.confirm(msg)) return;
+    setBusy(true);
+    try {
+      const tok = activeToken();
+      const res = await fetch(`/api/projects/${projectId}/dispatch`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...(tok ? { Authorization: `Bearer ${tok}` } : {}) },
+        body: JSON.stringify({ kind: c.kind, id: c.id }),
+      });
+      if (!res.ok) window.alert(t("tickets.dispatch.error"));
+    } catch { window.alert(t("tickets.dispatch.error")); }
+    finally { setBusy(false); void refreshCandidates(); }
+  }, [busy, projectId, refreshCandidates, t]);
 
   useEffect(() => {
     let cancelled = false;
@@ -97,6 +141,7 @@ export default function Board() {
       mapped.sort((a, b) => a.id.localeCompare(b.id));
       setTickets(mapped);
       setState("ready");
+      void refreshCandidates();
     };
     void load();
     // Realtime: cualquier cambio en stories del proyecto → recargar (RLS-scoped).
@@ -105,7 +150,7 @@ export default function Board() {
       .on("postgres_changes", { event: "*", schema: "public", table: "stories", filter: `project_id=eq.${projectId}` }, () => void load())
       .subscribe();
     return () => { cancelled = true; void supabase.removeChannel(ch); };
-  }, [projectId, supabase]);
+  }, [projectId, supabase, refreshCandidates]);
 
   const gates = useMemo(() => waitingBySprint(tickets), [tickets]);
   const sprintOpts = useMemo(() => [...new Set(tickets.map((tk) => tk.sprint_id).filter(Boolean) as string[])].sort(), [tickets]);
@@ -184,7 +229,7 @@ export default function Board() {
         <div className="tickets-canvas"><DepGraph tickets={filtered} onOpenTicket={setOpenId} /></div>
       ) : (
         <div className="tickets-canvas">
-          <KanbanBoard tickets={filtered} gates={gates} onOpenTicket={setOpenId} onOpenRun={() => {}} />
+          <KanbanBoard tickets={filtered} gates={gates} candidates={candidates} onDispatch={onDispatch} onOpenTicket={setOpenId} onOpenRun={() => {}} />
         </div>
       )}
 

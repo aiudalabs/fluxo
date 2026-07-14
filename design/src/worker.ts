@@ -123,6 +123,7 @@ interface Settings {
   execution_unit?: "sprint" | "story";
   max_concurrency?: number;
   merge_mode?: "manual" | "auto";
+  dispatch_mode?: "auto" | "manual";
   lanes?: Record<string, { channel?: string; model?: string }>;
 }
 function policyFrom(settings: Settings): Policy {
@@ -199,6 +200,14 @@ async function reconcileBuild() {
   const projects = await rest<Array<{ id: string; name: string; org: string | null; repo: string | null; settings: Settings | null }>>(`/projects?select=id,name,org,repo,settings&repo=not.is.null`);
   for (const p of projects) {
     if (!p.repo || !p.org) continue;
+
+    // dispatch_mode "manual" = botón-only: la UI (POST /api/projects/[id]/dispatch, F6a) despacha;
+    // el worker NO auto-despacha. Default "auto" = el worker despacha por tick (comportamiento
+    // actual). Espeja el gate de v1 (app.go: si dispatch_mode != auto, corta antes de Candidates).
+    // La PROYECCIÓN y el AUTO-MERGE no se ven afectados (corren en sus propios reconcilers): en
+    // modo manual el worker sigue moviendo review→done y mergeando; solo cede el disparo al humano.
+    if ((p.settings?.dispatch_mode ?? "auto") === "manual") continue;
+
     const pol = policyFrom(p.settings ?? {});
 
     // Stories + sprints del proyecto → el shape que el kernel de despacho (dispatch.ts) espera.
