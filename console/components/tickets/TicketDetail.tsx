@@ -2,17 +2,23 @@
 
 // TicketDetail (F6P-05) · el drawer JIRA de v1, PORTADO: la STORY (no su ejecución) —
 // id/sprint/epic, lane+repo, banner de agente-perdido, descripción, criterios de
-// aceptación, dependencias clickeables (navegan el grafo sin cerrar), y los links a
-// PR/sesión/run. Recuperación de una story `failed`: reencolar.
+// aceptación, dependencias clickeables (navegan el grafo sin cerrar), el botón de
+// DESPACHO (cuando la story/sprint es candidato), y los links a PR/sesión. Recuperación
+// de una story `failed`: reencolar. Borrado local de la story.
 //
 // Data re-point vs v1: las acciones van directo a Supabase (RLS). El reencolado usa la
-// transición LEGAL de v2 failed→ready (v2 no tiene failed→backlog; ready la vuelve a
-// hacer despachable). export/dispatch/delete quedan para el backend F5. El Board recarga
-// solo por Realtime tras la mutación.
+// transición LEGAL de v2 failed→ready. El despacho REUSA el onDispatch del Board (POST
+// /dispatch money-safe). El Board recarga solo por Realtime tras la mutación.
+//
+// POSICIÓN (fix z-index): el drawer se renderiza por PORTAL a document.body. Sin el
+// portal quedaba anidado en `.tickets-shell` (que se vuelve stacking-context por su
+// animación de opacidad) y caía DEBAJO del TopBar sticky (.sh-top, z-index 40) —
+// tapándole el título. En body es hijo directo de la raíz: su z-index 50 gana de verdad.
 
 import { useEffect, useState } from "react";
+import { createPortal } from "react-dom";
 import { useProject } from "@/lib/project";
-import type { OrchestratorTicket } from "@/lib/types";
+import type { DispatchCandidate, OrchestratorTicket } from "@/lib/types";
 import { LaneChip } from "@/components/tickets/LaneChip";
 import { AGENT_LOST_TOKEN, statusToken } from "@/lib/statusToken";
 import { isAgentLost } from "@/lib/agentLost";
@@ -23,8 +29,10 @@ function acceptanceLines(accept?: string): string[] {
   return accept.split(/\r?\n/).map((l) => l.replace(/^\s*[-*•]\s*/, "").trim()).filter(Boolean);
 }
 
-export function TicketDetail({ ticket, onClose, onOpenTicket }: {
+export function TicketDetail({ ticket, candidate, onDispatch, onClose, onOpenTicket }: {
   ticket: OrchestratorTicket | null;
+  candidate?: DispatchCandidate;
+  onDispatch?: (c: DispatchCandidate) => void;
   onClose: () => void;
   onOpenTicket: (id: string) => void;
 }) {
@@ -32,6 +40,9 @@ export function TicketDetail({ ticket, onClose, onOpenTicket }: {
   const { projectId, supabase } = useProject();
   const [actionError, setActionError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  // mounted: el portal a document.body solo existe en el cliente (SSR no tiene document).
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => setMounted(true), []);
   const open = !!ticket;
   const acs = acceptanceLines(ticket?.acceptance);
 
@@ -54,7 +65,31 @@ export function TicketDetail({ ticket, onClose, onOpenTicket }: {
     else onClose();
   }
 
-  return (
+  // Borrar la story (local, no toca GitHub). Guarda como v1: si otra story del proyecto
+  // la lista en su blocked_by, se bloquea (evita dejar deps colgando). blocked_by guarda
+  // UUIDs, así que primero resuelvo el uuid por KEY.
+  async function doDelete() {
+    if (!ticket) return;
+    if (!window.confirm(t("tickets.detail.deleteConfirm"))) return;
+    setBusy(true);
+    setActionError(null);
+    const { data: row } = await supabase
+      .from("stories").select("id").eq("project_id", projectId).eq("key", ticket.id).single();
+    if (row?.id) {
+      const { count } = await supabase
+        .from("stories").select("id", { count: "exact", head: true })
+        .eq("project_id", projectId).contains("blocked_by", [row.id]);
+      if (count && count > 0) { setActionError(t("tickets.detail.deleteBlocked")); setBusy(false); return; }
+    }
+    const { error } = await supabase.from("stories").delete().eq("project_id", projectId).eq("key", ticket.id);
+    setBusy(false);
+    if (error) setActionError(error.message);
+    else onClose();
+  }
+
+  if (!mounted) return null;
+
+  return createPortal(
     <>
       <div className={`overlay ${open ? "on" : ""}`} onClick={onClose} />
       <aside className={`drawer ${open ? "on" : ""}`} aria-hidden={!open}>
@@ -122,6 +157,22 @@ export function TicketDetail({ ticket, onClose, onOpenTicket }: {
               )}
 
               <div style={{ marginTop: 24, display: "flex", flexDirection: "column", gap: 8 }}>
+                {/* Despacho: cuando esta story/sprint es candidato despachable AHORA. Reusa el
+                    onDispatch del Board (confirm + POST /dispatch money-safe). En sprint-mode el
+                    candidato es el sprint entero → el botón dice "Despachar sprint SPn (N stories)". */}
+                {candidate && onDispatch && (
+                  <button
+                    className="btn primary"
+                    style={{ width: "100%" }}
+                    onClick={() => onDispatch(candidate)}
+                    title={t("tickets.dispatch.buttonTitle", { executor: candidate.executor, model: candidate.model || "auto" })}
+                  >
+                    {candidate.kind === "sprint"
+                      ? t("tickets.dispatch.detailSprint", { id: candidate.id, n: candidate.stories?.length ?? 0 })
+                      : t("tickets.dispatch.detailStory")}
+                  </button>
+                )}
+
                 {ticket.session_url && (
                   <a className="btn primary" style={{ width: "100%", textAlign: "center" }} href={ticket.session_url} target="_blank" rel="noreferrer">
                     {t("tickets.detail.viewSession")}
@@ -152,11 +203,23 @@ export function TicketDetail({ ticket, onClose, onOpenTicket }: {
                     {actionError}
                   </div>
                 )}
+
+                {/* Borrar la story (local, destructiva) — separada del resto, con confirm. */}
+                <button
+                  className="btn ghost"
+                  style={{ width: "100%", color: "var(--danger)", marginTop: 8 }}
+                  onClick={doDelete}
+                  disabled={busy}
+                  title={t("tickets.detail.deleteTitle")}
+                >
+                  {busy ? t("tickets.detail.deleting") : t("tickets.detail.delete")}
+                </button>
               </div>
             </div>
           </>
         )}
       </aside>
-    </>
+    </>,
+    document.body,
   );
 }
