@@ -1,9 +1,11 @@
 # Runbook: E2E del CONDUCTOR (idea → despacho → PR → review → merge → done)
 
-**Qué es esto:** una corrida REAL, guiada, del loop del conductor (Fases F1–F4, ya en `main`).
+**Qué es esto:** una corrida REAL, guiada, del loop del conductor (Fases F1–F4 + F6, ya en `main`).
 NO es un test automatizado de browser: **v2 no tiene harness Playwright** (el runner de console es
-`node:test`). Se ejecuta con el worker + se OBSERVA vía `gh`/API/DB + el board del console. Valida
-F1–F4 con un run de verdad, no solo unit tests.
+`node:test`). Ahora es **BROWSER-DRIVEN**: el despacho lo disparás con el botón **▶ Despachar** del
+board (F6a) y monitoreás en la vista **Agentes** (F6b); el worker corre en paralelo SOLO para
+proyectar (GitHub→DB) y auto-mergear. Se OBSERVA vía el console + `gh`/API/DB. Valida F1–F4 + F6
+con un run de verdad, no solo unit tests.
 
 > ⚠️ **CUESTA PLATA.** Dispara un agente Claude real en las GitHub Actions del repo destino, con TU
 > `CLAUDE_CODE_OAUTH_TOKEN`. Empezá con **UNA story** (story-mode, una story sin deps) para minimizar
@@ -51,9 +53,18 @@ Para la PRIMERA corrida, lo más barato y observable:
 - `execution_unit = story` (una story, no un sprint entero).
 - `merge_mode = manual` (vos mergeás — sin riesgo de auto-merge en el primer run).
 - `max_concurrency = 1` (una sola a la vez).
-(Settings → Autonomía. O por DB: `update projects set settings='{"execution_unit":"story","merge_mode":"manual","max_concurrency":1}' where id='0b4a923c-...';`)
+- `dispatch_mode = manual` (**el despacho lo disparás vos desde el board**, no el worker — así ves
+  el botón ▶ y controlás cuándo se paga el run; el worker sigue proyectando + auto-mergeando).
+(Settings → Autonomía. O por DB: `update projects set settings='{"execution_unit":"story","merge_mode":"manual","max_concurrency":1,"dispatch_mode":"manual"}' where id='0b4a923c-...';`)
 
-## 4. Correr el worker (NO dry-run)
+> **dispatch_mode** (F6a): `manual` = botón-only (la UI despacha; el worker NO auto-despacha) ·
+> `auto` (default) = el worker despacha por tick. En `auto` el worker te ganaría de mano y
+> despacharía solo — por eso el E2E browser-driven usa `manual`.
+
+## 4. Correr el worker (NO dry-run) — para PROYECCIÓN + AUTO-MERGE
+En modo browser-driven (`dispatch_mode=manual`) el worker NO despacha; corre igual porque es
+quien **proyecta** (mueve la story running→review→done leyendo GitHub) y **auto-mergea** (si
+`merge_mode=auto`). Sin el worker corriendo, la card despachada quedaría en `running` para siempre.
 ```
 set -a; source .env; set +a
 export SUPABASE_URL=http://127.0.0.1:54321
@@ -61,26 +72,34 @@ export SUPABASE_ANON_KEY="$(supabase status | awk '/anon key/{print $NF}')"
 export SUPABASE_SERVICE_ROLE_KEY="$(supabase status | awk '/service_role key/{print $NF}')"
 export SUPABASE_JWT_SECRET="$(supabase status | awk '/JWT secret/{print $NF}')"
 node --experimental-strip-types design/src/worker.ts --interval=20
-# (deja el diseño en paz —Idearium ya tiene stories— y hace projection + build cada 20s)
+# (con dispatch_mode=manual: hace SOLO projection + auto-merge cada 20s; el disparo va por el board)
 ```
+También necesitás el console en :3000 (`cd console && npm run dev`) — ahí está el botón ▶ y la
+vista Agentes. La sesión del console debe tener el token OAuth del usuario (login con GitHub) para
+que POST /dispatch pueda `workflow_dispatch` como vos.
 
-## 5. Observar el LOOP (qué esperar en orden)
+## 5. Despachar desde el BOARD + observar el LOOP (qué esperar en orden)
 | # | Qué pasa | Cómo verificar |
 |---|---|---|
-| 1 | Worker despacha S1-01 (o S1-02) → `workflow_dispatch` a claude.yml | log del worker `▶ build story: … despachado`; DB story → `running` |
-| 2 | Claude corre en Actions, implementa, abre PR con `Closes #1` | `gh run list -R nmlemus/idearium`; `gh pr list -R nmlemus/idearium` |
-| 3 | **Proyección** (F1): PR abierto → story `review` (+pr_url) | board: la card pasa a "en review"; `select status,pr_url from stories where key='S1-01'` |
+| 1 | **En el board (kanban) clickeás ▶ Despachar** en la card S1-01 (o S1-02) → POST /api/projects/[id]/dispatch marca `running` (RPC, money-safe) y dispara `workflow_dispatch` a claude.yml con TU token | la card salta a "running" sola (Realtime); en la vista **Agentes** aparece bajo "Sesiones activas" con link "ver sesión" |
+| 2 | Claude corre en Actions, implementa, abre PR con `Closes #1` | `gh run list -R nmlemus/idearium`; `gh pr list -R nmlemus/idearium`; o vista Agentes |
+| 3 | **Proyección** (F1, worker): PR abierto → story `review` (+pr_url) | board: la card pasa a "en review"; vista Agentes → "Cola de PRs"; `select status,pr_url from stories where key='S1-01'` |
 | 4 | `claude-review.yml` corre en el PR → deja un review | `gh pr view <n> -R nmlemus/idearium --json reviewDecision,reviews` |
-| 5 | (manual) VOS mergeás el PR | `gh pr merge <n> -R nmlemus/idearium --squash --delete-branch` |
-| 6 | Issue cierra → **proyección** marca story `done` | board: card a "done"; `select status from stories where key='S1-01'` |
-| 7 | (si había deps) el dependiente se desbloquea y se despacha | siguiente tick del worker |
+| 5 | (si el CI quedó `action_required`) **aprobás el workflow** desde la vista **Agentes** → "Aprobar workflow" | el run sale de la lista; `gh run list -R nmlemus/idearium` |
+| 6 | (manual) VOS mergeás el PR | `gh pr merge <n> -R nmlemus/idearium --squash --delete-branch` |
+| 7 | Issue cierra → **proyección** (worker) marca story `done` | board: card a "done"; `select status from stories where key='S1-01'` |
+| 8 | (si había deps) el dependiente se desbloquea → aparece su ▶ en el board para el próximo despacho manual | board: la card gana el botón ▶ |
 
-## 6. Criterios de éxito (F1–F4 probados)
+## 6. Criterios de éxito (F1–F4 + F6 probados)
+- ✅ El despacho arrancó desde un **click en ▶ Despachar en el board** (F6a), no del worker.
 - ✅ Un PR REAL abierto por el agente, ligado al issue por `Closes #N`.
 - ✅ La story recorrió `backlog → running → review → done` en el board (proyección = F1).
-- ✅ `claude-review` dejó un review en el PR (reviewer = F3).
-- ✅ En **sprint-mode**: un solo PR cierra TODOS los issues del sprint; SP2 despacha SOLO tras mergear SP1 (gate cross-sprint = F2).
-- ✅ Sin doble-run: cada issue se despachó una sola vez.
+- ✅ La vista **Agentes** mostró la sesión activa (link "ver sesión") y el PR en la cola (F6b).
+- ✅ `claude-review` dejó un review en el PR (reviewer = F3); si hubo un run `action_required`,
+  se aprobó desde la vista Agentes ("Aprobar workflow", F6b).
+- ✅ En **sprint-mode**: el botón ▶ del board dispara el sprint entero (1 PR cierra TODOS los issues);
+  SP2 recién ofrece su ▶ tras mergear SP1 (gate cross-sprint = F2).
+- ✅ Sin doble-run: cada issue se despachó una sola vez (el POST re-deriva y marca `running` ANTES de disparar).
 
 ## 7. Probar el AUTO-MERGE + el gate del reviewer (segunda pasada)
 Recién cuando la pasada manual ande. **Requiere branch protection** para que el gate sea REAL:

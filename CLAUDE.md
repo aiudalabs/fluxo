@@ -12,22 +12,28 @@ LATAM**. Este repo es el **rebuild v2** — un sustrato nuevo que reemplaza al k
 
 ---
 
-## ▶ PRÓXIMA SESIÓN — correr el E2E del conductor (pedido explícito del usuario, 2026-07-13)
+## ▶ PRÓXIMA SESIÓN — correr el E2E BROWSER-DRIVEN del conductor (pedido explícito del usuario)
 
-El **port del conductor F1–F4 ya está en `main`** (proyección + despacho story/sprint + reviewer scaffold +
-auto-merge gated; commit 47a647e). **El loop nunca se corrió end-to-end de verdad** — solo unit tests (94/94).
-La tarea pedida para una sesión con contexto limpio: **ejecutar el E2E real y verlo funcionar.**
+El **conductor F1–F4 + la UI F6 (despacho manual + monitor Agentes) ya están en `main`**
+(proyección + despacho story/sprint + reviewer scaffold + auto-merge gated + botón ▶ en el board +
+vista Agentes + `dispatch_mode:manual`). **El loop nunca se corrió end-to-end de verdad** — solo
+unit tests (design 94/94, console 8/8) + smoke de GET /candidates contra Idearium local. La tarea
+pedida para una sesión con contexto limpio: **ejecutar el E2E real, ahora BROWSER-DRIVEN, y verlo
+funcionar** (clickear ▶ Despachar en el board en vez de correr el worker a mano).
 
-1. **LEÉ `docs/E2E-conductor.md`** — es el runbook paso a paso (prerrequisitos, comandos, qué observar,
-   criterios de éxito, rollback). NO es un test Playwright (v2 no tiene harness de browser); es una corrida
-   real del worker observada vía `gh`/API/DB + el board.
+1. **LEÉ `docs/E2E-conductor.md`** — runbook paso a paso, ya actualizado a browser-driven
+   (dispatch_mode=manual: el humano despacha desde el board, el worker corre SOLO para proyectar +
+   auto-mergear). NO es un test Playwright (v2 no tiene harness de browser); se observa en el console + `gh`/API/DB.
 2. Contexto del port: `docs/PLAN-conductor-port.md` (spec + mapa de v1). Decisiones: `~/.devtrace/decisions/fluxo.md`.
-3. **Requiere acciones del usuario** (pediles antes de arrancar): sembrar el `CLAUDE_CODE_OAUTH_TOKEN` ROTADO en
-   Settings → Canal de build de Idearium, y OK para escribir a su repo (`nmlemus/idearium`) en el re-scaffold.
+3. **Requiere acciones del usuario** (pediles antes de arrancar): (a) login con GitHub en el console
+   (para que POST /dispatch actúe como el usuario), (b) sembrar el `CLAUDE_CODE_OAUTH_TOKEN` ROTADO en
+   Settings → Canal de build de Idearium, (c) OK para escribir a su repo (`nmlemus/idearium`) en el re-scaffold,
+   (d) setear `dispatch_mode:manual` en Settings del proyecto (por ahora vía DB — ver runbook §3).
 4. ⚠️ **Cuesta plata** (dispara un agente Claude real en las Actions del repo con el token del usuario) → empezá
-   con UNA story (story-mode, sin deps) antes de sprint-mode / auto-merge.
-5. Pendiente además: Fase 5 (workflow_approval `auto_if_safe` + guard docs-on-main) y Fase 6 (UI: botón de
-   despacho manual + monitor Agentes). El E2E va PRIMERO — valida lo que ya está en main.
+   con UNA story (story-mode, sin deps: S1-01 o S1-02) antes de sprint-mode / auto-merge.
+5. Pendiente además: **Fase 5** (workflow_approval `auto_if_safe` automático + guard docs-on-main; F6b hace
+   el approve MANUAL desde Agentes, que alcanza para operar). Toggle de `dispatch_mode` en la UI de Settings
+   (hoy solo por DB). Canal Copilot sin cablear. El E2E va PRIMERO — valida lo que ya está en main.
 
 ---
 
