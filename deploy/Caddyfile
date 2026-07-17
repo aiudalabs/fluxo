@@ -1,0 +1,6 @@
+# Caddy — TLS automático (Let's Encrypt) + reverse-proxy al console. Un solo dominio.
+# PUBLIC_DOMAIN lo inyecta el compose desde .env.prod (p.ej. fluxo.aiudalabs.com).
+{$PUBLIC_DOMAIN} {
+	encode gzip
+	reverse_proxy console:3000
+}

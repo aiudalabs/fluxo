@@ -29,3 +29,6 @@ supabase/.temp/
 .idea/
 .vscode/
 secrets/
+
+# deploy secrets
+deploy/.env.prod

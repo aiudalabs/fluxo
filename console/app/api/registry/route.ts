@@ -7,7 +7,10 @@ import { NextRequest, NextResponse } from "next/server";
 import { promises as fs } from "fs";
 import path from "path";
 
-const ROOT = path.resolve(process.cwd(), "..", "registry");
+// En dev el registry vive un nivel arriba del cwd del console (../registry). En el contenedor se
+// fija por REGISTRY_DIR (el Dockerfile copia registry/ y lo apunta), porque el layout monorepo no
+// se preserva igual en la imagen.
+const ROOT = process.env.REGISTRY_DIR ?? path.resolve(process.cwd(), "..", "registry");
 const KINDS = ["agents", "skills", "workflows", "providers"] as const;
 
 async function readOr(p: string): Promise<string | null> {

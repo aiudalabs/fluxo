@@ -1,0 +1,69 @@
+# Fluxo v2 — deploy de producción (VPS + Supabase MANAGED). El VPS corre SOLO el plano de control:
+# console (Next) + worker (conductor) + Caddy (TLS/reverse-proxy). Supabase (Postgres/RLS/Realtime/
+# Auth) es managed (cloud, free→pro). La EJECUCIÓN de agentes corre en GitHub Actions con el token
+# del CLIENTE (BYO, cero COGS) — el VPS queda chico.
+#
+#   cd deploy && docker compose --env-file .env.prod -f docker-compose.prod.yml up -d --build
+#
+# NOTA: NEXT_PUBLIC_* van como BUILD-ARGS del console (Next los inlinea en build) — el compose los
+# toma de .env.prod y los pasa como args; el resto son env de runtime.
+services:
+  console:
+    build:
+      context: ..
+      dockerfile: console/Dockerfile
+      args:
+        NEXT_PUBLIC_SUPABASE_URL: ${NEXT_PUBLIC_SUPABASE_URL:?falta en .env.prod}
+        NEXT_PUBLIC_SUPABASE_ANON_KEY: ${NEXT_PUBLIC_SUPABASE_ANON_KEY:?falta en .env.prod}
+    image: fluxo-console
+    restart: always
+    environment:
+      NODE_ENV: production
+      SUPABASE_URL: ${SUPABASE_URL:?}
+      SUPABASE_ANON_KEY: ${SUPABASE_ANON_KEY:?}
+      SUPABASE_SERVICE_ROLE_KEY: ${SUPABASE_SERVICE_ROLE_KEY:?}
+      SUPABASE_JWT_SECRET: ${SUPABASE_JWT_SECRET:?}
+      GITHUB_APP_ID: ${GITHUB_APP_ID:?}
+      GITHUB_APP_CLIENT_ID: ${GITHUB_APP_CLIENT_ID:?}
+      GITHUB_APP_CLIENT_SECRET: ${GITHUB_APP_CLIENT_SECRET:?}
+      GITHUB_APP_PRIVATE_KEY: ${GITHUB_APP_PRIVATE_KEY:?}
+      GITHUB_WEBHOOK_SECRET: ${GITHUB_WEBHOOK_SECRET:-}
+      PUBLIC_URL: ${PUBLIC_URL:?}
+    expose:
+      - "3000"
+
+  worker:
+    build:
+      context: ..
+      dockerfile: design/Dockerfile
+    image: fluxo-worker
+    restart: always
+    environment:
+      NODE_ENV: production
+      SUPABASE_URL: ${SUPABASE_URL:?}
+      SUPABASE_ANON_KEY: ${SUPABASE_ANON_KEY:?}
+      SUPABASE_SERVICE_ROLE_KEY: ${SUPABASE_SERVICE_ROLE_KEY:?}
+      SUPABASE_JWT_SECRET: ${SUPABASE_JWT_SECRET:?}
+      GITHUB_APP_ID: ${GITHUB_APP_ID:?}
+      GITHUB_APP_PRIVATE_KEY: ${GITHUB_APP_PRIVATE_KEY:?}
+      # Solo para el workflow de DISEÑO (idea→backlog) que corre el agente local; el conductor no lo usa.
+      CLAUDE_CODE_OAUTH_TOKEN: ${CLAUDE_CODE_OAUTH_TOKEN:-}
+    command: ["node", "--experimental-strip-types", "src/worker.ts", "--interval=20"]
+
+  caddy:
+    image: caddy:2-alpine
+    restart: always
+    depends_on: [console]
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      PUBLIC_DOMAIN: ${PUBLIC_DOMAIN:?}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+
+volumes:
+  caddy_data:
+  caddy_config:
