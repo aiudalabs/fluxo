@@ -4853,3 +4853,18 @@ main:has(.studio-shell) > .studio-shell {
 .stg-save { position: sticky; bottom: 0; display: flex; justify-content: flex-end; padding-top: 10px; }
 .stg-save-btn { height: 40px; }
 @media (max-width: 640px) { .stg-grid, .stg-presets { grid-template-columns: 1fr; } .stg-lane { grid-template-columns: 1fr; } }
+
+/* ── Banner de estado vivo del Studio (visibilidad del diseño — el gap de v1) ── */
+.studio-livebanner {
+  display: flex; align-items: center; gap: 10px;
+  padding: 10px 16px; font-size: 13px; line-height: 1.4;
+  border-bottom: 1px solid var(--stroke); width: 100%; text-align: left;
+}
+.studio-livebanner .lb-ic { font-size: 15px; flex-shrink: 0; }
+.studio-livebanner .lb-cta { margin-left: auto; font-weight: 600; white-space: nowrap; }
+.studio-livebanner b { font-weight: 700; }
+.studio-livebanner.working { background: var(--navy-soft); color: var(--navy); }
+.studio-livebanner.awaiting { background: var(--accent-soft); color: var(--accent); border: none; cursor: pointer; }
+.studio-livebanner.awaiting:hover { filter: brightness(0.97); }
+.studio-livebanner.done { background: var(--emerald-soft); color: var(--emerald); }
+.studio-livebanner.failed { background: var(--danger-soft); color: var(--danger); }

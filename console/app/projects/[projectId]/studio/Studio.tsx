@@ -199,6 +199,39 @@ export default function Studio() {
         )}
       </header>
 
+      {/* ── Banner de estado VIVO ── el gap de v1: mostrar QUÉ está pasando en el diseño.
+          `running` = el agente trabaja (esperá) · gate pendiente = te toca responder (clickeable
+          para saltar) · done/failed = terminal. Se actualiza por Realtime como el resto. */}
+      {(() => {
+        const runningPhase = phases.find((p) => p.status === "running");
+        if (pendingGate) {
+          const gi = phases.findIndex((p) => p.phase_id === pendingGate.phase_id);
+          const name = phaseTitle(t, pendingGate.phase_id, pendingGate.phase_id);
+          return (
+            <button className="studio-livebanner awaiting" onClick={() => gi >= 0 && pickPhase(gi)}>
+              <span className="lb-ic">⏸</span>
+              <span>Te toca: hay preguntas para vos en <b>{name}</b>. Respondelas para que el diseño continúe.</span>
+              <span className="lb-cta">Ir a responder →</span>
+            </button>
+          );
+        }
+        if (run.status === "running") {
+          return (
+            <div className="studio-livebanner working">
+              <span className="spin" />
+              <span>El agente está diseñando{runningPhase ? <> la fase <b>{phaseTitle(t, runningPhase.phase_id, runningPhase.label)}</b></> : ""}… Esperá, esto puede tardar un par de minutos. La pantalla se actualiza sola.</span>
+            </div>
+          );
+        }
+        if (run.status === "done") {
+          return <div className="studio-livebanner done"><span className="lb-ic">✓</span><span>Diseño completo — el backlog quedó listo.</span></div>;
+        }
+        if (run.status === "failed") {
+          return <div className="studio-livebanner failed"><span className="lb-ic">✕</span><span>El diseño falló. Revisá los docs o volvé a intentar.</span></div>;
+        }
+        return null;
+      })()}
+
       {/* ── Cuerpo: riel | main ── */}
       <div className="studio-body">
         <aside className="studio-rail">
