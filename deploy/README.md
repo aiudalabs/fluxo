@@ -49,3 +49,13 @@ pg_dump "$SUPABASE_DB_URL" | gzip > /backups/fluxo-$(date +%F).sql.gz
 - **Design runs en prod**: el workflow idea→backlog corre el agente EN el worker (Agent SDK). Si lo vas
   a usar en prod, agregá el CLI `claude` a la imagen del worker (ver `design/Dockerfile`). El conductor
   NO lo necesita.
+
+## Gotcha: el worker DEBE correr como no-root (design runs)
+El workflow de diseño corre el agente vía el Claude Agent SDK, que spawnea el CLI `claude` con
+`--dangerously-skip-permissions` — y el CLI lo **RECHAZA como root** ("cannot be used with root/sudo
+privileges"). Por eso la imagen del worker corre como el usuario `node` (uid 1000). Consecuencia: el
+`app.pem` montado debe ser legible por uid 1000 → en el host:
+```bash
+chown 1000:1000 /opt/fluxo/deploy/app.pem && chmod 600 /opt/fluxo/deploy/app.pem
+```
+Síntoma si se ignora: los design runs fallan con "Claude Code process exited with code 1".
