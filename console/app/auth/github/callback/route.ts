@@ -12,7 +12,10 @@ export async function GET(req: NextRequest) {
   const code = url.searchParams.get("code");
   const state = url.searchParams.get("state");
   const setupAction = url.searchParams.get("setup_action");
-  const origin = url.origin;
+  // Detrás de un reverse-proxy (Caddy en prod) `url.origin` es la URL INTERNA (localhost:3000) →
+  // los redirects post-login irían a localhost. Usamos PUBLIC_URL cuando está seteado; en dev
+  // (sin PUBLIC_URL) cae a url.origin.
+  const origin = process.env.PUBLIC_URL ?? url.origin;
 
   // Instalación de la App (no login): sin state pero con setup_action → no minteamos sesión.
   if (!state && setupAction) {
