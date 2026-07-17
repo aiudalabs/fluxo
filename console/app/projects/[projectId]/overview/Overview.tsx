@@ -113,6 +113,20 @@ export default function Overview() {
         </div>
       </div>
 
+      {/* Guía para no quedar en un dead-end: si todavía no hay backlog (stories), el proyecto está
+          EN DISEÑO → el próximo paso es el Studio (responder gates, aprobar fases). CTA prominente. */}
+      {stats.total === 0 && (
+        <Link href={`/projects/${projectId}/studio`} className="ov-designcta">
+          <span className="ov-designcta-ic">✎</span>
+          <span className="ov-designcta-txt">
+            <b>Tu producto está en diseño.</b> En el <b>Studio</b> respondés las preguntas del agente y aprobás cada fase
+            (discovery → PRD → schema → UI → arquitectura → backlog).
+            {docNames.length > 0 ? ` Ya hay ${docNames.length} documento${docNames.length === 1 ? "" : "s"} listo${docNames.length === 1 ? "" : "s"}.` : " Abrilo para ver el progreso en vivo."}
+          </span>
+          <span className="ov-designcta-cta">Abrir Studio →</span>
+        </Link>
+      )}
+
       <div className="stats">
         <div className="stat">
           <div className="eyebrow">{t("overview.kpi.sprintsDone")}</div>

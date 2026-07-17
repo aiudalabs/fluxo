@@ -4868,3 +4868,24 @@ main:has(.studio-shell) > .studio-shell {
 .studio-livebanner.awaiting:hover { filter: brightness(0.97); }
 .studio-livebanner.done { background: var(--emerald-soft); color: var(--emerald); }
 .studio-livebanner.failed { background: var(--danger-soft); color: var(--danger); }
+
+/* ── Back a inicio en /new ── */
+.entry-back {
+  position: fixed; top: 16px; left: 16px; z-index: 10;
+  padding: 8px 14px; border-radius: 10px; border: 1px solid var(--stroke);
+  background: var(--panel); color: var(--ink3); font-size: 13px; text-decoration: none;
+  font-family: var(--display); transition: 0.15s var(--ease);
+}
+.entry-back:hover { color: var(--ink); border-color: var(--stroke-strong); }
+
+/* ── CTA de diseño en /overview (evita el dead-end) ── */
+.ov-designcta {
+  display: flex; align-items: center; gap: 14px; margin: 4px 0 20px;
+  padding: 16px 18px; border-radius: 14px; text-decoration: none;
+  background: var(--accent-soft); border: 1px solid var(--accent-line); color: var(--ink);
+  transition: 0.15s var(--ease);
+}
+.ov-designcta:hover { filter: brightness(0.98); border-color: var(--accent); }
+.ov-designcta-ic { font-size: 20px; color: var(--accent); flex-shrink: 0; }
+.ov-designcta-txt { font-size: 13px; line-height: 1.5; flex: 1; }
+.ov-designcta-cta { font-weight: 700; color: var(--accent); white-space: nowrap; flex-shrink: 0; }

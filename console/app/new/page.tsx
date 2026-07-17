@@ -8,6 +8,7 @@
 // Así el repo que el worker crea después nunca falla por "App no instalada" (lección Idearium).
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useT } from "@/lib/i18n";
 import { sessionToken } from "@/lib/supabaseClient";
@@ -89,6 +90,7 @@ export default function NewProjectPage() {
 
   return (
     <div className="entry">
+      <Link href="/" className="entry-back" title="Volver a mis proyectos">← Mis proyectos</Link>
       <ThemeToggle className="ob-theme" />
       <div className="entry-inner">
         <div className="entry-brand"><Logo size="lg" /></div>
