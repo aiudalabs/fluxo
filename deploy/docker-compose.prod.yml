@@ -26,9 +26,15 @@ services:
       GITHUB_APP_ID: ${GITHUB_APP_ID:?}
       GITHUB_APP_CLIENT_ID: ${GITHUB_APP_CLIENT_ID:?}
       GITHUB_APP_CLIENT_SECRET: ${GITHUB_APP_CLIENT_SECRET:?}
-      GITHUB_APP_PRIVATE_KEY: ${GITHUB_APP_PRIVATE_KEY:?}
+      # La private key va como ARCHIVO montado (PEM con newlines reales; el env multilínea no es fiable).
+      GITHUB_APP_PRIVATE_KEY_PATH: /app/secret/app.pem
       GITHUB_WEBHOOK_SECRET: ${GITHUB_WEBHOOK_SECRET:-}
       PUBLIC_URL: ${PUBLIC_URL:?}
+      # El callback de OAuth que GitHub usa para volver — DEBE ser el dominio público (default del
+      # código es localhost). githubAuth.ts lo lee de OAUTH_REDIRECT_URI.
+      OAUTH_REDIRECT_URI: ${OAUTH_REDIRECT_URI:?}
+    volumes:
+      - ./app.pem:/app/secret/app.pem:ro
     expose:
       - "3000"
 
@@ -45,9 +51,11 @@ services:
       SUPABASE_SERVICE_ROLE_KEY: ${SUPABASE_SERVICE_ROLE_KEY:?}
       SUPABASE_JWT_SECRET: ${SUPABASE_JWT_SECRET:?}
       GITHUB_APP_ID: ${GITHUB_APP_ID:?}
-      GITHUB_APP_PRIVATE_KEY: ${GITHUB_APP_PRIVATE_KEY:?}
+      GITHUB_APP_PRIVATE_KEY_PATH: /app/secret/app.pem
       # Solo para el workflow de DISEÑO (idea→backlog) que corre el agente local; el conductor no lo usa.
       CLAUDE_CODE_OAUTH_TOKEN: ${CLAUDE_CODE_OAUTH_TOKEN:-}
+    volumes:
+      - ./app.pem:/app/secret/app.pem:ro
     command: ["node", "--experimental-strip-types", "src/worker.ts", "--interval=20"]
 
   caddy:
