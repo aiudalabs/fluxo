@@ -130,6 +130,7 @@ export default function Studio() {
     const list: (Artifact & { name: string })[] = [];
     for (const p of phases) for (const a of p.artifacts ?? []) {
       if (seen.has(a.path)) continue;
+      if (baseName(a.path).startsWith(".")) continue; // archivos internos (.vibeforge-gate) no son docs revisables
       seen.add(a.path);
       list.push({ ...a, name: baseName(a.path) });
     }
@@ -358,7 +359,11 @@ function PhasePanel({ phase, gate, onError }: { phase: Phase; gate: Gate | null;
   const [feedback, setFeedback] = useState("");
   const [answers, setAnswers] = useState<Record<number, string>>({});
   const [busy, setBusy] = useState<string | null>(null);
-  const doc = (phase.artifacts ?? [])[0] ?? null;
+  // Mostrá el DOC de la fase (.md, p.ej. ARCHITECTURE.md), NO un archivo interno como
+  // `.vibeforge-gate` (el comando de verificación de la fábrica) que ordena primero por empezar
+  // con "." → confundía "arch falló" cuando en realidad el doc real estaba ahí.
+  const arts = phase.artifacts ?? [];
+  const doc = arts.find((a) => a.path.toLowerCase().endsWith(".md")) ?? arts.find((a) => !baseName(a.path).startsWith(".")) ?? arts[0] ?? null;
 
   const resolve = async (patch: Record<string, unknown>, tag: string) => {
     if (!gate) return;
