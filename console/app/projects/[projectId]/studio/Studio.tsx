@@ -11,8 +11,7 @@
 // salen del brain (brain_events append-only, kind=artifact) en vez de la historia git.
 
 import { useEffect, useMemo, useState } from "react";
-import ReactMarkdown from "react-markdown";
-import remarkGfm from "remark-gfm";
+import { DocView } from "@/components/DocView";
 import { useProject } from "@/lib/project";
 import { useT } from "@/lib/i18n";
 
@@ -327,9 +326,7 @@ export default function Studio() {
                   {!active ? (
                     <div className="placeholder">{t("studio.docs.selectPage")}</div>
                   ) : (
-                    <article className="docs-md artifact-md">
-                      <ReactMarkdown remarkPlugins={[remarkGfm]}>{shownContent}</ReactMarkdown>
-                    </article>
+                    <DocView content={shownContent} path={activeFile?.path ?? active ?? ""} kind={activeFile?.kind} />
                   )}
                 </div>
               </div>
@@ -384,9 +381,9 @@ function PhasePanel({ phase, gate, onError }: { phase: Phase; gate: Gate | null;
       </div>
 
       {doc && (
-        <article className="docs-md artifact-md" style={{ marginBottom: 18 }}>
-          <ReactMarkdown remarkPlugins={[remarkGfm]}>{doc.content}</ReactMarkdown>
-        </article>
+        <div style={{ marginBottom: 18 }}>
+          <DocView content={doc.content} path={doc.path} kind={doc.kind} />
+        </div>
       )}
 
       {gate && (
