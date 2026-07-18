@@ -25,14 +25,26 @@ export interface Agent {
 interface AgentSpec {
   id?: string;
   model?: string;
+  skills?: string[];
 }
 
-// loadAgent reads registry/agents/<id>.md (role) + <id>.yaml (model).
+// loadAgent reads registry/agents/<id>.md (persona) + <id>.yaml (model + skills). Las SKILLS
+// declaradas se INYECTAN después de la persona en el system prompt — varias personas dicen
+// literalmente "seguí la estructura de la skill inyectada abajo" (data-modeler, principles). Sin
+// esta inyección el agente no tiene la plantilla del doc y NO lo escribe (bug: data-modeler/
+// architect producían 0 artefactos — su persona depende de la skill que nunca llegaba).
 export function loadAgent(registryDir: string, id: string): Agent {
-  const role = readFileSync(join(registryDir, "agents", `${id}.md`), "utf8");
+  const persona = readFileSync(join(registryDir, "agents", `${id}.md`), "utf8");
   const spec = load(readFileSync(join(registryDir, "agents", `${id}.yaml`), "utf8")) as AgentSpec;
   if (!spec?.model) {
     throw new Error(`design: agent ${id} has no model in its yaml`);
+  }
+  let role = persona;
+  for (const skill of spec.skills ?? []) {
+    try {
+      const skillMd = readFileSync(join(registryDir, "skills", `${skill}.md`), "utf8");
+      role += `\n\n---\n\n${skillMd}`;
+    } catch { /* skill declarada pero faltante: seguí sin ella (no rompas el run) */ }
   }
   return { id, role, model: spec.model };
 }
