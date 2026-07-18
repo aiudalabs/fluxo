@@ -16,12 +16,18 @@ interface LaneCfg { channel?: string; model?: string }
 interface ProjSettings {
   channel?: "claude_action" | "copilot";
   merge_mode?: "manual" | "auto";
+  dispatch_mode?: "auto" | "manual";
   execution_unit?: "sprint" | "story";
   max_concurrency?: number;
   workflow_approval?: "manual" | "auto_if_safe";
   lanes?: Record<string, LaneCfg>;
 }
-const DEFAULTS: ProjSettings = { channel: "claude_action", merge_mode: "manual", execution_unit: "sprint", max_concurrency: 3, workflow_approval: "manual", lanes: {} };
+// Los defaults DEBEN espejar los del motor (design/src/worker.ts policyFrom + el gate de dispatch):
+// execution_unit ausente → "story", dispatch_mode ausente → "auto", max_concurrency → 3 (MAX). Si la
+// UI muestra un default distinto al que el motor asume ante el campo ausente, MIENTE (bug: mostraba
+// "Sprint" mientras el motor corría "story"). dispatch_mode se incluye acá para que Guardar lo
+// PERSISTA y no lo borre en silencio (revertía a auto-dispatch).
+const DEFAULTS: ProjSettings = { channel: "claude_action", merge_mode: "manual", dispatch_mode: "auto", execution_unit: "story", max_concurrency: 3, workflow_approval: "manual", lanes: {} };
 const MODELS = ["auto", "claude-opus-4-8", "claude-sonnet-5", "claude-haiku-4-5-20251001"];
 
 interface ChannelInfo { id: string; available: boolean; reason: string; secretsPermMissing: boolean }
@@ -175,10 +181,17 @@ export default function Settings() {
             </select>
           </div>
           <div className="stg-field">
+            <label>Despacho</label>
+            <select value={settings.dispatch_mode} onChange={(e) => patch({ dispatch_mode: e.target.value as ProjSettings["dispatch_mode"] })}>
+              <option value="manual">Manual — solo con el botón ▶ del board</option>
+              <option value="auto">Auto — Fluxo despacha lo que esté listo</option>
+            </select>
+          </div>
+          <div className="stg-field">
             <label>Unidad de ejecución</label>
             <select value={settings.execution_unit} onChange={(e) => patch({ execution_unit: e.target.value as ProjSettings["execution_unit"] })}>
-              <option value="sprint">Sprint — despacha el sprint completo</option>
               <option value="story">Story — una story a la vez</option>
+              <option value="sprint">Sprint — despacha el sprint completo</option>
             </select>
           </div>
           <div className="stg-field">
