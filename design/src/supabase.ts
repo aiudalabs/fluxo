@@ -76,32 +76,63 @@ const delay = (ms: number) => new Promise((r) => setTimeout(r, ms));
 // SupabaseDesignStore realises the engine's ports against design_runs/phases/gates.
 export class SupabaseDesignStore {
   private cfg: StoreConfig;
-  private token: string;
+  private token = "";
+  private tokenExp = 0; // epoch seconds en que vence el JWT minteado
   private base: string;
   runId = "";
 
   constructor(cfg: StoreConfig) {
     this.cfg = cfg;
-    this.token = mintTenantJwt(cfg.jwtSecret, cfg.tenant);
     this.base = cfg.url.replace(/\/$/, "") + "/rest/v1";
+    this.remint();
+  }
+
+  // remint firma un JWT de tenant nuevo (HS256, local, sin red) y recuerda su vencimiento.
+  private remint(ttlSeconds = 3600): void {
+    const now = Math.floor(Date.now() / 1000);
+    this.token = mintTenantJwt(this.cfg.jwtSecret, this.cfg.tenant, ttlSeconds, now);
+    this.tokenExp = now + ttlSeconds;
+  }
+
+  // authToken devuelve un JWT vigente, re-minteando ANTES de que venza. Un design run dura
+  // HORAS (8 fases de agente) y el token minteado una vez en el constructor vencía a la 1h →
+  // todo write posterior daba 401 PGRST303 y CRASHEABA el proceso (bug: churn de resume de ~24h).
+  private authToken(): string {
+    if (Math.floor(Date.now() / 1000) >= this.tokenExp - 120) this.remint();
+    return this.token;
   }
 
   private headers(prefer = "return=minimal"): Record<string, string> {
     return {
       "Content-Type": "application/json",
       apikey: this.cfg.anonKey,
-      Authorization: `Bearer ${this.token}`,
+      Authorization: `Bearer ${this.authToken()}`,
       Prefer: prefer,
     };
   }
 
   private async rest(path: string, init: RequestInit & { prefer?: string }): Promise<Response> {
     const { prefer, ...rest } = init;
-    const res = await fetch(`${this.base}${path}`, { ...rest, headers: this.headers(prefer) });
+    let res = await fetch(`${this.base}${path}`, { ...rest, headers: this.headers(prefer) });
+    // El JWT pudo vencer EN VUELO (fase larga entre el authToken() y el fetch): re-minteá y
+    // reintentá UNA vez antes de rendirte. Sin esto, un 401 tardío mataba el run entero.
+    if (res.status === 401) {
+      this.remint();
+      res = await fetch(`${this.base}${path}`, { ...rest, headers: this.headers(prefer) });
+    }
     if (!res.ok) {
       throw new Error(`supabase ${init.method} ${path} → ${res.status} ${await res.text()}`);
     }
     return res;
+  }
+
+  // keyMap lee key→id de una tabla scopeada al proyecto (para materializar idempotente sin
+  // depender de DELETE, que está revocado para authenticated).
+  private async keyMap(table: "sprints" | "stories"): Promise<Map<string, string>> {
+    const res = await this.rest(`/${table}?project_id=eq.${this.cfg.project}&select=id,key`, { method: "GET", prefer: "count=none" });
+    const m = new Map<string, string>();
+    for (const r of (await res.json()) as Array<{ id: string; key: string }>) m.set(r.key, r.id);
+    return m;
   }
 
   private scope() {
@@ -203,40 +234,37 @@ export class SupabaseDesignStore {
   }
 
   // publishBacklog realiza el HANDOFF (F5-03): el backlog.yaml aprobado → filas reales en
-  // stories/sprints (RLS por tenant, como authenticated). Dos pasadas: (1) sprints → key→id,
-  // (2) stories (nacen 'backlog', sprint_id resuelto) → key→id, (3) blocked_by = deps
-  // resueltas key→uuid (blocked_by es uuid[] → stories.id). Idempotente por (project,key):
-  // limpia antes las stories/sprints del proyecto para no duplicar en un re-handoff.
+  // stories/sprints (RLS por tenant, como authenticated). Tres pasadas: (1) sprints faltantes,
+  // (2) stories faltantes (nacen 'backlog', sprint_id resuelto), (3) blocked_by = deps
+  // resueltas key→uuid (blocked_by es uuid[] → stories.id).
+  //
+  // IDEMPOTENTE por (project,key) SIN depender de DELETE (revocado para authenticated: el intento
+  // previo de "borrar-y-reinsertar" fallaba en silencio con un catch{} → el POST reinsertaba y
+  // chocaba con un 409 duplicate-key que MATABA el resume, dejando el backlog a medio-cablear y
+  // el repo sin crear). En su lugar: leé lo que YA existe e insertá solo lo que falta; re-cableá
+  // deps SIEMPRE (una PATCH es idempotente) para completar lo que un resume anterior dejó sin deps.
+  // Las stories ya existentes NO se tocan (no pisar status/sprint de una que ya se despachó).
   async publishBacklog(sprints: SprintSeed[], stories: StorySeed[]): Promise<{ sprints: number; stories: number }> {
     const s = this.scope();
-    // Limpieza previa (re-handoff): borrar stories del proyecto (blocked_by se va con ellas)
-    // y luego sprints. DELETE está revocado para authenticated en algunas tablas; si falla,
-    // seguimos (primer handoff no tiene qué borrar).
-    try {
-      await this.rest(`/stories?project_id=eq.${s.project_id}`, { method: "DELETE" });
-      await this.rest(`/sprints?project_id=eq.${s.project_id}`, { method: "DELETE" });
-    } catch {
-      /* primer handoff: nada que limpiar (o delete revocado) */
-    }
 
-    // 1) sprints → key→id
-    const sprintKeyToId = new Map<string, string>();
-    if (sprints.length) {
-      const res = await this.rest("/sprints", {
+    // 1) sprints faltantes → luego mapa completo key→id
+    const haveSprints = await this.keyMap("sprints");
+    const newSprints = sprints.filter((sp) => !haveSprints.has(sp.key));
+    if (newSprints.length) {
+      await this.rest("/sprints", {
         method: "POST",
-        prefer: "return=representation",
-        body: JSON.stringify(sprints.map((sp, i) => ({ ...s, key: sp.key, title: sp.title ?? sp.key, goal: sp.goal ?? "", position: sp.position ?? i }))),
+        body: JSON.stringify(newSprints.map((sp, i) => ({ ...s, key: sp.key, title: sp.title ?? sp.key, goal: sp.goal ?? "", position: sp.position ?? i }))),
       });
-      for (const row of (await res.json()) as Array<{ id: string; key: string }>) sprintKeyToId.set(row.key, row.id);
     }
+    const sprintKeyToId = await this.keyMap("sprints");
 
-    // 2) stories (nacen 'backlog') → key→id
-    const storyKeyToId = new Map<string, string>();
-    if (stories.length) {
-      const res = await this.rest("/stories", {
+    // 2) stories faltantes (nacen 'backlog') → luego mapa completo key→id
+    const haveStories = await this.keyMap("stories");
+    const newStories = stories.filter((st) => !haveStories.has(st.key));
+    if (newStories.length) {
+      await this.rest("/stories", {
         method: "POST",
-        prefer: "return=representation",
-        body: JSON.stringify(stories.map((st) => ({
+        body: JSON.stringify(newStories.map((st) => ({
           ...s,
           key: st.key,
           title: st.title,
@@ -250,10 +278,10 @@ export class SupabaseDesignStore {
           screen_key: st.screen_key ?? null,
         }))),
       });
-      for (const row of (await res.json()) as Array<{ id: string; key: string }>) storyKeyToId.set(row.key, row.id);
     }
+    const storyKeyToId = await this.keyMap("stories");
 
-    // 3) blocked_by = deps (key→uuid); solo las que resuelven a una story existente.
+    // 3) blocked_by = deps (key→uuid); solo las que resuelven a una story existente. Idempotente.
     for (const st of stories) {
       const deps = (st.deps ?? []).map((k) => storyKeyToId.get(k)).filter((x): x is string => !!x);
       if (deps.length) {
