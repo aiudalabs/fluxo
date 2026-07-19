@@ -111,6 +111,13 @@ Then apply these checks to every criterion before you accept it as met:
    placeholder", the test must assert the placeholder renders; a test asserting
    the section is hidden is WRONG and masks the bug. Removing the production
    behavior must make the test fail — if it wouldn't, the test is vacuous.
+5. **Wired ≠ connected (anti-stub)** — an AC that requires real I/O (call the
+   API, persist via Supabase, deliver a notification) is NOT met by a stub/mock/
+   hard-coded fixture standing in for the real call in the PRODUCTION path — even
+   if a test drives that double. A double is fine to TEST; it must not be the only
+   production path. If the real integration is out of scope, FAIL LOUDLY or mark
+   the criterion NOT met — never certify a silent stub as done, and never read a
+   success metric off a stub's return. See L-BUILD-1.
 
 End your PR description with:
 

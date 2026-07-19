@@ -98,6 +98,12 @@ Then apply these checks to every criterion before you accept it as met:
 4. **Honest tests (anti-vacuous)** — write the test from the AC's REQUIRED
    behavior, never from what the code currently does. Removing the production
    behavior must make the test fail — if it wouldn't, the test is vacuous.
+5. **Wired ≠ connected (anti-stub)** — an AC that requires real I/O (call the
+   backend/SDK, persist, deliver a notification) is NOT met by a stub/fake
+   repository standing in for the real call in the PRODUCTION path — even if a
+   widget/unit test drives that double. If the real integration is out of scope,
+   FAIL LOUDLY or mark the criterion NOT met; never certify a silent stub as done,
+   and never read a success metric off a stub's return. See L-BUILD-1.
 
 End your PR description with:
 

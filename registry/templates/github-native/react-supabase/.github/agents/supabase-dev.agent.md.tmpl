@@ -105,6 +105,14 @@ Then apply these checks to every criterion before you accept it as met:
    BOTH that the authorized role is allowed AND that the unauthorized role is
    denied. Removing the production behavior (dropping the policy) must make the
    test fail — if it wouldn't, the test is vacuous.
+5. **Wired ≠ connected (anti-stub)** — an AC that requires real I/O (send a
+   push/email/SMS via the worker, deliver a notification, call an external API) is
+   NOT met by a `Logging*`/`InMemory*`/no-op default that only logs or returns
+   success — even if a test drives that double. If the real integration is out of
+   scope, FAIL LOUDLY (throw / refuse to boot) or mark the criterion NOT met;
+   never certify a silent stub as done, never read a success metric off a stub's
+   return, and never let prod boot with a dev-default secret (hard-coded JWT/AES
+   key) — fail closed. See L-BUILD-1.
 
 End your PR description with:
 

@@ -68,6 +68,20 @@ jobs:
             3. Tests that don't actually exercise the new behavior — assert
                nothing, test the wrong thing, or are hard-coded to pass — are a
                real defect. The suite is only as honest as the tests.
+            4. STUB CERTIFIED AS SUCCESS (wired ≠ connected): an acceptance
+               criterion that requires real I/O — send a push/email/SMS, deliver a
+               notification, persist to the datastore, call an external API — is
+               NOT met by a `Logging*`/`InMemory*`/no-op default that only logs or
+               returns success. That is a silent stub passed off as done, and it is
+               a BLOCKER. Two tells: (a) the production path is wired ONLY to the
+               stub (no real sender/client exists, or it is unreachable by config);
+               (b) a metric is computed from the stub's return value (e.g.
+               delivery_rate = 1.0 from a sender that always returns true) — a fake
+               signal. If the real integration is legitimately out of scope for
+               this issue, the code must FAIL LOUDLY (throw/refuse to boot) or the
+               story must be explicitly marked not-done — never a silent default.
+               Related: production must not boot with dev-default secrets (a
+               hard-coded JWT/AES key that "works") — fail closed.
 
             ## Severity → review decision (this is how you avoid looping forever)
             Classify every observation, then map it to the decision. Only the top
@@ -75,7 +89,10 @@ jobs:
 
             - BLOCKER → REQUEST CHANGES. One of: an acceptance criterion is unmet
               (you can name a failing input); an in-scope correctness/security bug;
-              or a fake/vacuous test. These, and ONLY these, block the merge.
+              a fake/vacuous test; or a P0 I/O requirement satisfied only by a
+              silent stub/Logging default (wired ≠ connected, incl. a metric read
+              off a stub's return, or prod booting with dev-default secrets). These,
+              and ONLY these, block the merge.
             - WARNING / INFO → APPROVE, mentioned as a non-blocking note. Edge
               cases the issue did not ask for (TOCTOU races, OS-specific handling,
               inputs outside the documented contract), refactors, naming, style,

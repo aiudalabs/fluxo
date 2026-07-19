@@ -99,6 +99,13 @@ Then apply these checks to every criterion before you accept it as met:
    behavior must make the test fail — if it wouldn't, the test is vacuous. An
    idempotency AC needs a test that calls twice with the same `clientRequestId` and
    asserts one effect.
+5. **Wired ≠ connected (anti-stub)** — an AC that requires real I/O (send a
+   push/email/SMS, deliver a notification, write to Firestore, call an external
+   API) is NOT met by a `Logging*`/`InMemory*`/no-op default that only logs or
+   returns success — even if a test drives that double. If the real integration is
+   out of scope, FAIL LOUDLY (throw / refuse to boot) or mark the criterion NOT
+   met; never certify a silent stub as done, never read a success metric off a
+   stub's return, and never boot prod with a dev-default secret. See L-BUILD-1.
 
 End your PR description with:
 

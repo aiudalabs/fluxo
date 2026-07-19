@@ -29,6 +29,15 @@ Then apply these checks to every criterion before you accept it as met:
    assert the placeholder renders; a test asserting the section is hidden is WRONG and
    masks the bug. Removing the production behavior must make the test fail — if it
    wouldn't, the test is vacuous.
+5. **Wired ≠ connected (anti-stub)** — if the AC requires real I/O (send a push/email/SMS,
+   deliver a notification, persist to the store, call an external API), it is NOT met by a
+   `Logging*`/`InMemory*`/no-op default that only logs or returns success — even if a test
+   drives that double. A double is fine to TEST the logic; it must not be the ONLY
+   production path. If the real integration is out of scope, either FAIL LOUDLY (throw /
+   refuse to boot) or mark the criterion **NOT met** here — never certify a silent stub as
+   done. Never compute a success metric from a stub's return (`delivery_rate=1.0` from a
+   sender that always returns true is a fake signal). And never let production boot with a
+   dev-default secret (hard-coded JWT/AES key) — fail closed. See L-BUILD-1.
 
 ## Output
 
