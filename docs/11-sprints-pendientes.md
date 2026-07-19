@@ -40,15 +40,17 @@ lo que encontró la validación de Idearium.
 
 ---
 
-## 🟠 Sprint P2 — Verificación de juicio (lo que el lint no ve)
+## 🟢 Sprint P2 — Verificación de juicio (lo que el lint no ve) — **~IMPLEMENTADO 2026-07-19**
 **Objetivo:** verificar que lo construido *funciona de verdad y se ve bien*, no solo que compila.
-*(No verificado en detalle contra el estado actual — del roadmap Fase 7.)*
 
-| # | Ítem | Fuente |
+> **Verificado 2026-07-19:** P2 estaba **~80% construido por P1** (el harness ya traía el art-director y
+> el e2e-verify). El trabajo real fue reconectar el juez-visión (P2-1).
+
+| # | Ítem | Estado |
 |---|---|---|
-| P2-1 | Juez-visión: screenshot vs mockup aprobado; visual roto bloquea | F7-03 · L-LM-3 |
-| P2-2 | Verify **cross-lane e2e**: "el app desplegado habla con el backend desplegado" es gate | F7-04 · L-LM-5 |
-| P2-3 | Verify **multi-superficie**: customer-app + admin + backend, cada uno el suyo | F7-05 · L-LM-4 |
+| P2-1 | Juez-visión: screenshot vs mockup aprobado; visual roto bloquea | ✅ (commit d0e7ced) El art-director de `ui-verify` (render screenshot+mockup → opus-4-8 → PASS/FAIL → rojo, con guard anti prompt-injection) ya estaba shippeado en P1 pero **skipeaba siempre** (buscaba `docs/mockups/<screen_key>.html`, el designer emitía un `index.html`). Fix del **contrato**: `ux` da la key `role.screen` por pantalla, `designer`/`mockup-html` emiten `docs/mockups/<screen_key>.html` per-pantalla, el `scrum-master` ya asigna `screen_key`. Ahora el juez dispara. **Aplica a runs futuros** (MiSalon ya tenía index.html → re-correr mockups para activar, opcional). |
+| P2-2 | Verify cross-lane e2e | ✅ **Built + bloqueante en P1.** `e2e-verify` bootea el backend real, siembra, corre el flow en browser real + invariantes, exit 1 en fallo. Eso **es** L-LM-5 (integración = gate, no lint estático). El "desplegado↔desplegado" literal es **F8/P3**. |
+| P2-3 | Verify multi-superficie (per-app) | 🟡 **PARCIAL.** Para **react-supabase** (web única, ej. MiSalon): las superficies son pantallas → cubiertas por el art-director per-`screen_key` (P2-1) + rutas por los e2e flows (el harness soporta N flows en `e2e.flows/`). **Residual:** el `ui-verify` de **Flutter** usa un solo `{{app_path}}` (primario) → un producto multi-app (customer+provider+admin) solo verifica el primario (L-LM-4). Fix diseñado: matrix sobre app_paths + flows por superficie. **Diferido** hasta que corra un proyecto multi-app real (no shippear una matrix untested a un stack sin proyecto vivo — disciplina anti-stub sobre lo nuestro). |
 
 ---
 
