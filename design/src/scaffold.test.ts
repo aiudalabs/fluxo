@@ -38,6 +38,7 @@ test("buildScaffold (react-supabase) emite el HARNESS DE VERIFY completo", () =>
     ".github/workflows/e2e-verify.yml",
     ".github/workflows/provisioning-lint.yml",
     ".github/workflows/ui-verify.yml",
+    ".github/workflows/test-verify.yml",
     ".fluxo/verify/e2e_verify.py",
     ".fluxo/verify/provisioning_lint.py",
     ".fluxo/verify/stack.verify.yaml",
@@ -65,7 +66,7 @@ test("los archivos con vars sin generador (AGENTS/CLAUDE/frontend.instructions) 
 
 test("e2e-verify y provisioning-lint son BLOQUEANTES (sin continue-on-error) — cierra L-AUTO-3", () => {
   const { files } = buildScaffold(registryDir, VARS);
-  for (const p of [".github/workflows/e2e-verify.yml", ".github/workflows/provisioning-lint.yml"]) {
+  for (const p of [".github/workflows/e2e-verify.yml", ".github/workflows/provisioning-lint.yml", ".github/workflows/test-verify.yml"]) {
     const wf = files.find((f) => f.path === p)!;
     assert.doesNotMatch(wf.content, /continue-on-error:\s*true/, `${p} sigue siendo continue-on-error`);
   }

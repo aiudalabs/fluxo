@@ -1,0 +1,58 @@
+name: test-verify
+
+# EJECUTA la suite de tests DEL REPO (Sprint P1-2, cierra L-AUTO-3 / docs/10 #6). `suite-integrity`
+# solo CUENTA marcadores de test — hace costoso BORRARLOS, pero nunca los corre; `claude-review` juzga
+# si son honestos; ESTE workflow los EJECUTA. Un test rojo FALLA el check y bloquea el merge. Sin él,
+# "los tests pasan" no es evidencia de nada (fue el bug de Idearium: 37 tests que el CI nunca corrió).
+#
+# STACK react-supabase (Node/TS monorepo por workspaces). Detecta el package-manager por su lockfile.
+# Guard: si el repo no tiene un script `test` en package.json → skip limpio (aditivo).
+# BLOQUEANTE: sin continue-on-error. El auto-merge exige CLEAN; el merge manual ve el rojo.
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test-verify:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Detect test setup
+        id: cfg
+        run: |
+          if [ -f package.json ] && grep -q '"test"[[:space:]]*:' package.json; then
+            echo "present=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "present=false" >> "$GITHUB_OUTPUT"
+            echo "test-verify: no root \"test\" script in package.json — skipping (nothing to run)."
+          fi
+
+      - name: Set up Node
+        if: steps.cfg.outputs.present == 'true'
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Install deps + run the suite (blocking)
+        if: steps.cfg.outputs.present == 'true'
+        run: |
+          set -euo pipefail
+          # Package-manager por lockfile — instala reproducible y corre el `test` raíz (que en un
+          # monorepo por workspaces corre las suites de backend/worker/frontend/shared).
+          if [ -f pnpm-lock.yaml ]; then
+            corepack enable
+            pnpm install --frozen-lockfile
+            pnpm test
+          elif [ -f yarn.lock ]; then
+            corepack enable
+            yarn install --frozen-lockfile
+            yarn test
+          else
+            npm ci
+            npm test
+          fi

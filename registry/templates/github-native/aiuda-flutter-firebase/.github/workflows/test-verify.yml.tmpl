@@ -1,0 +1,84 @@
+name: test-verify
+
+# EJECUTA la suite de tests DEL REPO (Sprint P1-2, cierra L-AUTO-3 / docs/10 #6). `suite-integrity`
+# solo CUENTA marcadores; `claude-review` juzga honestidad; ESTE workflow los EJECUTA. Un test rojo
+# FALLA el check y bloquea el merge. Sin él, "los tests pasan" no es evidencia.
+#
+# STACK aiuda-flutter-firebase: apps/packages Flutter (`flutter test`) + Cloud Functions (node/npm).
+# Cada tramo se saltea limpio si su carpeta no existe (aditivo). BLOQUEANTE (sin continue-on-error).
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  flutter-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Detect Flutter packages
+        id: cfg
+        run: |
+          # Cualquier pubspec.yaml con un test/ hermano → hay tests Flutter que correr.
+          if find . -path ./build -prune -o -name pubspec.yaml -print 2>/dev/null | grep -q .; then
+            echo "present=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "present=false" >> "$GITHUB_OUTPUT"
+            echo "test-verify(flutter): no pubspec.yaml — skipping."
+          fi
+
+      - name: Set up Flutter
+        if: steps.cfg.outputs.present == 'true'
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+
+      - name: flutter test (blocking, cada paquete con tests)
+        if: steps.cfg.outputs.present == 'true'
+        run: |
+          set -euo pipefail
+          # Corre `flutter test` en cada paquete que tenga carpeta test/ (apps + packages).
+          ran=0
+          while IFS= read -r pub; do
+            dir="$(dirname "$pub")"
+            if [ -d "$dir/test" ]; then
+              echo "── flutter test en $dir ──"
+              ( cd "$dir" && flutter pub get && flutter test )
+              ran=1
+            fi
+          done < <(find . -path ./build -prune -o -name pubspec.yaml -print)
+          [ "$ran" = 1 ] || echo "test-verify(flutter): ningún paquete con test/ — nada que correr."
+
+  functions-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Detect Functions tests
+        id: cfg
+        run: |
+          if [ -f functions/package.json ] && grep -q '"test"[[:space:]]*:' functions/package.json; then
+            echo "present=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "present=false" >> "$GITHUB_OUTPUT"
+            echo "test-verify(functions): no functions/ test script — skipping."
+          fi
+
+      - name: Set up Node
+        if: steps.cfg.outputs.present == 'true'
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Install + run the suite (blocking)
+        if: steps.cfg.outputs.present == 'true'
+        working-directory: functions
+        run: |
+          set -euo pipefail
+          if [ -f package-lock.json ]; then npm ci; else npm install; fi
+          npm test
