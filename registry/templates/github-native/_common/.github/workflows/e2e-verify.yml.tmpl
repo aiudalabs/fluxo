@@ -13,9 +13,11 @@ name: e2e-verify
 # (.fluxo/verify/stack.verify.yaml, DATA). Do not add framework strings here. When the
 # pre-baked images land (S4) this can pin `container:` from the contract's `image`.
 #
-# ROLLOUT: continue-on-error is true — it RUNS and REPORTS but does NOT block the merge
-# yet. Promoted to a required, blocking check per-project only after going green on a
-# real PR (S5).
+# BLOQUEANTE (Sprint P1, cierra L-AUTO-3): un e2e-verify rojo FALLA el check y bloquea el merge — el
+# auto-merge exige CLEAN y el merge manual lo frena branch-protection. El guard "Detect verify config"
+# de abajo hace que un repo SIN el contrato .fluxo/verify/ skipee limpio (exit 0), así que esto es
+# aditivo: solo bloquea cuando el harness está presente. NO volver a continue-on-error (era el
+# "verde-pero-vacío" de v1: el check corría pero nadie lo miraba).
 
 on:
   pull_request:
@@ -26,7 +28,6 @@ permissions:
 jobs:
   e2e-verify:
     runs-on: ubuntu-latest
-    continue-on-error: true
     steps:
       - name: Checkout
         uses: actions/checkout@v4

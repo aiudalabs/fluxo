@@ -20,7 +20,6 @@ import { makeSdkRunner } from "./sdkRunner.ts";
 import { SupabaseDesignStore } from "./supabase.ts";
 import { makeHandoff, type GithubTarget } from "./handoff.ts";
 import { GithubApp } from "./github.ts";
-import { buildScaffold } from "./scaffold.ts";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const registryDir = resolve(here, "..", "..", "registry");
@@ -124,18 +123,18 @@ const ghAppId = process.env.GITHUB_APP_ID;
 const ghKeyPath = process.env.GITHUB_APP_PRIVATE_KEY_PATH;
 const ghKey = process.env.GITHUB_APP_PRIVATE_KEY;
 if (ghAppId && (ghKeyPath || ghKey) && project.org) {
-  // Scaffold del build: el canal de despacho (claude.yml) + los gates de review (claude-review.yml
-  // cross-modelo + suite-integrity.yml) que en Fase 4 habilitan el auto-merge. Ver scaffold.ts.
-  const scaffold = buildScaffold(registryDir, { projectName: project.name });
+  // El scaffold (canal de despacho + harness de verify) se CONSTRUYE en el handoff, cuando el workdir
+  // ya tiene los docs (stack + lanes). Acá solo pasamos de dónde salen los templates + el nombre.
   github = {
     app: new GithubApp({ appId: ghAppId, privateKeyPath: ghKeyPath, privateKey: ghKey }),
     org: project.org,
     repoName: project.name,
     description: idea.slice(0, 200),
-    scaffold,
+    registryDir,
+    projectName: project.name,
     userToken: ownerToken,
   };
-  console.log(`  handoff GitHub: org ${project.org} · repo ${project.name} · scaffold ${scaffold.length} archivo(s) · owner-token ${ownerToken ? "sí" : "no"}`);
+  console.log(`  handoff GitHub: org ${project.org} · repo ${project.name} · owner-token ${ownerToken ? "sí" : "no"}`);
 }
 const handoff = makeHandoff(store, workdir, github);
 try {

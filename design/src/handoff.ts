@@ -13,6 +13,7 @@ import type { HandoffExecutor } from "./engine.ts";
 import type { SupabaseDesignStore, SprintSeed, StorySeed } from "./supabase.ts";
 import { GithubApp, GithubRepo } from "./github.ts";
 import { labelSpecsFor } from "./labels.ts";
+import { buildScaffold, type ScaffoldVars } from "./scaffold.ts";
 
 interface RawBacklog {
   epic?: { id?: string; title?: string; description?: string };
@@ -70,9 +71,35 @@ export interface GithubTarget {
   repoName: string; // se slugifica
   description?: string;
   userToken?: string; // token OAuth del dueño — crea el repo en su cuenta personal O su org
-  // Archivos de scaffold a commitear al repo (ej. .github/workflows/claude.yml — el canal
-  // de build del conductor). {path, content}. Vienen del registry (main.ts los lee).
-  scaffold?: Array<{ path: string; content: string }>;
+  // El scaffold se CONSTRUYE en el handoff (no antes): necesita el stack + docs que solo existen
+  // en el workdir al final del run. Pasamos el registryDir (de dónde salen los templates) y el
+  // nombre humano del proyecto ({{project_name}}); el resto de las vars se resuelven del workdir.
+  registryDir: string;
+  projectName: string;
+}
+
+// resolveScaffoldVars arma las {{vars}} del scaffold desde el workdir (al momento del handoff los
+// docs ya están cosechados). Solo pone las que puede resolver bien; las que faltan (design_tokens,
+// path_map_*) dejan sus archivos sin emitir — buildScaffold los reporta y el handoff los loguea.
+function resolveScaffoldVars(workdir: string, projectName: string, stories: StorySeed[]): ScaffoldVars {
+  // stack: de docs/provisioning.yaml (§machine-readable del architect). Sin él → solo _common.
+  let stack: string | undefined;
+  try {
+    const prov = yaml.load(readFileSync(join(workdir, "docs", "provisioning.yaml"), "utf8")) as { stack?: string };
+    if (prov?.stack) stack = String(prov.stack).trim();
+  } catch { /* sin provisioning.yaml: degradá a _common */ }
+
+  // lanes: bullet list de las lanes distintas del backlog (para AGENTS.md/CLAUDE.md).
+  const laneSet = [...new Set(stories.map((s) => s.lane).filter((l): l is string => !!l && l.trim() !== ""))];
+  const lanes = laneSet.length ? laneSet.map((l) => `- ${l}`).join("\n") : undefined;
+
+  return {
+    project_name: projectName,
+    stack,
+    language: "es",          // ICP LATAM/español (default; el wizard lo fijará por proyecto — F9)
+    lanes,
+    art_director: "on",      // el juez-visión se auto-saltea sin screen_key/mockup (P2-1 lo endurece)
+  };
 }
 
 // Docs que commiteamos al repo si existen en el workdir (orden de lectura).
@@ -89,9 +116,18 @@ async function publishToGithub(store: SupabaseDesignStore, workdir: string, gh: 
     const p = join(workdir, "docs", f);
     if (existsSync(p)) await repo.putFile(`docs/${f}`, readFileSync(p, "utf8"), `design: ${f}`);
   }
-  // Scaffold: el canal de build (.github/workflows/claude.yml, etc.) — Workflows:write.
-  for (const f of gh.scaffold ?? []) {
+  // Scaffold: el canal de build + el HARNESS DE VERIFY (e2e-verify/provisioning-lint/ui-verify +
+  // .fluxo/verify/**). Se construye acá (workdir con docs → stack + lanes). Los archivos que aún
+  // necesitan una var sin resolver NO se emiten y se loguean (no shippear `{{placeholder}}`).
+  const vars = resolveScaffoldVars(workdir, gh.projectName, stories);
+  const { files, skipped } = buildScaffold(gh.registryDir, vars);
+  for (const f of files) {
     await repo.putFile(f.path, f.content, `scaffold: ${f.path}`);
+  }
+  console.log(`  ↪ scaffold: ${files.length} archivo(s) (stack ${vars.stack ?? "—"})`);
+  if (skipped.length) {
+    console.log(`  ⚠ scaffold: ${skipped.length} archivo(s) omitido(s) por vars sin resolver (falta el generador de pre-render):`);
+    for (const s of skipped) console.log(`     · ${s.path} → {{${s.missing.join("}} {{")}}}`);
   }
   await store.setProjectRepo(repo.htmlUrl);
   // Pass 0 — labels de colores (sprint / lane / épica), deduplicados. Se ven de un vistazo en

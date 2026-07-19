@@ -49,6 +49,14 @@ construcción** o **cubrir con un test**. Los códigos `L-*` los referencia `03-
   schema, gate_file por step, `providers/*.yaml`); el ejecutor es genérico.
 - **L-D2** · `$discovery.text`/`$prd.text` resolvían a "" (el texto vive en `output.text`). → v2: resolver correcto;
   test de encadenado de contexto entre fases.
+- **L-BUILD-1** (2026-07-18, validando Idearium por EJECUCIÓN) · **Stub certificado como éxito**: un requisito P0
+  de I/O cableado a un `Logging*`/`InMemory*` como default de prod + métricas que miden el RETORNO del stub = falso
+  verde (ej: `delivery_rate=1.0` enviando cero pushes; email de reset que solo loguea el token). El método escribe
+  lógica/arquitectura buenas pero confunde *wired* (cableado) con *connected* (conectado); la suite verde prueba el
+  scheduling, no la entrega. → v2: (a) prohibir el default de stub **silencioso** en I/O P0 (implementación real, o
+  falla RUIDOSO, o se marca NO-HECHO en el backlog); (b) métricas de **efecto real**, no del retorno del stub;
+  (c) status que distingue "cableado" de "hecho"; (d) **verify por ejecución** en las fronteras. Detalle y los 7
+  casos: `docs/10-calidad-build-backlog.md`; el trabajo: Sprint P1 en `docs/11-sprints-pendientes.md`. Extiende L-AUTO-3.
 
 ## Producto / onboarding
 - **L-UX-1** · Tras publicar el backlog la fábrica quedaba muda (default dispatch `approve`, Studio sin link a

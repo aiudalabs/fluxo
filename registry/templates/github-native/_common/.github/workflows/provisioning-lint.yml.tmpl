@@ -11,9 +11,10 @@ name: provisioning-lint
 # This workflow is STACK-AGNOSTIC on purpose: it names no framework. Everything
 # stack-specific lives in the rule table (DATA). Do not add framework strings here.
 #
-# ROLLOUT: continue-on-error is true — the check RUNS and REPORTS (job summary +
-# annotations) but does NOT block the merge yet. It is promoted to a required,
-# blocking check per-project only after it has gone green on a real PR.
+# BLOQUEANTE (Sprint P1, cierra L-AUTO-3): un provisioning-lint rojo (rol/index/permiso declarado en
+# docs/provisioning.yaml que el código NO usa, o al revés) FALLA el check y bloquea el merge. El guard
+# "Detect verify config" hace que un repo SIN la rule table skipee limpio, así que es aditivo. NO
+# volver a continue-on-error.
 
 on:
   pull_request:
@@ -24,8 +25,6 @@ permissions:
 jobs:
   provisioning-lint:
     runs-on: ubuntu-latest
-    # Reports, does not block (S2). Flip to a required check once validated.
-    continue-on-error: true
     steps:
       - name: Checkout
         uses: actions/checkout@v4
