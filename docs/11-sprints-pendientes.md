@@ -14,24 +14,29 @@ conductor idempotente + re-mint del JWT · incongruencia de Settings (`execution
 
 ---
 
-## 🔴 Sprint P1 — Confianza en el build (anti-stub + verify real)
+## 🟢 Sprint P1 — Confianza en el build (anti-stub + verify real) — **IMPLEMENTADO 2026-07-19**
 **Objetivo:** que un backlog "verde" signifique *entregado*, no *cableado*. Es el moat y ataca de raíz
-lo que encontró la validación de Idearium. Se prueba en vivo con el build de MiSalon.
+lo que encontró la validación de Idearium.
 
-> **⚠️ Verificado 2026-07-19 contra el scaffold real + `nmlemus/misalon` (3 workflows:
-> claude.yml · claude-review.yml · suite-integrity.yml). NINGÚN ítem de P1 está corregido.**
-> **Nota:** el scaffold se congela en el handoff → arreglar P1 en el registry exige un **re-scaffold**
-> (re-handoff, ya idempotente) para llegar al repo del cliente. MiSalon corre con los workflows viejos.
+> **✅ Implementado y verificado en el repo real `nmlemus/misalon`** (commits df83c39 scaffold+verify,
+> 3199dfb método anti-stub, + L-BUILD-1). El scaffold ahora emite **21 archivos** incl. el harness de
+> verify completo (`.fluxo/verify/**` + e2e-verify/provisioning-lint/ui-verify), bloqueantes.
+> **Aplicado a MiSalon** vía `rescaffold.ts` (idempotente, sin re-crear issues).
 
-| # | Ítem | Fuente | Estado verificado |
-|---|---|---|---|
-| P1-1 | **Verify determinista** (lint/e2e/tests) como check REQUERIDO — PR con verify roja no mergea | F7-01 · L-AUTO-3 | ❌ NO existe verify en el scaffold (regresión vs v1: no es "sacar `continue-on-error`", es crearlo) |
-| P1-2 | El CI **ejecuta** los tests que protege | docs/10 #6 | ❌ `suite-integrity.yml` cuenta marcadores, no corre `pytest`/`flutter test` |
-| P1-3 | **Método anti-stub**: agentes no cablean `Logging*`/`InMemory*` como default de prod en I/O P0 → real, o falla ruidoso, o marca NO-HECHO | docs/10 #1-3 | ❌ Sin guard en agents/skills. Parcial adyacente: `claude-review.yml` + `acceptance-self-audit.md` (juzgan tests falsos, no stubs de prod) |
-| P1-4 | Ninguna métrica mide el retorno de un stub (`delivery_rate=1.0` enviando cero) | docs/10 #2 | ❌ Sin guard |
-| P1-5 | `app_path`/design_tokens poblados en scaffold (que `ui-verify` deje de skipear) | F7-02 · L-AUTO-3 | ❌ No hay `ui-verify` en el scaffold |
-| P1-6 | Secretos **fail-closed**: no bootear en prod con defaults de dev | docs/10 #5 | ❌ Sin guard en el método |
-| P1-7 | Cargar la meta-lección **L-BUILD-1** (stub certificado como éxito) en `04-lecciones` | docs/10 | ❌ No está (sí está su prima L-AUTO-3) |
+| # | Ítem | Estado |
+|---|---|---|
+| P1-1 | Verify determinista bloqueante | ✅ e2e-verify + provisioning-lint sin `continue-on-error` (guard interno → skip-limpio en repos sin `.fluxo/verify`). **Nota:** no se fuerzan required-checks en branch-protection (path-filters → deadlock); el auto-merge exige CLEAN. Bajo **merge_mode:manual** (MiSalon) el rojo es advisory → confirmar que el harness skipea-limpio en repos inmaduros ANTES de activar auto-merge. |
+| P1-2 | CI ejecuta lo que protege | ✅ e2e-verify **corre el sistema integrado** (booking_flow + invariants contra un Supabase real) — ejecución, no conteo de marcadores. *Follow-up opcional:* runner dedicado de la unit-suite (`validation_commands`/`.vibeforge-gate`) como workflow. |
+| P1-3 | Método anti-stub | ✅ Reviewer (`claude-review.yml`): 4ª categoría de BLOCKER. Skill `acceptance-self-audit` item 5. Las **6 personas** de build (3 stacks ×2) con el mismo item 5. |
+| P1-4 | Métricas ≠ retorno de stub | ✅ Incluido en el gate del reviewer + self-audit ("nunca leer una métrica de éxito del retorno de un stub"). |
+| P1-5 | `ui-verify` deja de skipear | ✅ `ui-verify.yml` emitido y corre (react-supabase self-guard en `package.json`). *Diferido:* `app_path` (stack Flutter) + pre-render de `design_tokens` (un-skipea `frontend.instructions`). |
+| P1-6 | Secretos fail-closed | ✅ En el gate del reviewer + self-audit ("nunca bootear prod con un secreto de dev; fail closed"). |
+| P1-7 | **L-BUILD-1** en `04-lecciones` | ✅ Agregada (liga L-AUTO-3). |
+
+> **Follow-up de P1 (deferido, NO bloquea):** el **generador de pre-render** de `design_tokens`/`path_map_*`/
+> `validation_commands` — mientras no exista, `AGENTS.md`/`CLAUDE.md`/`frontend.instructions.md` se **saltan**
+> (el scaffold los reporta con las vars que faltan). El reviewer + self-audit + `.agent.md` ya cubren el
+> camino de build real. Va a **P4** (junto al ArtifactView).
 
 ---
 
