@@ -96,4 +96,31 @@ real, (c) status que distinga wired≠connected, (d) verify por ejecución en la
 
 ---
 
+## Validación de MiSalon por EJECUCIÓN (n=2, 2026-07-19)
+
+Segundo proyecto Fluxo-built auditado (react-supabase; reservas de salón con WhatsApp/Baileys, OTP,
+email/SMS). Construido en sprint-mode (6 PRs mergeados) **antes** de que existiera el harness de verify.
+
+**Lo bueno (el patrón raíz NO se reprodujo — mejora real vs Idearium):**
+- **Sin stub certificado como éxito.** Email/SMS default = proveedor **real** (`resend`/`twilio`);
+  `FakeMessageTransport` es opt-in explícito (`EMAIL_TRANSPORT=fake`), etiquetado "for tests/local",
+  con `sent[]`/`failNextCalls` (doble de test honesto), y existen las implementaciones reales. WhatsApp/
+  Baileys es **real** (`makeWASocket`). **Es el patrón correcto de P1-3.**
+- **Sin secretos fail-open.** JWT/service-role sin dev-default (vacío → falla); solo un nombre de bucket
+  por default (inofensivo). Opuesto al `jwt="dev-secret"` de Idearium.
+
+**El gap (nuevo hallazgo, alimenta el método):**
+- **#6 CI no corría los tests** (mismo que Idearium): 37 archivos de test (vitest) + un `npm test` raíz,
+  pero ningún workflow los ejecutaba. → **Cerrado:** nuevo `test-verify.yml` (commit) los corre bloqueante.
+- **L-BUILD-2 · Tests de unidad NO herméticos.** Al correr `npm test` en un entorno LIMPIO: frontend 20/20 ✓,
+  backend 79 assertions ✓, worker ✓ — **pero backend y worker salen con exit 1** por `connect ECONNREFUSED
+  127.0.0.1:5432` (Postgres real). Algún "unit test" (o su setup/teardown) abre una **conexión real a la DB**
+  no mockeada. Las assertions pasan, pero la suite **falla en un CI limpio** → verde SOLO en la máquina del
+  builder (con Supabase levantado). Es la prima de L-BUILD-1: *"verde donde la infra casualmente existe"*.
+  → El método debe: (a) unit tests **herméticos** (mockear DB/red); (b) los que necesitan backend real son
+  **integración** → van por `e2e-verify` (que bootea Supabase), no por la unit-suite. `test-verify` **cacha
+  esto** (sale rojo) — valida su valor.
+
+---
+
 *Estado: abierto. Más hallazgos de validación se agregan acá (el usuario reportará más issues).*
