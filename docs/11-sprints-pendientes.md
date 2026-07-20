@@ -92,9 +92,9 @@ pone sus tokens Vercel/Railway).
 
 | # | Ítem | Fuente |
 |---|---|---|
-| P5-1 | **AI Assistant** agéntico (tools = la misma API de la UI, con guardrails para acciones pagas/outward) | memoria improvements #3 |
-| P5-2 | Botón **"pedir incremento / change-request"** (AI Assistant → Overview → Board) | memoria improvements |
-| P5-3 | Selección de **workflow por proyecto** en Settings | CLAUDE.md pendiente |
+| P5-1 | **AI Assistant** agéntico (tools = la misma API de la UI, con guardrails para acciones pagas/outward) | 🔲 Pendiente — diseño-led (como Observabilidad). Es el hogar conversacional del incremento. |
+| P5-2 | Botón **"pedir incremento / change-request"** | ✅ (2026-07-19, deployado) Vertical slice: tabla `increment_requests` (cola, RLS) + `worker.reconcileIncrements` → `spawnIterate` (main.ts --workflow=iterate) + `main.ts` siembra el workdir con los docs existentes (`loadProjectDocs`) → el `iteration-planner` emite un DELTA → handoff APPENDea. UI: componente `IncrementRequest` (textarea + lista Realtime) en el Overview cuando el producto existe. El motor `iterate.yaml` ya existía; esto es el disparador. **Primer uso real dispara un planner pago** (aún no corrido). |
+| P5-3 | Selección de **workflow por proyecto** en Settings | 🔲 Pendiente (chico). |
 
 ---
 
