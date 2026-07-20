@@ -82,7 +82,7 @@ pone sus tokens Vercel/Railway).
 | P4-1 | **ArtifactView** completo | ✅ (2026-07-19, deployado) `DocView` resaltea yaml/json/shell (tokenizer sin dep, spans seguros, tokens theme-aware) y lo adoptan **Studio + Registry + Brain**. Un solo renderer por tipo. Resuelve "yaml/.vibeforge-gate como texto crudo". |
 | P4-2 | **Observabilidad** estilo Langfuse/Arize | ✅ (2026-07-19, deployado + migración aplicada a fluxo-prod). **A)** `agent.ts` captura costo/tokens/latencia del SDK por fase → `design_phases` (migración `20260719120000`); worker instrumentado (verificado sin crash). **B)** vista **Observabilidad** (rename de Brain): dashboard (costo total/diseño/build + tokens + fases·runs) + tab **Trazas** (fases con barra de duración+costo + gates como anotación + builds de `run_costs`) + tab **Eventos** (log preservado). El costo de DISEÑO aparece "—" en MiSalon (fases pre-instrumentación) → se llena en el próximo design run. |
 | P4-3 | Drawers de nodo en `/flow` | ✅ (2026-07-19, deployado) Click en nodo de story (`story:<id>`) → abre el `TicketDetail` del board (reusado; deps clickeables, PR/sesión/run). Fases/sprints no abren drawer (sprint ya linkea al board). F6P-04. |
-| P4-4 | Decisión Sidebar 11 secciones | 🔲 **Decisión** (no código): ¿replicar el sidebar de v1 o quedarse con el top-nav project-first de v2? F6P-05. |
+| P4-4 | Decisión Sidebar 11 secciones | ✅ **Decidido (2026-07-19): mantener el top-nav project-first de v2** (ratifica D6). NO se replica el sidebar global de v1 — el IA project-first es el correcto para una herramienta project-scoped y ya estaba validado. Cero código. Cierra F6P-05. |
 
 ---
 
