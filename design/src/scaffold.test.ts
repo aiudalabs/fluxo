@@ -46,6 +46,15 @@ test("buildScaffold (react-supabase) emite el HARNESS DE VERIFY completo", () =>
   ]) assert.ok(paths.has(must), `falta ${must} en el scaffold`);
 });
 
+test("buildScaffold (react-supabase) emite deploy.yml (última milla, P3) con workflow_dispatch", () => {
+  const { files } = buildScaffold(registryDir, VARS);
+  const dep = files.find((f) => f.path === ".github/workflows/deploy.yml");
+  assert.ok(dep, "falta deploy.yml en el scaffold");
+  assert.match(dep!.content, /workflow_dispatch/);
+  const doc = yaml.load(dep!.content) as Record<string, unknown>;
+  assert.ok("jobs" in doc, "deploy.yml sin jobs");
+});
+
 test("NINGÚN archivo emitido conserva una var {{...}} sin resolver", () => {
   const { files } = buildScaffold(registryDir, VARS);
   for (const f of files) assert.deepEqual(leftoverVars(f.content), [], `${f.path} tiene vars sin resolver`);

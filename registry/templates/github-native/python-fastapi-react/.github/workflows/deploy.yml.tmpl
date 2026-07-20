@@ -1,0 +1,105 @@
+name: deploy
+
+# ÚLTIMA MILLA (Sprint P3 / F8 · D3=cut): publicá con UN CLICK. Corre las migraciones (alembic),
+# deploya el frontend a Vercel y el backend FastAPI a Railway — con las credenciales del CLIENTE
+# (BYO: cero COGS). Lo declarado en docs/provisioning.yaml se ejecuta acá.
+#
+# BYO-CREDENCIAL — secrets del repo (un tramo sin su secret se saltea limpio; aditivo):
+#   · Migraciones : DATABASE_URL   (connection string Postgres destino)
+#   · Frontend    : VERCEL_TOKEN , VERCEL_ORG_ID , VERCEL_PROJECT_ID
+#   · Backend     : RAILWAY_TOKEN  (+ opcional RAILWAY_SERVICE_BACKEND)
+#
+# Disparo MANUAL — publicar es una acción deliberada del humano.
+
+on:
+  workflow_dispatch:
+    inputs:
+      target:
+        description: "Entorno a publicar"
+        type: choice
+        options: [preview, prod]
+        default: preview
+
+permissions:
+  contents: read
+
+jobs:
+  migrate:
+    runs-on: ubuntu-latest
+    env:
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+    steps:
+      - name: Detect migration config
+        id: cfg
+        run: |
+          if [ -n "$DATABASE_URL" ] && [ -d backend ]; then echo "on=true" >> "$GITHUB_OUTPUT"; else
+            echo "on=false" >> "$GITHUB_OUTPUT"; echo "deploy(migrate): sin DATABASE_URL o sin backend/ — skip."; fi
+      - uses: actions/checkout@v4
+        if: steps.cfg.outputs.on == 'true'
+      - uses: actions/setup-python@v5
+        if: steps.cfg.outputs.on == 'true'
+        with: { python-version: "3.12" }
+      - name: Run schema migrations (alembic)
+        if: steps.cfg.outputs.on == 'true'
+        working-directory: backend
+        run: |
+          set -euo pipefail
+          python -m pip install --upgrade pip
+          if [ -f pyproject.toml ]; then pip install -e . || true; fi
+          if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+          pip install alembic
+          alembic upgrade head
+
+  frontend:
+    needs: migrate
+    runs-on: ubuntu-latest
+    env:
+      VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+      VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+      VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+    steps:
+      - name: Detect Vercel config
+        id: cfg
+        run: |
+          if [ -n "$VERCEL_TOKEN" ] && [ -n "$VERCEL_ORG_ID" ] && [ -n "$VERCEL_PROJECT_ID" ] && [ -d frontend ]; then
+            echo "on=true" >> "$GITHUB_OUTPUT"; else
+            echo "on=false" >> "$GITHUB_OUTPUT"; echo "deploy(frontend): faltan VERCEL_* o frontend/ — skip."; fi
+      - uses: actions/checkout@v4
+        if: steps.cfg.outputs.on == 'true'
+      - uses: actions/setup-node@v4
+        if: steps.cfg.outputs.on == 'true'
+        with: { node-version: "20" }
+      - name: Deploy to Vercel
+        if: steps.cfg.outputs.on == 'true'
+        working-directory: frontend
+        run: |
+          set -euo pipefail
+          PROD=""; [ "${{ inputs.target }}" = "prod" ] && PROD="--prod"
+          ENVN="preview"; [ "${{ inputs.target }}" = "prod" ] && ENVN="production"
+          npx --yes vercel@latest pull --yes --environment="$ENVN" --token="$VERCEL_TOKEN"
+          npx --yes vercel@latest build $PROD --token="$VERCEL_TOKEN"
+          url="$(npx --yes vercel@latest deploy --prebuilt $PROD --token="$VERCEL_TOKEN")"
+          echo "Frontend publicado ($ENVN): $url"
+          echo "### Frontend ($ENVN): $url" >> "$GITHUB_STEP_SUMMARY"
+
+  backend:
+    needs: migrate
+    runs-on: ubuntu-latest
+    env:
+      RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+      SVC_BACKEND: ${{ secrets.RAILWAY_SERVICE_BACKEND }}
+    steps:
+      - name: Detect Railway config
+        id: cfg
+        run: |
+          if [ -n "$RAILWAY_TOKEN" ]; then echo "on=true" >> "$GITHUB_OUTPUT"; else
+            echo "on=false" >> "$GITHUB_OUTPUT"; echo "deploy(backend): sin RAILWAY_TOKEN — skip."; fi
+      - uses: actions/checkout@v4
+        if: steps.cfg.outputs.on == 'true'
+      - name: Deploy backend to Railway
+        if: steps.cfg.outputs.on == 'true'
+        run: |
+          set -euo pipefail
+          npm i -g @railway/cli
+          railway up --service "${SVC_BACKEND:-backend}" --detach
+          echo "Backend desplegado a Railway (${{ inputs.target }})."

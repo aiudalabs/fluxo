@@ -1,0 +1,118 @@
+name: deploy
+
+# ÚLTIMA MILLA (Sprint P3 / F8 · D3=cut): publicá el proyecto con UN CLICK. Corre las migraciones de
+# schema, deploya el frontend a Vercel y el backend + worker a Railway — cada tramo con las
+# credenciales del CLIENTE (BYO: cero COGS para Fluxo). Es "declarativo": lo que este repo declara en
+# docs/provisioning.yaml (Vercel: frontend; Railway: backend API + Baileys worker) se ejecuta acá.
+#
+# BYO-CREDENCIAL — configurá estos secrets del repo (Settings → Secrets → Actions) para habilitar cada
+# tramo. Un tramo SIN su secret se SALTEA limpio (aditivo: el workflow no falla por lo no configurado):
+#   · Migraciones : SUPABASE_DB_URL   (connection string Postgres del proyecto destino)
+#   · Frontend    : VERCEL_TOKEN , VERCEL_ORG_ID , VERCEL_PROJECT_ID
+#   · Backend/Worker: RAILWAY_TOKEN  (+ opcional RAILWAY_SERVICE_BACKEND / RAILWAY_SERVICE_WORKER)
+#
+# Disparo MANUAL (workflow_dispatch): elegís preview o prod. NO deploya solo en cada push — publicar es
+# una acción deliberada del humano.
+
+on:
+  workflow_dispatch:
+    inputs:
+      target:
+        description: "Entorno a publicar"
+        type: choice
+        options: [preview, prod]
+        default: preview
+
+permissions:
+  contents: read
+
+jobs:
+  # 1) Migraciones primero: el schema debe existir antes de que el código nuevo lo use.
+  migrate:
+    runs-on: ubuntu-latest
+    env:
+      SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+    steps:
+      - name: Detect migration config
+        id: cfg
+        run: |
+          if [ -n "$SUPABASE_DB_URL" ] && [ -d backend ]; then echo "on=true" >> "$GITHUB_OUTPUT"; else
+            echo "on=false" >> "$GITHUB_OUTPUT"; echo "deploy(migrate): sin SUPABASE_DB_URL o sin backend/ — skip."; fi
+      - uses: actions/checkout@v4
+        if: steps.cfg.outputs.on == 'true'
+      - uses: actions/setup-node@v4
+        if: steps.cfg.outputs.on == 'true'
+        with: { node-version: "20" }
+      - name: Run schema migrations (drizzle)
+        if: steps.cfg.outputs.on == 'true'
+        working-directory: backend
+        env:
+          DATABASE_URL: ${{ secrets.SUPABASE_DB_URL }}
+        run: |
+          set -euo pipefail
+          if [ -f package-lock.json ]; then npm ci; else npm install; fi
+          # Preferí el script del repo si existe; si no, drizzle-kit directo.
+          if npm run | grep -qE "^  (migrate|db:migrate)$"; then
+            npm run migrate --if-present || npm run db:migrate
+          else
+            npx --yes drizzle-kit migrate
+          fi
+
+  # 2) Frontend → Vercel (prod si target=prod; si no, preview).
+  frontend:
+    needs: migrate
+    runs-on: ubuntu-latest
+    env:
+      VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+      VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+      VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+    steps:
+      - name: Detect Vercel config
+        id: cfg
+        run: |
+          if [ -n "$VERCEL_TOKEN" ] && [ -n "$VERCEL_ORG_ID" ] && [ -n "$VERCEL_PROJECT_ID" ] && [ -d frontend ]; then
+            echo "on=true" >> "$GITHUB_OUTPUT"; else
+            echo "on=false" >> "$GITHUB_OUTPUT"; echo "deploy(frontend): faltan VERCEL_* o frontend/ — skip."; fi
+      - uses: actions/checkout@v4
+        if: steps.cfg.outputs.on == 'true'
+      - uses: actions/setup-node@v4
+        if: steps.cfg.outputs.on == 'true'
+        with: { node-version: "20" }
+      - name: Deploy to Vercel
+        if: steps.cfg.outputs.on == 'true'
+        working-directory: frontend
+        run: |
+          set -euo pipefail
+          PROD=""; [ "${{ inputs.target }}" = "prod" ] && PROD="--prod"
+          ENVN="preview"; [ "${{ inputs.target }}" = "prod" ] && ENVN="production"
+          npx --yes vercel@latest pull --yes --environment="$ENVN" --token="$VERCEL_TOKEN"
+          npx --yes vercel@latest build $PROD --token="$VERCEL_TOKEN"
+          url="$(npx --yes vercel@latest deploy --prebuilt $PROD --token="$VERCEL_TOKEN")"
+          echo "Frontend publicado ($ENVN): $url"
+          echo "### Frontend ($ENVN): $url" >> "$GITHUB_STEP_SUMMARY"
+
+  # 3) Backend + Baileys worker → Railway (dos servicios persistentes, per provisioning.yaml).
+  services:
+    needs: migrate
+    runs-on: ubuntu-latest
+    env:
+      RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+      SVC_BACKEND: ${{ secrets.RAILWAY_SERVICE_BACKEND }}
+      SVC_WORKER: ${{ secrets.RAILWAY_SERVICE_WORKER }}
+    steps:
+      - name: Detect Railway config
+        id: cfg
+        run: |
+          if [ -n "$RAILWAY_TOKEN" ]; then echo "on=true" >> "$GITHUB_OUTPUT"; else
+            echo "on=false" >> "$GITHUB_OUTPUT"; echo "deploy(services): sin RAILWAY_TOKEN — skip."; fi
+      - uses: actions/checkout@v4
+        if: steps.cfg.outputs.on == 'true'
+      - name: Deploy backend + worker to Railway
+        if: steps.cfg.outputs.on == 'true'
+        run: |
+          set -euo pipefail
+          npm i -g @railway/cli
+          # Un `railway up` por servicio (default backend/worker; override por secret si difieren).
+          railway up --service "${SVC_BACKEND:-backend}" --detach
+          railway up --service "${SVC_WORKER:-worker}" --detach
+          echo "Backend + worker desplegados a Railway (${{ inputs.target }})."

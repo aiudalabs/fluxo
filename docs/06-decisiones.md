@@ -27,10 +27,15 @@ Confirmado por el fundador. La versión/pineo se fija al llegar a **F5-01** (aú
 F1-02: el tool MCP `brain_write` es protocolo abierto y se construyó/verificó standalone (cualquier cliente MCP lo
 consume); el Agent SDK lo consumirá en F5.
 
-## ⚠️ D3 · Alcance de la "última milla" en v1.0
-¿La primera versión vendible incluye Fase 8 completa (tiendas + provisioning de infra del cliente) o corta en
-"web publicada + app distribuida a link de prueba" y deja tiendas para v1.1? Afecta el corte de F8. A definir cuando
-se llegue a Fase 7.
+## ✅ D3 · Alcance de la "última milla" en v1.0: **CUT — web + link de prueba** (2026-07-19)
+**Decidido:** v1.0 corta en **"web publicada (Vercel) + backend/worker (Railway) + app móvil a link de prueba
+(App Distribution/TestFlight)"**. Las **tiendas** (App Store Connect / Play Console, signing Apple, macOS runner)
+y el **provisioning automático de la infra del cliente** se difieren a **v1.1**. Rationale: es la milla más corta
+que entrega valor real y matchea el ICP (agencias LATAM que quieren desplegar rápido); el pipeline de tiendas es
+una inversión grande y cert-heavy. Nota: MiSalon es web-only ("SaaS 100% web, sin app nativa") → su última milla
+es solo deploy web. **Sprint P3** implementa: `deploy.yml` (frontend→Vercel, backend/worker→Railway, con secrets
+del cliente) + data-migrations en change-requests + (stacks Flutter) build firmado a link de prueba. El deploy REAL
+lo dispara el humano con SUS tokens (Vercel/Railway) — es BYO-credencial, no COGS de Fluxo.
 
 ## ✅ D4 · Repo remoto / org: **github.com/aiudalabs/fluxo (privado)** (2026-07-12)
 **Decidido:** el repo vive en `github.com/aiudalabs/fluxo`, **privado**. `origin` seteado, commits pusheados, CI

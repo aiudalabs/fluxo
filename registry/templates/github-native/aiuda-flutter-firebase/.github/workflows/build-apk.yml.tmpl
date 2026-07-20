@@ -20,6 +20,7 @@ env:
   # App a empaquetar (misma variable que ui-verify; el generador la sustituye,
   # default apps/customer).
   APP_PATH: "{{app_path}}"
+  FIREBASE_APP_ID: ${{ secrets.FIREBASE_APP_ID }}   # gate de distribución (env → válido en if:)
 
 jobs:
   build-apk:
@@ -56,12 +57,41 @@ jobs:
           dart pub global activate melos >/dev/null 2>&1 || true
           melos bootstrap || echo "melos bootstrap best-effort falló; seguimos (flutter build hará pub get)."
 
+      # Firma de release (Sprint P3 / F8-03): si el cliente sembró su keystore en secrets, firmamos
+      # con él (APK distribuible de verdad). BYO-credencial: sin keystore → cae a la firma debug
+      # (artefacto interno instalable), aditivo. Secrets: ANDROID_KEYSTORE_BASE64,
+      # ANDROID_KEYSTORE_PASSWORD, ANDROID_KEY_ALIAS, ANDROID_KEY_PASSWORD.
+      - name: Configure release signing (si hay keystore)
+        id: signing
+        if: ${{ hashFiles('{{app_path}}/pubspec.yaml') != '' }}
+        working-directory: ${{ env.APP_PATH }}
+        env:
+          KS_B64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          KS_PASS: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          KEY_PASS: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          if [ -z "$KS_B64" ]; then
+            echo "signed=false" >> "$GITHUB_OUTPUT"
+            echo "build-apk: sin ANDROID_KEYSTORE_BASE64 — firma debug (artefacto interno)."
+            exit 0
+          fi
+          echo "$KS_B64" | base64 -d > android/app/release.keystore
+          cat > android/key.properties <<EOF
+          storeFile=release.keystore
+          storePassword=$KS_PASS
+          keyAlias=$KEY_ALIAS
+          keyPassword=$KEY_PASS
+          EOF
+          echo "signed=true" >> "$GITHUB_OUTPUT"
+          echo "build-apk: keystore configurado — firma de release real."
+
       - name: Build release APK
         if: ${{ hashFiles('{{app_path}}/pubspec.yaml') != '' }}
         working-directory: ${{ env.APP_PATH }}
-        # Sin keystore configurado, --release firma con la clave debug y produce un
-        # APK instalable (artefacto interno). La firma de release real (keystore en
-        # secrets) es un follow-up; iOS (macOS runner + signing) queda diferido.
+        # Con key.properties presente (paso anterior), el módulo Gradle del template firma con el
+        # keystore real; sin él, --release cae a la clave debug (APK instalable interno).
         run: flutter build apk --release
 
       - name: Upload APK artifact
@@ -71,3 +101,16 @@ jobs:
           name: app-release-apk
           path: ${{ env.APP_PATH }}/build/app/outputs/flutter-apk/*.apk
           if-no-files-found: error
+
+      # Distribución a link de prueba (Sprint P3 / F8-03): si hay Firebase App Distribution
+      # configurado, subimos el APK a un grupo de testers → link instalable. BYO-credencial: sin
+      # FIREBASE_APP_ID → skip (queda el artifact del run). Secrets: FIREBASE_APP_ID,
+      # FIREBASE_SERVICE_ACCOUNT_JSON (service account con rol Firebase App Distribution Admin).
+      - name: Distribute to Firebase App Distribution (si está configurado)
+        if: ${{ hashFiles('{{app_path}}/pubspec.yaml') != '' && env.FIREBASE_APP_ID != '' }}
+        uses: wzieba/Firebase-Distribution-Github-Action@v1
+        with:
+          appId: ${{ secrets.FIREBASE_APP_ID }}
+          serviceCredentialsFileContent: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_JSON }}
+          groups: testers
+          file: ${{ env.APP_PATH }}/build/app/outputs/flutter-apk/app-release.apk
