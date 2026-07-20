@@ -37,6 +37,7 @@ export interface DStory {
   issue: number | null;           // de external_ref; null = no espejada en GitHub
   body: string | null;
   acceptance: string | null;
+  screenKey?: string | null;      // role.screen de la pantalla (P8-C); null/ausente = no es pantalla
 }
 export interface DSprint { id: string; key: string; title: string }
 
@@ -154,25 +155,39 @@ export const HEADLESS_GUARD =
   "procesos en background que no esperes — en este runner no se ejecutan y la corrida termina sin trabajo. " +
   "Nada de fire-and-forget.";
 
-export function storyPrompt(s: Pick<DStory, "key" | "title" | "body" | "acceptance" | "issue">): string {
+// screenPointer: cuando la story construye una pantalla (screen_key presente), apunta al dev a
+// SU spec y SU mockup — no al genérico "leé docs/" (P8-C). El spec de la pantalla vive en
+// docs/UI_SCREENS.md y el mockup aprobado (lo que el art-director de ui-verify compara) en
+// docs/mockups/<screen_key>.html. Sin screen_key devuelve "" (stories de backend/foundation).
+export function screenPointer(screenKey?: string | null): string {
+  if (!screenKey) return "";
+  return (
+    `\nEsta story construye la pantalla \`${screenKey}\`: su spec está en docs/UI_SCREENS.md ` +
+    `(la sección de la pantalla \`${screenKey}\`) y su mockup aprobado en docs/mockups/${screenKey}.html. ` +
+    `Construí la UI para que matchee ese mockup — el art-director la compara contra él.`
+  );
+}
+
+export function storyPrompt(s: Pick<DStory, "key" | "title" | "body" | "acceptance" | "issue" | "screenKey">): string {
   const n = s.issue;
   const parts = [
     `Resolvé el issue #${n} (${s.key} — ${s.title}).`,
     `\n${HEADLESS_GUARD}`,
     s.body ? `\n${s.body.trim()}` : "",
     s.acceptance ? `\n## Criterios de aceptación\n${s.acceptance.trim()}` : "",
+    screenPointer(s.screenKey),
     `\nImplementá EXACTAMENTE lo que especifican los criterios de aceptación — cada checkbox, nada más. ` +
     `Escribí tests honestos que ejerciten cada criterio. Leé los docs de diseño en docs/ para el contexto. ` +
     `Abrí un pull request cuya descripción incluya \`Closes #${n}\`.`,
   ];
-  return parts.join("\n");
+  return parts.filter(Boolean).join("\n");
 }
 
 // sprintPrompt: el contrato goal-mode — todas las stories, EN ORDEN, una rama, UN PR que las cierra
 // a todas. v1 buildPrompt sprint (:462-482).
 export function sprintPrompt(
   title: string,
-  members: Array<Pick<DStory, "key" | "title" | "body" | "acceptance" | "issue">>,
+  members: Array<Pick<DStory, "key" | "title" | "body" | "acceptance" | "issue" | "screenKey">>,
 ): string {
   const b: string[] = [];
   b.push(`# Modo goal — implementá este SPRINT COMPLETO (${title}) en una sola pasada\n`);
@@ -189,6 +204,7 @@ export function sprintPrompt(
     b.push(`### ${st.key} — ${st.title} (issue #${st.issue})`);
     if (st.body?.trim()) b.push(st.body.trim());
     if (st.acceptance?.trim()) b.push(`\nCriterios de aceptación:\n${st.acceptance.trim()}`);
+    if (st.screenKey) b.push(screenPointer(st.screenKey).trimStart());
     b.push("");
   }
   b.push(`La descripción del PR DEBE incluir: ${closes.join(", ")}.`);

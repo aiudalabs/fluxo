@@ -54,7 +54,7 @@ export function policyFrom(settings: Settings): Policy {
 interface StoryRow {
   id: string; key: string; title: string; lane: string | null; status: string;
   sprint_id: string | null; blocked_by: string[] | null; external_ref: string | null;
-  body: string | null; acceptance: string | null;
+  body: string | null; acceptance: string | null; screen_key: string | null;
 }
 interface SprintRow { id: string; key: string; title: string | null }
 
@@ -62,7 +62,7 @@ function toDStory(r: StoryRow): DStory {
   return {
     id: r.id, key: r.key, title: r.title, lane: r.lane ?? "", status: r.status,
     sprintId: r.sprint_id, deps: r.blocked_by ?? [], issue: issueNumOf(r.external_ref),
-    body: r.body, acceptance: r.acceptance,
+    body: r.body, acceptance: r.acceptance, screenKey: r.screen_key,
   };
 }
 
@@ -122,7 +122,7 @@ export async function loadDispatchContext(db: SupabaseClient, tenant: string, pr
   if (!project || project.tenant_id !== tenant) return null;
 
   const [{ data: stories }, { data: sprints }] = await Promise.all([
-    db.from("stories").select("id,key,title,lane,status,sprint_id,blocked_by,external_ref,body,acceptance").eq("project_id", projectId),
+    db.from("stories").select("id,key,title,lane,status,sprint_id,blocked_by,external_ref,body,acceptance,screen_key").eq("project_id", projectId),
     db.from("sprints").select("id,key,title").eq("project_id", projectId),
   ]);
 

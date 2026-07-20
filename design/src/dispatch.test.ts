@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
-  candidates, storyPrompt, sprintPrompt, channelFor, modelFor, docsGuardOk,
+  candidates, storyPrompt, sprintPrompt, screenPointer, channelFor, modelFor, docsGuardOk,
   type Policy, type DStory, type DSprint,
 } from "./dispatch.ts";
 
@@ -147,6 +147,34 @@ test("sprintPrompt: goal-mode, una rama/PR, Closes de TODAS", () => {
   assert.match(p, /Closes #11, Closes #12/);
   // las dos stories, en orden
   assert.ok(p.indexOf("S1-01") < p.indexOf("S1-02"));
+});
+
+// ── P8-C · puntero a spec+mockup de la pantalla en el prompt del dev ──────────────
+test("screenPointer: con screen_key apunta a UI_SCREENS.md y al mockup; sin él, vacío", () => {
+  const p = screenPointer("owner.calendar");
+  assert.match(p, /`owner\.calendar`/);
+  assert.match(p, /docs\/UI_SCREENS\.md/);
+  assert.match(p, /docs\/mockups\/owner\.calendar\.html/);
+  assert.equal(screenPointer(undefined), "");
+  assert.equal(screenPointer(null), "");
+});
+
+test("storyPrompt: story con screen_key incluye el puntero a spec+mockup; sin él no", () => {
+  const withScreen = storyPrompt({ key: "S4-18", title: "Calendario", body: "b", acceptance: "a", issue: 5, screenKey: "owner.calendar" });
+  assert.match(withScreen, /docs\/mockups\/owner\.calendar\.html/);
+  assert.match(withScreen, /Closes #5/);
+  const noScreen = storyPrompt({ key: "S1-01", title: "API", body: "b", acceptance: "a", issue: 6, screenKey: null });
+  assert.doesNotMatch(noScreen, /docs\/mockups\//);
+});
+
+test("sprintPrompt: cada story con screen_key trae su puntero al mockup", () => {
+  const p = sprintPrompt("Sprint 4", [
+    { key: "S4-18", title: "Cal", body: "b", acceptance: "a", issue: 11, screenKey: "owner.calendar" },
+    { key: "S4-19", title: "API", body: "b", acceptance: "a", issue: 12, screenKey: null },
+  ]);
+  assert.match(p, /docs\/mockups\/owner\.calendar\.html/);
+  // la story sin screen_key no inventa un mockup
+  assert.equal((p.match(/docs\/mockups\//g) ?? []).length, 1);
 });
 
 // ── docsGuardOk (guard docs-on-main, Fase 5) ──────────────────────────────────────

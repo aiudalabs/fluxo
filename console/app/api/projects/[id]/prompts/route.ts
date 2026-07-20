@@ -24,6 +24,7 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ id: string 
 
   const pick = (r: (typeof context.storyRows)[number]) => ({
     key: r.key, title: r.title, body: r.body, acceptance: r.acceptance, issue: issueNumOf(r.external_ref),
+    screenKey: r.screen_key,
   });
 
   // Por story: solo las espejadas a un issue (sin issue no hay despacho).

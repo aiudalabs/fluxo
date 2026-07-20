@@ -60,6 +60,15 @@ function slugify(s: string): string {
 function issueBody(st: StorySeed): string {
   const parts: string[] = [st.body ?? st.title];
   if (st.acceptance) parts.push(`\n## Acceptance criteria\n${st.acceptance}`);
+  // P8-C: si la story construye una pantalla, apuntá al dev a SU spec y SU mockup — no al
+  // genérico "leé docs/". El art-director compara la UI construida contra docs/mockups/<key>.html.
+  if (st.screen_key) {
+    parts.push(
+      `\n## Pantalla\nEsta story construye la pantalla \`${st.screen_key}\`. ` +
+      `Spec: la sección de \`${st.screen_key}\` en \`docs/UI_SCREENS.md\`. ` +
+      `Mockup aprobado: \`docs/mockups/${st.screen_key}.html\` — construí la UI para que lo matchee.`,
+    );
+  }
   if (st.deps?.length) parts.push(`\n**Depends on:** ${st.deps.join(", ")}`);
   const meta = [st.sprint && `Sprint ${st.sprint}`, st.lane && `Lane ${st.lane}`, st.screen_key && `Screen ${st.screen_key}`].filter(Boolean);
   if (meta.length) parts.push(`\n_${meta.join(" · ")}_`);
@@ -132,6 +141,16 @@ async function publishToGithub(store: SupabaseDesignStore, workdir: string, gh: 
     console.error(`  ✗ docs: ${plan.missingMockups.length} story(s) frontend con screen_key SIN mockup (el art-director de ui-verify no podrá juzgarlas):`);
     for (const m of plan.missingMockups) console.error(`     · ${m.story} (${m.screenKey}) → falta ${m.path}`);
     await store.brainAppend("handoff_mockups_missing", { stories: plan.missingMockups }, "engine:handoff");
+  }
+  // P8-B · cobertura de UI: pantallas de UI_SCREENS.md sin story ni marca out_of_scope en el
+  // backlog. Es la falla AGUAS ARRIBA del art-director — una story ausente es invisible para él
+  // (no hay nada que construir ni juzgar). Reporta fuerte (como missingMockups); NO falla el
+  // handoff: el board ya se publicó y el parse de pantallas es heurístico (un falso positivo no
+  // debe trabar el build). El scrum-master emite la matriz coverage para cerrar el hueco (P8-A).
+  if (plan.uncoveredScreens.length) {
+    console.error(`  ✗ docs: ${plan.uncoveredScreens.length} pantalla(s) de UI_SCREENS.md SIN story ni marca out_of_scope en el backlog (nunca se construirán):`);
+    console.error(`     · ${plan.uncoveredScreens.join(", ")}`);
+    await store.brainAppend("handoff_screens_uncovered", { screens: plan.uncoveredScreens }, "engine:handoff");
   }
   // Scaffold: el canal de build + el HARNESS DE VERIFY (e2e-verify/provisioning-lint/ui-verify +
   // .fluxo/verify/**). Se construye acá (workdir con docs → stack + lanes). Los archivos que aún

@@ -313,13 +313,13 @@ async function reconcileBuild() {
     const pol = policyFrom(p.settings ?? {});
 
     // Stories + sprints del proyecto → el shape que el kernel de despacho (dispatch.ts) espera.
-    const rows = await rest<Array<{ id: string; key: string; title: string; lane: string | null; status: string; sprint_id: string | null; blocked_by: string[] | null; external_ref: string | null; body: string | null; acceptance: string | null }>>(
-      `/stories?project_id=eq.${p.id}&select=id,key,title,lane,status,sprint_id,blocked_by,external_ref,body,acceptance`,
+    const rows = await rest<Array<{ id: string; key: string; title: string; lane: string | null; status: string; sprint_id: string | null; blocked_by: string[] | null; external_ref: string | null; body: string | null; acceptance: string | null; screen_key: string | null }>>(
+      `/stories?project_id=eq.${p.id}&select=id,key,title,lane,status,sprint_id,blocked_by,external_ref,body,acceptance,screen_key`,
     );
     const dstories: DStory[] = rows.map((r) => ({
       id: r.id, key: r.key, title: r.title, lane: r.lane ?? "", status: r.status,
       sprintId: r.sprint_id, deps: r.blocked_by ?? [], issue: issueNumOf(r.external_ref),
-      body: r.body, acceptance: r.acceptance,
+      body: r.body, acceptance: r.acceptance, screenKey: r.screen_key,
     }));
     const sprintRows = await rest<Array<{ id: string; key: string; title: string | null }>>(`/sprints?project_id=eq.${p.id}&select=id,key,title`);
     const sprintsById = new Map<string, DSprint>(sprintRows.map((s) => [s.id, { id: s.id, key: s.key, title: s.title ?? "" }]));
