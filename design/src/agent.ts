@@ -15,6 +15,7 @@ import { join } from "node:path";
 import { load } from "js-yaml";
 import { query } from "@anthropic-ai/claude-agent-sdk";
 import { snapshotDir, harvestChanged, primaryText, type Artifact } from "./harvest.ts";
+import type { PhaseUsage } from "./engine.ts";
 
 export interface Agent {
   id: string;
@@ -52,6 +53,7 @@ export function loadAgent(registryDir: string, id: string): Agent {
 export interface StepOutput {
   output: { text: string };
   artifacts: Artifact[]; // every file the phase wrote to the workdir (D5)
+  usage?: PhaseUsage;     // costo/tokens de esta corrida (P4-2), si el SDK lo reportó
 }
 
 // runAgent drives a design turn in a scoped WORKDIR and returns the harvested artifacts
@@ -63,6 +65,7 @@ export async function runAgent(agent: Agent, prompt: string, workdir: string): P
   const before = snapshotDir(workdir);
   let resultText = "";
   let assistantText = "";
+  let usage: PhaseUsage | undefined;
 
   for await (const message of query({
     prompt,
@@ -82,6 +85,18 @@ export async function runAgent(agent: Agent, prompt: string, workdir: string): P
       }
     } else if (message.type === "result" && message.subtype === "success") {
       resultText = message.result;
+      // El SDK reporta usage + costo + latencia en el result message (P4-2). Lectura defensiva:
+      // los nombres de campo pueden variar entre versiones; si falta, va 0 (no rompe el run).
+      const m = message as unknown as { usage?: Record<string, number>; total_cost_usd?: number; duration_ms?: number };
+      const u = m.usage ?? {};
+      usage = {
+        usd: m.total_cost_usd ?? 0,
+        inputTokens: u.input_tokens ?? 0,
+        outputTokens: u.output_tokens ?? 0,
+        cacheReadTokens: u.cache_read_input_tokens ?? 0,
+        durationMs: m.duration_ms ?? 0,
+        model: agent.model,
+      };
     }
   }
 
@@ -89,5 +104,5 @@ export async function runAgent(agent: Agent, prompt: string, workdir: string): P
   // The canonical output text is the produced doc (so phases chain on the artifact, not
   // on chatty reply text). Fall back to the reply only if nothing was written.
   const text = primaryText(artifacts) || resultText || assistantText;
-  return { output: { text }, artifacts };
+  return { output: { text }, artifacts, usage };
 }

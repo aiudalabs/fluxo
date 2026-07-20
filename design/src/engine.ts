@@ -34,9 +34,21 @@ export interface PhaseRun {
   answers?: QA[]; // a prior gate's answers to the open questions
 }
 
+// PhaseUsage — costo/tokens/latencia de una corrida de fase (P4-2: instrumentación del diseño para
+// las trazas de Observabilidad). Lo reporta el SDK; el AgentRunner lo pasa y el Sink lo persiste.
+export interface PhaseUsage {
+  usd: number;
+  inputTokens: number;
+  outputTokens: number;
+  cacheReadTokens: number;
+  durationMs: number;
+  model: string;
+}
+
 export interface PhaseResult {
   text: string; // the primary doc text — recorded at $<phase>.output.text
   artifacts?: Artifact[]; // every file the phase produced (workdir-harvest, F6-02)
+  usage?: PhaseUsage; // costo/tokens de esta corrida (P4-2), si el SDK lo reportó
 }
 
 export interface AgentRunner {

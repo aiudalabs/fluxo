@@ -299,7 +299,18 @@ export class SupabaseDesignStore {
     return {
       onPhaseStart: (phaseId) => this.patchPhase(phaseId, { status: "running" }),
       onPhaseDone: async (phaseId, result: PhaseResult) => {
-        await this.patchPhase(phaseId, { status: "done", artifacts: result.artifacts ?? [] });
+        // Costo/tokens/latencia de la fase (P4-2) → design_phases. Overwrite con la última corrida
+        // (un revise sobrescribe; acumular por-intento es v2). Mismos nombres que run_costs → la
+        // vista Observabilidad une diseño+build uniforme.
+        const u = result.usage;
+        await this.patchPhase(phaseId, {
+          status: "done",
+          artifacts: result.artifacts ?? [],
+          ...(u ? {
+            usd: u.usd, input_tokens: u.inputTokens, output_tokens: u.outputTokens,
+            cache_read_tokens: u.cacheReadTokens, duration_ms: u.durationMs, model: u.model,
+          } : {}),
+        });
         // Cada doc cosechado → un evento artifact append-only en el brain: es la fuente de
         // las VERSIONES en el Studio (los chips vN). Re-correr la fase agrega otra versión.
         for (const a of result.artifacts ?? []) {

@@ -26,7 +26,7 @@ export function makeSdkRunner(registryDir: string, workdir: string): AgentRunner
     async run(pr: PhaseRun): Promise<PhaseResult> {
       const prompt = composePrompt({ inputs: pr.inputs, feedback: pr.feedback, answers: pr.answers });
       const step = await runAgent(agentFor(pr.agent), prompt, workdir);
-      return { text: step.output.text, artifacts: step.artifacts };
+      return { text: step.output.text, artifacts: step.artifacts, usage: step.usage };
     },
   };
 }
