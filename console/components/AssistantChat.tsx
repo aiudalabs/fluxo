@@ -11,20 +11,41 @@ import { useProject } from "@/lib/project";
 import { sessionToken } from "@/lib/supabaseClient";
 
 type Msg = { role: "user" | "assistant"; content: string };
+type ActionProposal = { type: string; summary?: string; instructions?: string };
+type ActState = "idle" | "busy" | "done" | "error" | "dismissed";
 
 const SUGGESTIONS = [
   "¿Cómo va el proyecto y qué está trabado?",
   "¿Cuánto se gastó hasta ahora y en qué?",
-  "¿Qué me conviene pedir como próximo incremento?",
+  "Quiero agregar una feature: pantalla de \"Mis citas\" para el cliente.",
 ];
 
+// parseAction extrae el bloque ```fluxo-action {json}``` de una respuesta del asistente (P5-1): el bot
+// PROPONE, la UI lo muestra como tarjeta confirmable y ejecuta al confirmar.
+function parseAction(content: string): { text: string; action: ActionProposal | null } {
+  const m = content.match(/```fluxo-action\s*([\s\S]*?)```/);
+  if (!m) return { text: content, action: null };
+  let action: ActionProposal | null = null;
+  try { action = JSON.parse(m[1].trim()) as ActionProposal; } catch { /* bloque malformado: ignorá */ }
+  return { text: content.replace(m[0], "").trim(), action };
+}
+
 export function AssistantChat() {
-  const { projectId } = useProject();
+  const { projectId, project, supabase } = useProject();
   const [msgs, setMsgs] = useState<Msg[]>([]);
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
+  const [acts, setActs] = useState<Record<number, ActState>>({});
   const scrollRef = useRef<HTMLDivElement>(null);
   useEffect(() => { scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" }); }, [msgs, busy]);
+
+  // Confirmar un incremento propuesto → encolar en increment_requests (mismo path que el botón del Overview).
+  const confirmIncrement = async (idx: number, a: ActionProposal) => {
+    if (!a.instructions) return;
+    setActs((s) => ({ ...s, [idx]: "busy" }));
+    const { error } = await supabase.from("increment_requests").insert({ project_id: projectId, tenant_id: project?.tenant_id, instructions: a.instructions });
+    setActs((s) => ({ ...s, [idx]: error ? "error" : "done" }));
+  };
 
   const send = async (text?: string) => {
     const content = (text ?? input).trim();
@@ -58,15 +79,34 @@ export function AssistantChat() {
               </div>
             </div>
           ) : (
-            msgs.map((m, i) => (
-              <div key={i} className={`brain-row${m.role === "user" ? " user" : ""}`}>
-                <div className={`brain-bubble ${m.role}`}>
-                  {m.role === "assistant"
-                    ? <ReactMarkdown remarkPlugins={[remarkGfm]}>{m.content}</ReactMarkdown>
-                    : m.content}
+            msgs.map((m, i) => {
+              const parsed = m.role === "assistant" ? parseAction(m.content) : null;
+              return (
+                <div key={i} className={`brain-row${m.role === "user" ? " user" : ""}`}>
+                  <div className={`brain-bubble ${m.role}`}>
+                    {m.role !== "assistant" ? m.content : (
+                      <>
+                        {parsed!.text && <ReactMarkdown remarkPlugins={[remarkGfm]}>{parsed!.text}</ReactMarkdown>}
+                        {parsed!.action?.type === "increment" && acts[i] !== "dismissed" && (
+                          <div className="brain-action">
+                            <div className="h"><span className="tool">Pedir incremento</span>{parsed!.action.summary ?? "Nuevo incremento"}</div>
+                            <pre>{parsed!.action.instructions}</pre>
+                            <div className="acts">
+                              {acts[i] === "done" ? <span style={{ color: "var(--emerald)", fontSize: 13 }}>✓ Encolado — aparecerá en el board tras aprobar el gate en el Studio.</span>
+                              : acts[i] === "error" ? <span style={{ color: "var(--danger)", fontSize: 13 }}>Error al encolar. Probá de nuevo.</span>
+                              : <>
+                                  <button className="btn" disabled={acts[i] === "busy"} onClick={() => void confirmIncrement(i, parsed!.action!)}>{acts[i] === "busy" ? "Encolando…" : "Confirmar y pedir"}</button>
+                                  <button className="btn ghost" onClick={() => setActs((s) => ({ ...s, [i]: "dismissed" }))}>Descartar</button>
+                                </>}
+                            </div>
+                          </div>
+                        )}
+                      </>
+                    )}
+                  </div>
                 </div>
-              </div>
-            ))
+              );
+            })
           )}
           {busy && <div className="brain-think"><span className="spin" /> pensando…</div>}
         </div>
