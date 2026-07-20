@@ -20,7 +20,21 @@ import type { DispatchCandidate, OrchestratorTicket, TicketStatus } from "@/lib/
 
 type ViewKind = "kanban" | "tabla" | "sprints" | "grafo";
 const VIEWS: ViewKind[] = ["kanban", "tabla", "sprints", "grafo"];
-type SprintMeta = { id: string; name: string; goal: string };
+type SprintMeta = { id: string; name: string; goal: string; createdAt: string; position: number };
+
+// Orden de sprints = TIMELINE (por fecha de creación), no por el número del nombre. Un backlog
+// incremental agrega sprints nuevos (SP-fbmig-*) con created_at posterior; ordenarlos por el
+// número del key (sprintNum) los intercalaba con los originales (SP1 y SP-fbmig-1 → ambos "1").
+// Primario: created_at (el request incremental es más nuevo → va después). Desempate dentro de un
+// mismo lote (mismo timestamp): `position`, y como último recurso el número del key.
+function cmpSprint(aId: string, bId: string, meta: Map<string, SprintMeta>): number {
+  const ma = meta.get(aId), mb = meta.get(bId);
+  const ca = ma?.createdAt ?? "", cb = mb?.createdAt ?? "";
+  if (ca !== cb) return ca < cb ? -1 : 1;
+  const pa = ma?.position ?? 0, pb = mb?.position ?? 0;
+  if (pa !== pb) return pa - pb;
+  return sprintNum(aId) - sprintNum(bId);
+}
 
 // v2 usa `review` y `blocked`; el board (statusToken) usa `in_review`. Adaptamos.
 function mapStatus(s: string): TicketStatus {
@@ -111,15 +125,16 @@ export default function Board() {
     const load = async () => {
       const [{ data: rows, error }, { data: sprints }] = await Promise.all([
         supabase.from("stories").select("*").eq("project_id", projectId),
-        supabase.from("sprints").select("id,key,title,goal").eq("project_id", projectId),
+        supabase.from("sprints").select("id,key,title,goal,created_at,position").eq("project_id", projectId),
       ]);
       if (cancelled) return;
       if (error) { setState("error"); return; }
       const sprintKey = new Map((sprints ?? []).map((s) => [s.id as string, s.key as string]));
       const keyById = new Map((rows ?? []).map((s) => [s.id as string, s.key as string]));
-      // Meta de sprint keyed por KEY (el sprint_id del ticket es la KEY): name + goal.
+      // Meta de sprint keyed por KEY (el sprint_id del ticket es la KEY): name + goal + orden (fecha).
       setSprintMeta((sprints ?? []).map((s) => ({
         id: s.key as string, name: (s.title as string) || (s.key as string), goal: (s.goal as string) ?? "",
+        createdAt: (s.created_at as string) ?? "", position: (s.position as number) ?? 0,
       })));
       const mapped: OrchestratorTicket[] = (rows ?? []).map((s) => ({
         id: s.key,
@@ -165,7 +180,8 @@ export default function Board() {
   );
 
   const gates = useMemo(() => waitingBySprint(displayTickets), [displayTickets]);
-  const sprintOpts = useMemo(() => [...new Set(displayTickets.map((tk) => tk.sprint_id).filter(Boolean) as string[])].sort(), [displayTickets]);
+  const sprintMetaById = useMemo(() => new Map(sprintMeta.map((s) => [s.id, s])), [sprintMeta]);
+  const sprintOpts = useMemo(() => [...new Set(displayTickets.map((tk) => tk.sprint_id).filter(Boolean) as string[])].sort((a, b) => cmpSprint(a, b, sprintMetaById)), [displayTickets, sprintMetaById]);
   const laneOpts = useMemo(() => [...new Set(displayTickets.map((tk) => tk.owner).filter(Boolean) as string[])].sort(), [displayTickets]);
 
   const filtered = useMemo(() => {
@@ -339,10 +355,10 @@ function SprintsView({ tickets, meta, onOpenTicket }: {
         id, name: m?.name ?? id, goal: m?.goal ?? "", stories,
         done: stories.filter((tk) => tk.status === "done").length,
         state: sprintState(stories.map((tk) => tk.status)),
-        waitingOn: [...waiting].sort((a, b) => sprintNum(a) - sprintNum(b)),
+        waitingOn: [...waiting].sort((a, b) => cmpSprint(a, b, metaById)),
       });
     }
-    return out.sort((a, b) => sprintNum(a.id) - sprintNum(b.id));
+    return out.sort((a, b) => cmpSprint(a.id, b.id, metaById));
   }, [tickets, meta]);
 
   const isOpen = (g: { id: string; state: TicketStatus }) => (g.id in collapsed ? !collapsed[g.id] : g.state !== "done");

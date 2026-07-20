@@ -99,6 +99,8 @@ export default function Studio() {
         const [{ data: ph }, { data: gt }, { data: ev }] = await Promise.all([
           supabase.from("design_phases").select("*").eq("run_id", latest.id).order("ord", { ascending: true }),
           supabase.from("design_gates").select("*").eq("run_id", latest.id).order("created_at", { ascending: true }),
+          // Los brain_events (kind=artifact) son project-wide y son la fuente VERSIONADA de los docs
+          // (cada write de doc = una versión). Alcanza para el panel de documentos y sus chips vN.
           supabase.from("brain_events").select("id,payload,ts").eq("project_id", projectId).eq("kind", "artifact").order("ts", { ascending: true }),
         ]);
         if (cancelled) return;
@@ -123,18 +125,27 @@ export default function Studio() {
     return () => { cancelled = true; void supabase.removeChannel(channel); };
   }, [projectId, supabase]);
 
-  // Documentos = artifacts cosechados de todas las fases, aplanados y ordenados por DOC_META.
+  // Documentos = paths VERSIONADOS en el brain (fuente de verdad: cada doc de diseño se sube a git
+  // y se registra como brain_event; los chips vN de cada doc salen de ahí). Última versión por path
+  // para el contenido base. Antes derivaba de `phases` (solo el último run) → un iterate escondía los
+  // docs del diseño original. Fallback a las fases del run actual si el brain está vacío (proyecto viejo).
   const files = useMemo(() => {
-    const seen = new Set<string>();
-    const list: (Artifact & { name: string })[] = [];
-    for (const p of phases) for (const a of p.artifacts ?? []) {
-      if (seen.has(a.path)) continue;
-      if (baseName(a.path).startsWith(".")) continue; // archivos internos (.vibeforge-gate) no son docs revisables
-      seen.add(a.path);
-      list.push({ ...a, name: baseName(a.path) });
+    const latest = new Map<string, Artifact & { name: string }>();
+    for (const v of versions) { // `versions` viene asc por ts → la última gana
+      if (!v.path || baseName(v.path).startsWith(".")) continue; // .vibeforge-gate & co. no son docs revisables
+      latest.set(v.path, { path: v.path, kind: "", content: v.content, name: baseName(v.path) });
+    }
+    const list = [...latest.values()];
+    if (list.length === 0) {
+      const seen = new Set<string>();
+      for (const p of phases) for (const a of p.artifacts ?? []) {
+        if (seen.has(a.path) || baseName(a.path).startsWith(".")) continue;
+        seen.add(a.path);
+        list.push({ ...a, name: baseName(a.path) });
+      }
     }
     return list.sort((a, b) => meta(a.name).order - meta(b.name).order);
-  }, [phases]);
+  }, [versions, phases]);
 
   // Versiones por path (del brain, ya ordenadas asc por ts). Cada brain_event = una versión.
   const versionsByPath = useMemo(() => {
