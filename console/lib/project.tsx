@@ -16,6 +16,7 @@ import { usePathname } from "next/navigation";
 import { browserClient, activeToken } from "./supabaseClient";
 import { useLocale } from "./locale";
 import { TopBar } from "@/components/shell/TopBar";
+import { FloatingAssistant } from "@/components/FloatingAssistant";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 export type ProjectMeta = { id: string; name: string; description: string | null; org: string | null; repo: string | null; tenant_id: string | null };
@@ -87,6 +88,7 @@ export function ProjectShell({ projectId, children }: { projectId: string; child
         </aside>
         <main>{children}</main>
       </div>
+      <FloatingAssistant />
     </Ctx.Provider>
   );
 }
