@@ -17,6 +17,7 @@ import { buildFlow, type CeremonyModes } from "@/components/flow/flowGraph";
 import { layoutFlow } from "@/components/flow/layout";
 import { NODE_TYPES } from "@/components/flow/nodes";
 import { FlowCycle } from "@/components/flow/cycle/FlowCycle";
+import { TicketDetail } from "@/components/tickets/TicketDetail";
 import type { DesignPhase, DesignStepStatus, Sprint, OrchestratorTicket, TicketStatus } from "@/lib/types";
 
 type FlowTab = "cycle" | "graph";
@@ -133,6 +134,10 @@ export default function Flow() {
 
   const goBoard = () => router.push(`/projects/${projectId}/board`);
 
+  // Drawer al clickear un nodo: los nodos de story tienen id "story:<ticketId>" (flowGraph.ts) →
+  // reusamos el TicketDetail del board. Fases/sprints no abren drawer (sprint ya linkea al board).
+  const selTicket = sel?.startsWith("story:") ? tickets.find((tk) => tk.id === sel.slice("story:".length)) ?? null : null;
+
   return (
     <div className="studio-shell">
       {/* Barra propia de Flow: SOLO las tabs Ciclo/Grafo (nombre/nav en el TopBar del shell). */}
@@ -183,6 +188,12 @@ export default function Flow() {
           </div>
         )}
       </div>
+
+      <TicketDetail
+        ticket={selTicket}
+        onClose={() => setSel(null)}
+        onOpenTicket={(id) => setSel(`story:${id}`)}
+      />
     </div>
   );
 }
