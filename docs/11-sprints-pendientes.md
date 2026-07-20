@@ -95,6 +95,7 @@ pone sus tokens Vercel/Railway).
 | P5-1 | **AI Assistant** agéntico | ✅ **COMPLETO (2026-07-20, deployado).** Chat con las 3 acciones confirmables (increment/dispatch/gate), UI de v1 + markdown, sección + panel flotante. Streaming SSE = polish diferido. *(detalle abajo)* Fundación VIVA y de-riesgada. Diseño cerrado: LLM = token de suscripción vía claude-agent-sdk; acciones (incremento/dispatch/gate) con confirmación; UI sección+flotante. **Infra de-riesgada:** el agent-loop corre en el **worker** (ambiente probado), el console **proxea** (`WORKER_ASSISTANT_URL`) — no en el alpine/root del console. v1 DEPLOYADO + probado (respondió con datos reales de MiSalon). Sección "AI Assistant" en la nav, **UI portada de v1** (`.brain*`) con respuestas en **markdown**. **Acción "pedir incremento" con confirmación LISTA:** el bot emite un bloque ```fluxo-action``` (JSON validado) → la UI lo renderiza como tarjeta `.brain-action` → "Confirmar y pedir" → encola en `increment_requests` (patrón propose→confirm→execute, el bot nunca dispara solo). Probado E2E (propuso "Mis Citas"/"depósitos" referenciando las stories reales). **Próximos incrementos:** acciones dispatch/aprobar-gate (hoy sugeridas en prosa) + panel flotante + streaming SSE. |
 | P5-2 | Botón **"pedir incremento / change-request"** | ✅ (2026-07-19, deployado) Vertical slice: tabla `increment_requests` (cola, RLS) + `worker.reconcileIncrements` → `spawnIterate` (main.ts --workflow=iterate) + `main.ts` siembra el workdir con los docs existentes (`loadProjectDocs`) → el `iteration-planner` emite un DELTA → handoff APPENDea. UI: componente `IncrementRequest` (textarea + lista Realtime) en el Overview cuando el producto existe. El motor `iterate.yaml` ya existía; esto es el disparador. **Primer uso real dispara un planner pago** (aún no corrido). |
 | P5-3 | Selección de **workflow por proyecto** en Settings | ✅ (2026-07-20, deployado) El worker usaba un flag global `--workflow=design`; ahora cada proyecto elige en Settings **Completo (`design`, 8 fases)** vs **Lean (`demo-design`, 3 fases)**. `reconcileDesign` lee `settings.workflow` → `spawnDesign` (solo fresh; resume usa el del run). |
+| P5-4 | **Memoria del AI Assistant** (persistencia de conversación) | ⚪ **PENDIENTE.** Hoy el chat es *stateless entre sesiones*: `AssistantChat` guarda los mensajes en `useState([])` (se pierden al refrescar/navegar), no hay tabla de historial, y `runAssistant` (worker) recibe la historia por request y no persiste nada. Dentro de un hilo el bot tiene contexto; al volver arranca de cero — no recuerda charlas ni decisiones. **v1:** tabla `assistant_threads`/`assistant_messages` (RLS tenant+project), load-on-mount, el worker appendea la respuesta. **v2 (opcional):** memoria semántica del proyecto que el bot pueda leer/escribir (estilo OMEGA). Chico; candidato a colgar de P8 o hacerlo como P5-follow-up suelto. |
 
 ---
 
@@ -114,6 +115,26 @@ pone sus tokens Vercel/Railway).
 |---|---|---|
 | P7-1 | MiSalon/Rosa corre de **punta a punta** (idea→app viva→brain trazable→change-request re-entra) | F10-01 |
 | P7-2 | Webhooks activos en prod (hoy el worker poll-ea; falta el receiver) | F10-02 |
+
+---
+
+## 🟢 Sprint P8 — Fidelidad diseño→build (que la UI entregada refleje el spec+mockups) — **IMPLEMENTADO 2026-07-20**
+**Objetivo:** cerrar el hueco de método que dejó el panel del dueño de **MiSalon esquelético** (validación n=3).
+**Diagnóstico raíz:** el `scrum-master` **comprimió 27 pantallas de `UI_SCREENS.md` en ~8 `screen_keys`** → pantallas
+enteras nunca tuvieron story → nunca existieron para ningún agente. La falla es de la **cadena del método** (3 eslabones
+rotos), no del implementador. Está **aguas arriba del harness de verify (P1/P2)**: el art-director solo juzga lo que tiene
+story+mockup; si la story nunca existió, no hay nada que construir ni verificar. Prerequisito (**los mockups llegando al
+repo**) **ya resuelto** por `repodocs.ts` (commit 95414c2). Complementa la línea de calidad de build (docs/10, L-BUILD).
+
+| # | Ítem | Estado |
+|---|---|---|
+| P8-A | **Cobertura de UI en el backlog** | ✅ (2026-07-20, `b730465`) El `scrum-master` LEE `docs/UI_SCREENS.md` y emite una story por pantalla, con matriz `coverage:` (pantalla→story) + bloque `out_of_scope:` explícito en `backlog.yaml`. `design.yaml` pasa `screens_path` a la fase `backlog`. Degrada con gracia sin `UI_SCREENS.md` (igual que `provisioning.yaml`). **Llave de join = ID de pantalla verbatim del header** (`P.1`, `S.5`, `1.2`…), NO `screen_key`/`role.screen` — verificado n=6 que ningún `UI_SCREENS.md` real emite el dotted key; unir por él sería un no-op silencioso. |
+| P8-B | **Chequeo determinista de cobertura** | ✅ (2026-07-20, `5e1c149` + `789c70e`) En el seam REAL (`repodocs.ts`/`handoff.ts`, NO el `validate` no-op del engine): `parseScreenIds` parsea `UI_SCREENS.md`, `parseCoverageClaim` lee `coverage`/`out_of_scope`, `planRepoDocs` reporta `uncoveredScreens`. El handoff lo emite como `handoff_screens_uncovered` (guard al brain, mismo estilo que `missingMockups` — **reporta fuerte, no falla** el handoff: parse heurístico no debe trabar el build). Tests primero (golden rule #6), **piso 123→132/132**. **Demostrado contra MiSalon real:** parsea las 27 pantallas y reporta el panel del dueño que faltó (S.6-9, S.11-14). |
+| P8-C | **Puntero a spec+mockup en el prompt del dev** | ✅ (2026-07-20, `789c70e`) `storyPrompt`/`sprintPrompt` (`dispatch.ts`) e `issueBody` (`handoff.ts`) apuntan a la sección de la pantalla en `docs/UI_SCREENS.md` y a `docs/mockups/<screen_key>.html`, no solo "leé docs/". `dispatch.ts` sigue kernel-puro: `screenKey` llega por `DStory` (sin fs/imports); threaded en el select del worker y del console. |
+
+> **Casa (constraint del pedido):** branch fresco, tests-first, **NO** incluir en los commits los cambios ajenos de otra sesión
+> en `console/components/AssistantChat.tsx` ni `design/src/assistant.ts` (P5-1). Branch → ff-merge a main local, **sin push**
+> hasta OK. Ver el spec completo en el mensaje de origen / `~/.devtrace/decisions/fluxo.md`.
 
 ---
 
