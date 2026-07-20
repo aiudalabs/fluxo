@@ -81,7 +81,7 @@ pone sus tokens Vercel/Railway).
 |---|---|---|
 | P4-1 | **ArtifactView** completo | ✅ (2026-07-19, deployado) `DocView` resaltea yaml/json/shell (tokenizer sin dep, spans seguros, tokens theme-aware) y lo adoptan **Studio + Registry + Brain**. Un solo renderer por tipo. Resuelve "yaml/.vibeforge-gate como texto crudo". |
 | P4-2 | **Observabilidad** estilo Langfuse/Arize | 🔲 **Pendiente — reencuadre de producto.** Reencuadrar el Brain (hoy `EventBody` por-kind) como **trazas** (run→fase→agente→tool→costo/latencia), uniendo `brain_events`+`run_costs`+`design_phases`+sesiones. Es design-led → necesita una decisión de UX (¿renombrar la vista? ¿qué es una "traza"?) antes de construir. Ver memoria [[fluxo-improvements-backlog]] #2. |
-| P4-3 | Drawers de nodo en `/flow` | 🔲 **Pendiente — acotado.** Hoy el click de nodo solo selecciona (`Flow.tsx:175`). Reusar `components/tickets/TicketDetail.tsx` (ya existe) para nodos de story; PhasePanel/RunDrawer para fases/sprints (a construir). F6P-04. |
+| P4-3 | Drawers de nodo en `/flow` | ✅ (2026-07-19, deployado) Click en nodo de story (`story:<id>`) → abre el `TicketDetail` del board (reusado; deps clickeables, PR/sesión/run). Fases/sprints no abren drawer (sprint ya linkea al board). F6P-04. |
 | P4-4 | Decisión Sidebar 11 secciones | 🔲 **Decisión** (no código): ¿replicar el sidebar de v1 o quedarse con el top-nav project-first de v2? F6P-05. |
 
 ---
