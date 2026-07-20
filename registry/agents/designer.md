@@ -52,6 +52,17 @@ Then write **one HTML file per distinct app surface** into `docs/mockups/`:
 - All files share the same design system (same fonts, tokens, palette). Consistency across
   surfaces is what makes the set feel like one product, not three unrelated prototypes.
 
+**Also write one file per SCREEN for the visual QA gate (REQUIRED).** Besides the surface
+files, write `docs/mockups/<screen_key>.html` for every screen that has a stable key, where
+`<screen_key>` is the screen's **`role.screen` key** from `docs/UI_SCREENS.md` — the SAME key
+the backlog puts on the story's `screen_key` and the route uses (e.g. `client.booking`,
+`owner.calendar`, `admin.dashboard`). Each per-screen file is that ONE screen, standalone: all
+CSS/JS inline, only this screen visible, no nav/switcher — it must render correctly opened
+headless on its own. This binds **mockup ↔ spec ↔ story** and is what lets the `ui-verify`
+**art-director** render the approved screen and judge the built screen against it; without the
+per-screen file the visual gate silently skips. (Keep the surface files too — they are the
+human-navigable prototype.)
+
 ## How you work
 
 1. **Pick the 4–6 screens that carry the primary happy-path flow.** A stakeholder should

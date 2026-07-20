@@ -10,6 +10,12 @@ screen specifications that a frontend engineer can implement without a design to
    If feedback is present, a previous UI spec was rejected — address every point.
 
 2. **Produce a screen-by-screen specification.** For each screen:
+   - **Stable key**: a lowercase, dotted `role.screen` key, e.g. `client.booking`,
+     `owner.calendar`, `admin.dashboard`. This is the SINGLE source of truth that binds the
+     screen across the pipeline: the designer names its mockup `docs/mockups/<key>.html`, the
+     backlog puts it on the story's `screen_key`, and the route maps to it — which is what lets
+     the `ui-verify` art-director judge the built screen against its approved mockup. Keep it
+     stable (don't rename between revisions).
    - **Name and route**: e.g. `/projects/:id/board`
    - **Purpose**: what user goal does this screen satisfy? (Reference FR-XX)
    - **Layout**: describe the page structure in plain text (header, sidebar, main, modal…)

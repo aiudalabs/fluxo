@@ -42,6 +42,18 @@ external stylesheets, no `<script src>`, no external images.
 </html>
 ```
 
+## Per-screen files for the visual QA gate (REQUIRED)
+
+Besides the single navigable `index.html`, write ONE self-contained file per screen at
+`docs/mockups/<screen_key>.html`, where `<screen_key>` is the screen's **stable `role.screen`
+key** from the UI spec (`docs/UI_SCREENS.md`) — the SAME key the backlog puts on the story's
+`screen_key` and the route uses (e.g. `client.booking`, `owner.calendar`, `admin.dashboard`).
+Each per-screen file is that ONE screen, standalone: inline the shared `<style>`, show only this
+screen, no nav/switcher — it must render correctly opened headless on its own. This is what binds
+**mockup ↔ spec ↔ story** and lets the `ui-verify` **art-director** render the approved screen and
+judge the built screen against it; without it the visual gate silently skips. Keep `index.html`
+too — it is the human-navigable prototype. A transient flow step with no stable key needs no file.
+
 ## Navigation
 
 Provide a top bar listing every screen by its short name. Clicking a name:
