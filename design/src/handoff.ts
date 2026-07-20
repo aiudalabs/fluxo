@@ -6,7 +6,7 @@
 // que publishBacklog espera, y lo publicamos vía el store (RLS por tenant). El outcome se
 // audita en el brain.
 
-import { readFileSync, existsSync } from "node:fs";
+import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import yaml from "js-yaml";
 import type { HandoffExecutor } from "./engine.ts";
@@ -14,6 +14,7 @@ import type { SupabaseDesignStore, SprintSeed, StorySeed } from "./supabase.ts";
 import { GithubApp, GithubRepo } from "./github.ts";
 import { labelSpecsFor } from "./labels.ts";
 import { buildScaffold, type ScaffoldVars } from "./scaffold.ts";
+import { planRepoDocs } from "./repodocs.ts";
 
 interface RawBacklog {
   epic?: { id?: string; title?: string; description?: string };
@@ -76,6 +77,9 @@ export interface GithubTarget {
   // nombre humano del proyecto ({{project_name}}); el resto de las vars se resuelven del workdir.
   registryDir: string;
   projectName: string;
+  // `output:` de las fases design del workflow que corrió (workflow.declaredOutputs) — la
+  // declaración EN DATA de qué docs debe dejar el run; el handoff verifica el plan contra esto.
+  declaredOutputs?: string[];
 }
 
 // resolveScaffoldVars arma las {{vars}} del scaffold desde el workdir (al momento del handoff los
@@ -102,19 +106,32 @@ function resolveScaffoldVars(workdir: string, projectName: string, stories: Stor
   };
 }
 
-// Docs que commiteamos al repo si existen en el workdir (orden de lectura).
-const REPO_DOCS = ["BRIEF.md", "CONSTITUTION.md", "PRD.md", "DATA_MODEL.md", "ARCHITECTURE.md", "UI_SCREENS.md", "DESIGN_SYSTEM.md", "backlog.yaml"];
-
 // publishToGithub: crea el repo (Administration:write), commitea los docs (Contents:write),
 // y crea un issue por story (Issues:write), reconciliando project.repo + story.external_ref.
+//
+// Los docs a commitear se DERIVAN del workdir (planRepoDocs: walk recursivo de docs/**),
+// nunca de una lista en código — la whitelist REPO_DOCS que vivía acá dropeó docs/mockups/
+// en silencio (bug 2026-07-20). Lo declarado por el workflow y lo que exige el art-director
+// (mockup por screen_key) se VERIFICA contra el plan y se reporta fuerte si falta.
 async function publishToGithub(store: SupabaseDesignStore, workdir: string, gh: GithubTarget, stories: StorySeed[]): Promise<void> {
   // El token OAuth del dueño crea el repo en su cuenta personal O su org; si no hay, cae al
   // installation token (solo orgs con la App instalada). Los issues/docs usan el mismo token.
   const token = gh.userToken ?? await gh.app.installationToken(gh.org);
   const repo = await GithubRepo.create(token, gh.org, slugify(gh.repoName), { private: true, description: gh.description });
-  for (const f of REPO_DOCS) {
-    const p = join(workdir, "docs", f);
-    if (existsSync(p)) await repo.putFile(`docs/${f}`, readFileSync(p, "utf8"), `design: ${f}`);
+  const plan = planRepoDocs(workdir, gh.declaredOutputs ?? [], stories);
+  for (const rel of plan.files) {
+    await repo.putFile(rel, readFileSync(join(workdir, rel)), `design: ${rel.replace(/^docs\//, "")}`);
+  }
+  console.log(`  ↪ docs: ${plan.files.length} archivo(s) commiteado(s) a ${repo.owner}/${repo.repo}`);
+  for (const ex of plan.excluded) console.log(`  ⚠ docs: EXCLUIDO ${ex.path} (${ex.reason})`);
+  if (plan.missingDeclared.length) {
+    console.error(`  ✗ docs: el workflow declara ${plan.missingDeclared.length} output(s) que el run NO produjo: ${plan.missingDeclared.join(", ")}`);
+    await store.brainAppend("handoff_docs_missing", { declared_missing: plan.missingDeclared }, "engine:handoff");
+  }
+  if (plan.missingMockups.length) {
+    console.error(`  ✗ docs: ${plan.missingMockups.length} story(s) frontend con screen_key SIN mockup (el art-director de ui-verify no podrá juzgarlas):`);
+    for (const m of plan.missingMockups) console.error(`     · ${m.story} (${m.screenKey}) → falta ${m.path}`);
+    await store.brainAppend("handoff_mockups_missing", { stories: plan.missingMockups }, "engine:handoff");
   }
   // Scaffold: el canal de build + el HARNESS DE VERIFY (e2e-verify/provisioning-lint/ui-verify +
   // .fluxo/verify/**). Se construye acá (workdir con docs → stack + lanes). Los archivos que aún

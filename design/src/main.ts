@@ -13,7 +13,7 @@ import { fileURLToPath } from "node:url";
 import { dirname, resolve, join } from "node:path";
 import { mkdtempSync, existsSync, readFileSync, mkdirSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { loadWorkflow, designPhases, type Workflow } from "./workflow.ts";
+import { loadWorkflow, designPhases, declaredOutputs, type Workflow } from "./workflow.ts";
 import { runDesign, type ResumeState } from "./engine.ts";
 import { recordOutput, type StepContext } from "./resolve.ts";
 import { makeSdkRunner } from "./sdkRunner.ts";
@@ -145,6 +145,7 @@ if (ghAppId && (ghKeyPath || ghKey) && project.org) {
     registryDir,
     projectName: project.name,
     userToken: ownerToken,
+    declaredOutputs: declaredOutputs(wf),
   };
   console.log(`  handoff GitHub: org ${project.org} · repo ${project.name} · owner-token ${ownerToken ? "sí" : "no"}`);
 }

@@ -105,3 +105,16 @@ export function loadWorkflow(registryDir: string, id: string): Workflow {
 export function designPhases(wf: Workflow): Array<{ id: string; label: string }> {
   return wf.steps.filter((s): s is Extract<Step, { kind: "design" }> => s.kind === "design").map((s) => ({ id: s.id, label: s.label }));
 }
+
+// declaredOutputs: los `output:` que las fases design del workflow declaran producir —
+// la fuente de verdad EN DATA (registry) de qué documentos debe dejar un run. El handoff
+// la usa para verificar intención-vs-realidad sobre lo cosechado (repodocs.planRepoDocs);
+// NUNCA para enumerar qué commitear (eso se deriva del workdir — el bug REPO_DOCS).
+export function declaredOutputs(wf: Workflow): string[] {
+  const outs = wf.steps
+    .filter((s): s is Extract<Step, { kind: "design" }> => s.kind === "design")
+    .map((s) => s.inputs.output)
+    .filter((o): o is string => typeof o === "string" && o.trim() !== "")
+    .map((o) => o.trim());
+  return [...new Set(outs)];
+}

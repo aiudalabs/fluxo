@@ -107,7 +107,7 @@ export class GithubRepo {
   }
 
   // putFile: crea/actualiza un archivo (Contents:write). Idempotente: si existe, reusa su sha.
-  async putFile(path: string, content: string, message: string): Promise<void> {
+  async putFile(path: string, content: string | Buffer, message: string): Promise<void> {
     let sha: string | undefined;
     const cur = await fetch(`${API}/repos/${this.owner}/${this.repo}/contents/${path}`, { headers: H(this.token) });
     if (cur.ok) sha = ((await cur.json()) as { sha?: string }).sha;
