@@ -114,6 +114,33 @@ one story at a time, just before it is built.
    — the field is a frontend-lane obligation. Never guess a screen for a foundation story;
    write `screen_key: none`.
 
+3e. **Cover EVERY screen of `docs/UI_SCREENS.md` — one story per screen, in a coverage
+   matrix.** This is the anti-compression rule: a real project's UI spec lists many more
+   screens than a first pass tends to shard into stories, and any screen that never gets a
+   story simply never gets built (nobody downstream can build what has no ticket). So:
+   - **Read `docs/UI_SCREENS.md` in full and enumerate EVERY screen it specifies**, using
+     the screen's identifier **exactly as the doc writes it in its section header** — the
+     leading token of each screen heading (`P.1`, `S.5`, `A-1`, `1.2`, `1.0.1`, …). Copy that
+     id VERBATIM; do not rename, renumber, or translate it. That id is the join key the
+     deterministic coverage check parses back out of `UI_SCREENS.md`.
+   - **Emit at least one story for every screen.** A modal/sub-screen may fold into the story
+     of its parent screen (list both ids on that story's coverage rows) — but no screen may
+     vanish. Prefer one story per screen; group only genuinely-inseparable sub-surfaces.
+   - **Record a `coverage:` matrix** at the top level of the backlog: one row per screen id →
+     the `story` id that builds it. EVERY screen id from `UI_SCREENS.md` appears exactly once,
+     either here or in `out_of_scope`.
+   - **Declare `out_of_scope:` explicitly** for any screen you deliberately do NOT build in
+     this backlog (deferred to a later increment, cut from MVP): the screen id + a one-line
+     `reason`. This is the EXPLICIT opt-out — an undeclared screen (in neither `coverage` nor
+     `out_of_scope`) is treated as a silently-dropped screen and reported by the coverage check.
+   - **Degrade with grace:** if `docs/UI_SCREENS.md` does not exist (older project, or a
+     backend-only project with no UI), skip this step entirely and omit `coverage`/`out_of_scope`
+     — exactly as with `provisioning.yaml`. It is purely additive.
+
+   Note the two id systems are DISTINCT and both required: `screen_key` (the `role.screen`
+   dotted key on a story, for the ui-verify art-director) and the `coverage` screen id (the
+   `UI_SCREENS.md` header id, for the coverage check). Do not conflate them.
+
 4. **Write the LIGHT story body — a user-story, NOT a spec.** Each `body` is a short
    user-story in the form `As a <role>, I want <capability>, so that <value>.` — 1–3 lines.
    It states WHO needs the story and WHY it has value. It does **NOT** name files, modules,
@@ -131,6 +158,9 @@ one story at a time, just before it is built.
    - Every FRONTEND story (owner `react-dev` / `flutter-dev`) declares `screen_key` —
      a real `role.screen` key, or `none` for a foundation story with no screen of its own.
      A frontend story missing the field fails the deterministic backlog lint.
+   - If `docs/UI_SCREENS.md` exists: EVERY screen id it specifies appears exactly once in
+     `coverage:` (→ a real story id) OR in `out_of_scope:` (→ a reason). A screen id in
+     neither is a silently-dropped screen and is reported by the coverage check.
    - Every P0 FR has ≥1 story; every data-model entity has a creation story (migration/seed);
      every external integration has an integration-layer story; ≥1 story covers observability
      (logging / metrics / health check).
@@ -196,10 +226,23 @@ stories:
     sprint_id: SP1
     screen_key: none               # ← frontend story with NO screen of its own: explicit opt-out
     deps: []
+coverage:                     # UI coverage matrix — one row per screen of docs/UI_SCREENS.md
+  - screen: "P.1"             # screen id VERBATIM from the UI_SCREENS.md section header
+    story: S1-02              # the story that builds it (must be a real id above)
+  - screen: "P.2"
+    story: S1-02              # a story may cover several screens (list each screen on its own row)
+out_of_scope:                 # screens deliberately NOT built in this backlog (explicit opt-out)
+  - screen: "S.14"
+    reason: "Compartir QR — diferido a v1.1"
 ```
 
 Rules:
 - Every field is required (use empty string for sprint_id, empty list for deps if not applicable).
+- `coverage` + `out_of_scope` are REQUIRED when `docs/UI_SCREENS.md` exists: together they must
+  account for EVERY screen id in that doc, exactly once. `coverage[].screen` / `out_of_scope[].screen`
+  is the screen id copied verbatim from the doc's header (`P.1`, `S.5`, `1.2`…), NOT the `role.screen`
+  `screen_key`. `coverage[].story` must reference a real story `id`. Omit both blocks only when the
+  project has no `docs/UI_SCREENS.md`.
 - `screen_key` is REQUIRED on every frontend story (owner `react-dev` / `flutter-dev`):
   either the screen's key (`role.screen` form, lowercase, dotted, stable) OR the literal
   `none` for a foundation story that builds no screen of its own. Backend / non-frontend

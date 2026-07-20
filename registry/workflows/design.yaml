@@ -204,6 +204,12 @@ steps:
       # screen_key en las stories de frontend. RUTA opcional — si el archivo no
       # existe (proyecto viejo), el scrum-master degrada al backlog de hoy.
       provisioning: docs/provisioning.yaml
+      # Spec de UI (P8-A): el scrum-master lo LEE para emitir una story por pantalla y
+      # volcar la matriz de cobertura (coverage/out_of_scope). RUTA opcional — si falta
+      # (proyecto sin UI), el scrum-master omite la cobertura y degrada al backlog de hoy,
+      # igual que con provisioning.yaml. El chequeo determinista (P8-B, handoff) parsea
+      # este mismo doc para cachar toda pantalla sin story ni marca out_of_scope.
+      screens_path: docs/UI_SCREENS.md
       output: docs/backlog.yaml
     on_fail:
       # Un backlog fallido/timed-out NO debe tumbar el design run completo (#15).
