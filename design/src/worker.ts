@@ -13,8 +13,10 @@
 //      node --experimental-strip-types design/src/worker.ts [--workflow=design] [--max=3] [--interval=15] [--dry-run] [--no-build]
 
 import { spawn } from "node:child_process";
+import { createServer } from "node:http";
 import { fileURLToPath } from "node:url";
 import { dirname, resolve } from "node:path";
+import { runAssistant, type ChatMsg } from "./assistant.ts";
 import { GithubApp, GithubRepo } from "./github.ts";
 import { Projector, type MirroredStory } from "./projection.ts";
 import { candidates, storyPrompt, sprintPrompt, docsGuardOk, type Policy, type DStory, type DSprint } from "./dispatch.ts";
@@ -396,3 +398,55 @@ console.log(`⚙  worker Fluxo · tick ${intervalMs / 1000}s · workflow=${workf
 tokenByOrg.clear();
 await tick();
 setInterval(() => { tokenByOrg.clear(); void tick(); }, intervalMs);
+
+// ── AI Assistant (P5-1) · HTTP endpoint interno ──────────────────────────────────
+// El console PROXEA acá (red interna del compose). Corre el agent-loop con el token de suscripción
+// en el ambiente PROBADO del worker (no el alpine/root del console). v1 read-only.
+async function buildStateSummary(projectId: string): Promise<{ name: string; summary: string } | null> {
+  const [proj] = await rest<Array<{ name: string; repo: string | null }>>(`/projects?id=eq.${projectId}&select=name,repo`);
+  if (!proj) return null;
+  const [sprints, stories, costs, phases, incs] = await Promise.all([
+    rest<Array<{ key: string; title: string }>>(`/sprints?project_id=eq.${projectId}&select=key,title&order=position`),
+    rest<Array<{ key: string; title: string; status: string; lane: string | null; pr_url: string | null }>>(`/stories?project_id=eq.${projectId}&select=key,title,status,lane,pr_url&order=key`),
+    rest<Array<{ usd: number; issues: string | null }>>(`/run_costs?project_id=eq.${projectId}&select=usd,issues`),
+    rest<Array<{ phase_id: string; status: string; usd: number | null }>>(`/design_phases?project_id=eq.${projectId}&select=phase_id,status,usd&order=ord`),
+    rest<Array<{ instructions: string; status: string }>>(`/increment_requests?project_id=eq.${projectId}&select=instructions,status&order=created_at.desc&limit=5`),
+  ]);
+  const byStatus = (s: string) => stories.filter((x) => x.status === s).length;
+  const buildUsd = costs.reduce((a, c) => a + (c.usd ?? 0), 0);
+  const designUsd = phases.reduce((a, p) => a + (p.usd ?? 0), 0);
+  const lines = [
+    `Proyecto: ${proj.name}${proj.repo ? ` · repo ${proj.repo}` : " · (sin repo aún)"}`,
+    `Costo total: $${(buildUsd + designUsd).toFixed(2)} (build $${buildUsd.toFixed(2)}, diseño $${designUsd.toFixed(2)})`,
+    `Diseño: ${phases.length} fases (${phases.filter((p) => p.status === "done").length} done)`,
+    `Sprints: ${sprints.map((s) => `${s.key} ${s.title}`).join(" · ") || "—"}`,
+    `Stories: ${stories.length} total — backlog ${byStatus("backlog")}, running ${byStatus("running")}, review ${byStatus("review")}, done ${byStatus("done")}`,
+    `Stories detalle:`,
+    ...stories.map((s) => `  - ${s.key} [${s.status}${s.lane ? `·${s.lane}` : ""}] ${s.title}${s.pr_url ? ` (PR: ${s.pr_url})` : ""}`),
+    incs.length ? `Pedidos de incremento: ${incs.map((i) => `[${i.status}] ${i.instructions.slice(0, 80)}`).join(" · ")}` : "Pedidos de incremento: ninguno",
+  ];
+  return { name: proj.name, summary: lines.join("\n") };
+}
+
+const assistantPort = Number(arg("http-port") ?? process.env.WORKER_HTTP_PORT ?? 0);
+if (assistantPort > 0) {
+  createServer((req, res) => {
+    if (req.method !== "POST" || req.url !== "/assistant") { res.statusCode = 404; res.end("not found"); return; }
+    let body = "";
+    req.on("data", (c) => { body += c; if (body.length > 200_000) req.destroy(); });
+    req.on("end", async () => {
+      try {
+        const { projectId, messages } = JSON.parse(body) as { projectId: string; messages: ChatMsg[] };
+        if (!projectId || !Array.isArray(messages)) { res.statusCode = 400; res.end(JSON.stringify({ error: "projectId + messages requeridos" })); return; }
+        const st = await buildStateSummary(projectId);
+        if (!st) { res.statusCode = 404; res.end(JSON.stringify({ error: "proyecto no encontrado" })); return; }
+        const text = await runAssistant({ stateSummary: st.summary, messages: messages.slice(-12) });
+        res.setHeader("Content-Type", "application/json");
+        res.end(JSON.stringify({ text }));
+      } catch (e) {
+        res.statusCode = 500;
+        res.end(JSON.stringify({ error: e instanceof Error ? e.message : String(e) }));
+      }
+    });
+  }).listen(assistantPort, () => console.log(`  🤖 assistant http en :${assistantPort} (POST /assistant)`));
+}
