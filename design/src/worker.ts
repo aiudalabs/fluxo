@@ -56,11 +56,12 @@ const STALE_MS = 90_000; // heartbeat vencido → el run está huérfano (proces
 // spawnDesign lanza main.ts para un proyecto: diseño FRESCO (sin resumeRunId) o RESUME de un
 // run caído (con --resume=<runId>, Opción B). Al salir, quita el proyecto de `designing` para
 // que un hijo que crasheó pueda re-adoptarse en el próximo tick (con guardia de heartbeat).
-function spawnDesign(projectId: string, name: string, resumeRunId?: string) {
+function spawnDesign(projectId: string, name: string, resumeRunId?: string, wf: string = workflow) {
   const tag = resumeRunId ? "↻ resume" : "▶ diseño";
-  if (dryRun) { console.log(`[dry] ${tag}: "${name}" (${projectId})${resumeRunId ? ` run ${resumeRunId}` : ` [${workflow}]`}`); return; }
-  console.log(`${tag}: "${name}" (${projectId})${resumeRunId ? ` run ${resumeRunId}` : ""}`);
-  const argv = ["--experimental-strip-types", mainScript, projectId, `--workflow=${workflow}`];
+  if (dryRun) { console.log(`[dry] ${tag}: "${name}" (${projectId})${resumeRunId ? ` run ${resumeRunId}` : ` [${wf}]`}`); return; }
+  console.log(`${tag}: "${name}" (${projectId})${resumeRunId ? ` run ${resumeRunId}` : ` [${wf}]`}`);
+  // Resume: main.ts usa el workflow DEL RUN (ignora --workflow); fresh: el del proyecto (P5-3).
+  const argv = ["--experimental-strip-types", mainScript, projectId, `--workflow=${wf}`];
   if (resumeRunId) argv.push(`--resume=${resumeRunId}`);
   const child = spawn("node", argv, { stdio: "inherit", env: process.env });
   child.on("exit", (code) => { console.log(`  ${resumeRunId ? "resume" : "diseño"} de ${projectId} terminó (code ${code})`); designing.delete(projectId); });
@@ -99,7 +100,7 @@ async function reconcileIncrements() {
 // ── 1) Reconcile DISEÑO ─────────────────────────────────────────────────────────
 async function reconcileDesign() {
   const [projects, runs, stories] = await Promise.all([
-    rest<Array<{ id: string; name: string }>>(`/projects?select=id,name`),
+    rest<Array<{ id: string; name: string; settings: { workflow?: string } | null }>>(`/projects?select=id,name,settings`),
     rest<Array<{ id: string; project_id: string; status: string; heartbeat_at: string | null }>>(`/design_runs?select=id,project_id,status,heartbeat_at`),
     rest<Array<{ project_id: string }>>(`/stories?select=project_id`),
   ]);
@@ -111,7 +112,7 @@ async function reconcileDesign() {
   for (const p of projects) {
     if (withRun.has(p.id) || withStories.has(p.id) || designing.has(p.id)) continue;
     designing.add(p.id);
-    spawnDesign(p.id, p.name);
+    spawnDesign(p.id, p.name, undefined, p.settings?.workflow || workflow); // P5-3: workflow del proyecto
   }
 
   // Resume (Opción B): run HUÉRFANO = status no terminal + heartbeat vencido. Los hijos main.ts

@@ -20,6 +20,7 @@ interface ProjSettings {
   execution_unit?: "sprint" | "story";
   max_concurrency?: number;
   workflow_approval?: "manual" | "auto_if_safe";
+  workflow?: "design" | "demo-design";  // P5-3: workflow de diseño (fresh only; el worker lo lee de acá)
   lanes?: Record<string, LaneCfg>;
 }
 // Los defaults DEBEN espejar los del motor (design/src/worker.ts policyFrom + el gate de dispatch):
@@ -27,7 +28,7 @@ interface ProjSettings {
 // UI muestra un default distinto al que el motor asume ante el campo ausente, MIENTE (bug: mostraba
 // "Sprint" mientras el motor corría "story"). dispatch_mode se incluye acá para que Guardar lo
 // PERSISTA y no lo borre en silencio (revertía a auto-dispatch).
-const DEFAULTS: ProjSettings = { channel: "claude_action", merge_mode: "manual", dispatch_mode: "auto", execution_unit: "story", max_concurrency: 3, workflow_approval: "manual", lanes: {} };
+const DEFAULTS: ProjSettings = { channel: "claude_action", merge_mode: "manual", dispatch_mode: "auto", execution_unit: "story", max_concurrency: 3, workflow_approval: "manual", workflow: "design", lanes: {} };
 const MODELS = ["auto", "claude-opus-4-8", "claude-sonnet-5", "claude-haiku-4-5-20251001"];
 
 interface ChannelInfo { id: string; available: boolean; reason: string; secretsPermMissing: boolean }
@@ -192,6 +193,13 @@ export default function Settings() {
             <select value={settings.execution_unit} onChange={(e) => patch({ execution_unit: e.target.value as ProjSettings["execution_unit"] })}>
               <option value="story">Story — una story a la vez</option>
               <option value="sprint">Sprint — despacha el sprint completo</option>
+            </select>
+          </div>
+          <div className="stg-field">
+            <label>Workflow de diseño</label>
+            <select value={settings.workflow} onChange={(e) => patch({ workflow: e.target.value as ProjSettings["workflow"] })}>
+              <option value="design">Completo — discovery → constitución → PRD → data model → arquitectura → UI → mockups → backlog</option>
+              <option value="demo-design">Lean — brief → PRD → backlog (3 fases, para demos)</option>
             </select>
           </div>
           <div className="stg-field">
