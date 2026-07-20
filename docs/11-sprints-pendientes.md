@@ -54,17 +54,23 @@ lo que encontró la validación de Idearium.
 
 ---
 
-## 🟡 Sprint P3 — Última milla (que el app entregado corra)
-**Objetivo:** cerrar idea→**app viva**, no solo idea→PR. Incluye el caso "migrar Idearium a Firebase".
-*(Del roadmap Fase 8 — no verificado en detalle.)*
+## 🟢 Sprint P3 — Última milla (que el app entregado corra) — **~IMPLEMENTADO 2026-07-19 (D3=cut)**
+**Objetivo:** cerrar idea→**app viva**, no solo idea→PR. **D3 decidida: CUT** (web + link de prueba;
+tiendas + provisioning-auto → v1.1). Ver `06-decisiones`. Deploy REAL = **BYO-credencial** (el humano
+pone sus tokens Vercel/Railway).
 
-| # | Ítem | Fuente |
+| # | Ítem | Estado |
 |---|---|---|
-| P3-1 | Provisioning de infra del **cliente** (su Supabase/Firebase, envs, secrets, dominio) | F8-01 · L-LM-2 |
-| P3-2 | Deploy web preview + prod (Vercel/CF), "publicar" con un click | F8-02 · L-LM-2 |
-| P3-3 | Build móvil firmado + distribución (App Distribution/TestFlight) | F8-03 · L-LM-1 |
-| P3-4 | **Data migrations en change-requests** (schema del app sin romper prod) | F8-05 |
-| P3-5 | Submission a tiendas (opt-in, más tarde) | F8-04 · L-LM-1 |
+| P3-1 | Provisioning de infra del cliente | 🟡 **Cut minimal:** el cliente trae sus cuentas (Supabase/Vercel/Railway); el `deploy.yml` cablea env/secrets y publica contra ellas. **Provisioning AUTO (crear su Supabase vía API) → v1.1** (parte "full" de D3). |
+| P3-2 | Deploy web preview + prod, "publicar con un click" | ✅ **`deploy.yml`** (react-supabase + python-fastapi-react): `workflow_dispatch` preview/prod, frontend→Vercel, backend/worker→Railway. Cada tramo skipea-limpio sin su secret (aditivo). Cierra F8-02/L-LM-2 (web). |
+| P3-3 | Build móvil firmado + link de prueba | ✅ **`build-apk.yml`** (flutter): firma release real si hay keystore en secrets (cae a debug si no) + distribución a Firebase App Distribution si está configurado (cae al artifact si no). Cierra F8-03/L-LM-1 (cut). **Diferido:** flutter web deploy (firebase hosting), iOS/TestFlight. |
+| P3-4 | Data migrations en el deploy | ✅ El `deploy.yml` corre migraciones ANTES del código (drizzle-kit / alembic), guardado por el secret de DB. Cierra F8-05. |
+| P3-5 | Submission a tiendas | ⛔ **Diferido a v1.1** por D3 (cut). App Store Connect / Play Console, signing Apple, macOS runner. |
+
+> **Estado de aterrizaje en MiSalon:** el harness de verify (incl. `test-verify`) ya está en `nmlemus/misalon`
+> (rescaffolds previos). `deploy.yml` quedó pendiente de subir por un **HTTP 503 de GitHub** (blip externo,
+> no del código) — reintentar el `rescaffold.ts` cuando GitHub se recupere. El deploy real necesita los
+> tokens del usuario (Vercel/Railway) de todos modos.
 
 ---
 

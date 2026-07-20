@@ -74,11 +74,11 @@ el mapa archivo-por-archivo, el design system y el re-point de datos: **`docs/07
 - [~] F7-05 Multi-superficie: verify por app (no solo el primario) — AC: customer-app + admin + backend cada uno con su verify. closes: L-LM-4. **PARCIAL (Sprint P2):** react-supabase (web única) → superficies=pantallas (art-director per-screen_key) + rutas (e2e flows). **Residual:** ui-verify de Flutter usa un `app_path` (primario) → matrix sobre app_paths, diferido hasta un proyecto multi-app real.
 
 ## Fase 8 · Entrega / última milla (lo que la auditoría marcó faltante)
-- [ ] F8-01 Provisioning de infra del CLIENTE — AC: crear su backend (Firebase/Supabase del cliente), entornos dev/preview/prod, secrets de la app, dominio. closes: L-LM-2.
-- [ ] F8-02 Deploy web (preview + prod) por Vercel/CF — AC: preview por branch embebido; "publicar" con un click a prod en el dominio del cliente. closes: L-LM-2.
-- [ ] F8-03 Build móvil firmado + distribución — AC: firma de release (keystore/signing en secrets del cliente); distribución a link de prueba (Firebase App Distribution / TestFlight). closes: L-LM-1.
-- [ ] F8-04 Submission a tiendas (opt-in) — AC: pipeline a App Store Connect / Play Console con metadata; iOS (macOS runner + signing Apple). closes: L-LM-1.
-- [ ] F8-05 Data migrations en change-requests — AC: un cambio de schema del app del cliente se aplica versionado, sin romper prod.
+- [~] F8-01 Provisioning de infra del CLIENTE — AC: crear su backend (Firebase/Supabase del cliente), entornos dev/preview/prod, secrets de la app, dominio. closes: L-LM-2. **CUT (Sprint P3, D3):** el cliente trae sus cuentas; `deploy.yml` cablea env/secrets y publica contra ellas. Provisioning AUTO (crear el proyecto vía API) → v1.1.
+- [x] F8-02 Deploy web (preview + prod) por Vercel/CF — AC: preview por branch embebido; "publicar" con un click a prod en el dominio del cliente. closes: L-LM-2. ✅ (Sprint P3) `deploy.yml` (react-supabase + python-fastapi-react): `workflow_dispatch` preview/prod → Vercel (frontend) + Railway (backend/worker), BYO-credencial (skip-limpio sin secret).
+- [~] F8-03 Build móvil firmado + distribución — AC: firma de release (keystore/signing en secrets del cliente); distribución a link de prueba (Firebase App Distribution / TestFlight). closes: L-LM-1. **CUT (Sprint P3):** `build-apk.yml` firma con keystore real (secrets) + distribuye a Firebase App Distribution (ambos guardados, caen al comportamiento previo si no hay secret). Diferido: iOS/TestFlight.
+- [ ] F8-04 Submission a tiendas (opt-in) — AC: pipeline a App Store Connect / Play Console con metadata; iOS (macOS runner + signing Apple). closes: L-LM-1. **DIFERIDO a v1.1 por D3 (cut).**
+- [x] F8-05 Data migrations en change-requests — AC: un cambio de schema del app del cliente se aplica versionado, sin romper prod. ✅ (Sprint P3) el `deploy.yml` corre las migraciones (drizzle-kit/alembic) ANTES del código, guardado por el secret de DB.
 
 ## Fase 9 · Onboarding + GTM
 - [ ] F9-01 Wizard de onboarding — AC: Continue with GitHub → instalar App → **semáforos de capacidad REALES** → preset de autonomía → primer proyecto; no se lanza design run sin canal listo. closes: L-UX-3/4.
