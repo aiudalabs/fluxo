@@ -7,8 +7,7 @@
 // diferido). Estilo: clases del board/wrap de v1; contenido crudo en <pre> (sin deps de markdown).
 
 import { useCallback, useEffect, useState } from "react";
-import ReactMarkdown from "react-markdown";
-import remarkGfm from "remark-gfm";
+import { DocView } from "@/components/DocView";
 import { useProject } from "@/lib/project";
 import { activeToken } from "@/lib/supabaseClient";
 import { useT } from "@/lib/i18n";
@@ -122,11 +121,11 @@ export default function Registry() {
             ) : (
               <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
                 <h3 style={{ margin: 0 }}>{sel.id}</h3>
-                {detail.yaml && (<><div className="eyebrow acc">{t("registry.detail.meta")}</div><Pre text={detail.yaml} /></>)}
+                {detail.yaml && (<><div className="eyebrow acc">{t("registry.detail.meta")}</div><DocView content={detail.yaml} path={`${sel.id}.yaml`} /></>)}
                 {detail.md && (
                   <>
                     <div className="eyebrow acc">{t("registry.detail.persona")}</div>
-                    <article className="docs-md artifact-md"><ReactMarkdown remarkPlugins={[remarkGfm]}>{detail.md}</ReactMarkdown></article>
+                    <DocView content={detail.md} path={`${sel.id}.md`} />
                   </>
                 )}
               </div>
@@ -135,15 +134,6 @@ export default function Registry() {
         </div>
       )}
     </div>
-  );
-}
-
-function Pre({ text }: { text: string }) {
-  return (
-    <pre style={{
-      margin: 0, padding: "12px 14px", background: "var(--bg2)", border: "1px solid var(--stroke)",
-      borderRadius: 8, fontSize: 12, lineHeight: 1.55, overflowX: "auto", whiteSpace: "pre-wrap", wordBreak: "break-word",
-    }}>{text}</pre>
   );
 }
 
@@ -175,7 +165,7 @@ function PromptsPane({ data, t }: { data: { sprints: PromptSprint[]; stories: Pr
               <summary style={{ cursor: "pointer", fontWeight: 600 }}>
                 {s.key}{s.title ? ` — ${s.title}` : ""} <span className="tag" style={{ fontSize: 10 }}>{s.storyKeys.join(", ")}</span>
               </summary>
-              <div style={{ marginTop: 8 }}><Pre text={s.prompt} /></div>
+              <div style={{ marginTop: 8 }}><DocView content={s.prompt} path="prompt.txt" /></div>
             </details>
           ))}
         </div>
@@ -189,7 +179,7 @@ function PromptsPane({ data, t }: { data: { sprints: PromptSprint[]; stories: Pr
               <summary style={{ cursor: "pointer", fontWeight: 600 }}>
                 {s.key} — {s.title} <span className="tag" style={{ fontSize: 10 }}>{s.status}</span>
               </summary>
-              <div style={{ marginTop: 8 }}><Pre text={s.prompt} /></div>
+              <div style={{ marginTop: 8 }}><DocView content={s.prompt} path="prompt.txt" /></div>
             </details>
           ))}
         </div>

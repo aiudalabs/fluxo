@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { DocView } from "@/components/DocView";
 import { type BrainEvent } from "@/lib/supabaseClient";
 import { useProject } from "@/lib/project";
 import { useLocale } from "@/lib/locale";
@@ -60,7 +61,8 @@ function EventBody({ kind, payload }: { kind: string; payload: P }) {
   if (kind === "provenance") {
     return <p style={bodyP}>{provenanceLine(payload)}</p>;
   }
-  return <pre style={{ ...bodyP, fontSize: 12, whiteSpace: "pre-wrap", wordBreak: "break-word" }}>{JSON.stringify(payload, null, 2)}</pre>;
+  // kind desconocido → JSON crudo con highlight (nada se oculta al audit; ahora legible).
+  return <DocView content={JSON.stringify(payload, null, 2)} path="event.json" />;
 }
 
 function provenanceLine(p: P): string {

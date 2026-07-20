@@ -4889,3 +4889,20 @@ main:has(.studio-shell) > .studio-shell {
 .ov-designcta-ic { font-size: 20px; color: var(--accent); flex-shrink: 0; }
 .ov-designcta-txt { font-size: 13px; line-height: 1.5; flex: 1; }
 .ov-designcta-cta { font-weight: 700; color: var(--accent); white-space: nowrap; flex-shrink: 0; }
+
+/* ArtifactView (DocView) — codigo con highlight liviano. Tokens via vars semanticas
+   emerald / navy / amber / ink / accent, que ya flipean con el tema light y dark. */
+.artifact-code {
+  margin: 0; padding: 12px 14px; background: var(--bg2); border: 1px solid var(--stroke);
+  border-radius: 8px; font-size: 12.5px; line-height: 1.6; overflow-x: auto;
+  white-space: pre-wrap; word-break: break-word; color: var(--ink2);
+  font-family: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
+}
+.artifact-code .tok-key { color: var(--emerald); font-weight: 600; }
+.artifact-code .tok-str { color: var(--navy); }
+.artifact-code .tok-comment { color: var(--ink4); font-style: italic; }
+.artifact-code .tok-num { color: var(--navy); }
+.artifact-code .tok-bool { color: var(--accent); }
+.artifact-code .tok-punct { color: var(--ink3); }
+.artifact-code .tok-flag { color: var(--amber); }
+.artifact-code .tok-var { color: var(--accent); }
