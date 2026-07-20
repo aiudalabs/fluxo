@@ -102,6 +102,18 @@ if (resumeRunId) {
   console.log(`↻ resume run ${runId}: ${Object.keys(resumeState.phaseRuns).length} fase(s) done, reanudo en step #${resumeState.startIndex}`);
 } else {
   runId = await store.createRun(workflowId, phaseSeeds);
+  // P5-2 · iterate: sembrá el workdir con los docs de diseño YA producidos (PRD/arquitectura/backlog)
+  // para que el iteration-planner los lea y emita un DELTA (no re-genere de cero). Un design fresco
+  // arranca con workdir vacío (los agentes crean los docs); iterate necesita el estado existente.
+  if (workflowId === "iterate") {
+    const docs = await store.loadProjectDocs();
+    for (const a of docs) {
+      const abs = join(workdir, a.path);
+      mkdirSync(dirname(abs), { recursive: true });
+      writeFileSync(abs, a.content);
+    }
+    console.log(`  ↪ iterate: workdir sembrado con ${docs.length} doc(s) del diseño existente`);
+  }
 }
 
 // Heartbeat/lease (Opción B): renueva heartbeat_at cada 30s mientras este proceso vive, para

@@ -177,6 +177,17 @@ export class SupabaseDesignStore {
       .map((p) => ({ phase_id: p.phase_id, status: p.status, artifacts: p.artifacts ?? [] }));
   }
 
+  // loadProjectDocs devuelve los artefactos de diseño YA producidos del PROYECTO (cualquier run
+  // done), última versión por path. Es la semilla del workdir para un iterate (P5-2): el
+  // iteration-planner necesita leer el PRD/arquitectura/backlog existentes para emitir un DELTA.
+  async loadProjectDocs(): Promise<Artifact[]> {
+    const res = await this.rest(`/design_phases?project_id=eq.${this.cfg.project}&status=eq.done&select=artifacts,updated_at&order=updated_at.asc`, { method: "GET", prefer: "count=none" });
+    const rows = (await res.json()) as Array<{ artifacts: Artifact[] | null }>;
+    const byPath = new Map<string, Artifact>();
+    for (const r of rows) for (const a of r.artifacts ?? []) byPath.set(a.path, a); // orden asc → la última gana
+    return [...byPath.values()];
+  }
+
   // loadGates returns the run's gate rows (to know which gates were already approved).
   async loadGates(): Promise<Array<{ gate_id: string; status: string; outcome: string | null }>> {
     const res = await this.rest(`/design_gates?run_id=eq.${this.runId}&select=gate_id,status,outcome`, { method: "GET", prefer: "count=none" });

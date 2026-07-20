@@ -64,6 +64,36 @@ function spawnDesign(projectId: string, name: string, resumeRunId?: string) {
   child.on("exit", (code) => { console.log(`  ${resumeRunId ? "resume" : "diseño"} de ${projectId} terminó (code ${code})`); designing.delete(projectId); });
 }
 
+// spawnIterate lanza main.ts para un CHANGE-REQUEST (P5-2): --workflow=iterate + las instrucciones
+// como idea override. main.ts siembra el workdir con los docs existentes → el iteration-planner emite
+// un DELTA → handoff APPENDea las stories nuevas. Al salir, marca el pedido done/failed.
+function spawnIterate(reqId: string, projectId: string, name: string, instructions: string) {
+  if (dryRun) { console.log(`[dry] ⟳ iterate: "${name}" (${projectId}) req ${reqId}`); return; }
+  console.log(`⟳ iterate: "${name}" (${projectId}) — ${instructions.slice(0, 80)}${instructions.length > 80 ? "…" : ""}`);
+  const argv = ["--experimental-strip-types", mainScript, projectId, instructions, "--workflow=iterate"];
+  const child = spawn("node", argv, { stdio: "inherit", env: process.env });
+  child.on("exit", (code) => {
+    console.log(`  iterate de ${projectId} terminó (code ${code})`);
+    designing.delete(projectId);
+    void rest(`/increment_requests?id=eq.${reqId}`, { method: "PATCH", body: JSON.stringify({ status: code === 0 ? "done" : "failed", updated_at: new Date().toISOString() }) }).catch(() => {});
+  });
+}
+
+// ── 1b) Reconcile CHANGE-REQUESTS (P5-2) ─────────────────────────────────────────
+// Un pedido de incremento pending → spawn iterate. Guard `designing`: no correr diseño e iterate a
+// la vez en el mismo proyecto. Marca running ANTES de spawnear (evita doble-levantar en el próximo tick).
+async function reconcileIncrements() {
+  const reqs = await rest<Array<{ id: string; project_id: string; instructions: string }>>(`/increment_requests?status=eq.pending&select=id,project_id,instructions&order=created_at.asc`);
+  if (!reqs.length) return;
+  const nameById = new Map((await rest<Array<{ id: string; name: string }>>(`/projects?select=id,name`)).map((p) => [p.id, p.name]));
+  for (const req of reqs) {
+    if (designing.has(req.project_id)) continue;
+    designing.add(req.project_id);
+    await rest(`/increment_requests?id=eq.${req.id}`, { method: "PATCH", body: JSON.stringify({ status: "running", updated_at: new Date().toISOString() }) });
+    spawnIterate(req.id, req.project_id, nameById.get(req.project_id) ?? req.project_id, req.instructions);
+  }
+}
+
 // ── 1) Reconcile DISEÑO ─────────────────────────────────────────────────────────
 async function reconcileDesign() {
   const [projects, runs, stories] = await Promise.all([
@@ -349,6 +379,7 @@ async function reconcileBuild() {
 
 async function tick() {
   try { await reconcileDesign(); } catch (e) { console.error("reconcileDesign:", e instanceof Error ? e.message : e); }
+  try { await reconcileIncrements(); } catch (e) { console.error("reconcileIncrements:", e instanceof Error ? e.message : e); }
   if (!noBuild) {
     // Orden del conductor de v1: PROYECTAR (GitHub = verdad) → APROBAR (auto_if_safe) → AUTO-MERGE
     // (gated) → DESPACHAR. Aprobar antes de mergear: destraba el CI para que los checks corran y el

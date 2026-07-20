@@ -18,7 +18,7 @@ import { useLocale } from "./locale";
 import { TopBar } from "@/components/shell/TopBar";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
-export type ProjectMeta = { id: string; name: string; description: string | null; org: string | null; repo: string | null };
+export type ProjectMeta = { id: string; name: string; description: string | null; org: string | null; repo: string | null; tenant_id: string | null };
 type ProjectCtx = { projectId: string; supabase: SupabaseClient; project: ProjectMeta | null };
 const Ctx = createContext<ProjectCtx | null>(null);
 
@@ -56,7 +56,7 @@ export function ProjectShell({ projectId, children }: { projectId: string; child
   // Cargar la metadata del proyecto (nombre/descr/org/repo) — RLS la scopea al tenant.
   useEffect(() => {
     let cancelled = false;
-    void supabase.from("projects").select("id,name,description,org,repo").eq("id", projectId).single()
+    void supabase.from("projects").select("id,name,description,org,repo,tenant_id").eq("id", projectId).single()
       .then(({ data }) => { if (!cancelled) setProject((data as ProjectMeta) ?? null); });
     return () => { cancelled = true; };
   }, [supabase, projectId]);

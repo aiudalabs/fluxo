@@ -8,6 +8,7 @@
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { useProject } from "@/lib/project";
+import { IncrementRequest } from "@/components/IncrementRequest";
 import { useT } from "@/lib/i18n";
 import type { OrchestratorTicket, TicketStatus } from "@/lib/types";
 
@@ -126,6 +127,8 @@ export default function Overview() {
           <span className="ov-designcta-cta">Abrir Studio →</span>
         </Link>
       )}
+
+      {project?.repo && <div style={{ marginBottom: 18 }}><IncrementRequest /></div>}
 
       <div className="stats">
         <div className="stat">
