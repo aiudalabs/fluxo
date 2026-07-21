@@ -235,6 +235,49 @@ a{color:inherit;text-decoration:none}
 .dv-body ul{margin:0 0 12px;padding-left:20px;color:var(--txt-2)}.dv-body li{margin:5px 0}
 
 .placeholder{padding:70px;text-align:center;color:var(--txt-3)}
+/* Flow · grafo de orquestación */
+.graph-wrap{overflow-x:auto;padding-bottom:12px}
+.graph{position:relative;width:1160px;height:520px}
+.graph svg{position:absolute;inset:0;width:1160px;height:520px;pointer-events:none;z-index:1}
+.graph .edge{fill:none;stroke:var(--line-2);stroke-width:1.5}
+.graph .edge.hot{stroke:var(--accent);stroke-width:2;filter:drop-shadow(0 0 5px var(--glow-strong))}
+.gnode{position:absolute;width:220px;padding:13px 15px;border-radius:12px;background:var(--card-grad);border:1px solid var(--line);box-shadow:var(--top-hi);z-index:2}
+.gnode .gid{font-family:"JetBrains Mono";font-size:11px;color:var(--txt-3);display:flex;align-items:center;gap:8px;margin-bottom:7px}
+.gnode .gttl{font-family:"Space Grotesk";font-size:14px;font-weight:500;line-height:1.25}
+.gnode.live{border-color:color-mix(in srgb,var(--accent) 40%,transparent);box-shadow:var(--top-hi),0 0 28px -8px var(--glow-strong)}
+.glevel{position:absolute;top:-6px;font-family:"JetBrains Mono";font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:var(--txt-3)}
+.d6{width:8px;height:8px;border-radius:50%;background:currentColor;box-shadow:0 0 7px currentColor;flex:0 0 auto}
+/* tabs + trazas (Observabilidad) */
+.tabs{display:flex;gap:2px;border-bottom:1px solid var(--line);margin-bottom:22px}
+.tab{padding:11px 15px;font-size:13.5px;font-weight:500;color:var(--txt-2);border-bottom:2px solid transparent;margin-bottom:-1px}
+.tab.on{color:var(--txt);border-bottom-color:var(--accent)}
+.trace{display:grid;grid-template-columns:200px 1fr 84px;align-items:center;gap:18px;padding:13px 0;border-top:1px solid var(--line)}
+.trace .ph{font-size:13.5px;font-weight:500}
+.trace .lane{height:16px;border-radius:6px;background:var(--panel-2);position:relative;overflow:hidden}
+.trace .lane>i{position:absolute;top:0;bottom:0;border-radius:6px;background:linear-gradient(90deg,var(--accent),var(--accent-2));opacity:.9}
+.trace .cost{font-family:"JetBrains Mono";font-size:12.5px;color:var(--txt-2);text-align:right}
+.trace .cost.dsn{color:var(--s-ready)}
+/* settings */
+.setblock h3{margin:0;font-family:"Space Grotesk";font-size:16px;font-weight:600}
+.setrow{display:flex;align-items:center;gap:16px;padding:15px 16px;border-radius:12px}
+.setrow:hover{background:var(--panel-2)}
+.setrow .info{flex:1}.setrow .info .t{font-weight:500;font-size:14.5px}.setrow .info .d{color:var(--txt-3);font-size:12.5px;margin-top:3px}
+.toggle{width:46px;height:26px;border-radius:999px;background:var(--panel-3);border:1px solid var(--line-2);position:relative;flex:0 0 auto}
+.toggle::after{content:"";position:absolute;top:2px;left:2px;width:20px;height:20px;border-radius:50%;background:var(--txt-3);transition:.2s}
+.toggle.on{background:var(--accent);border-color:transparent}.toggle.on::after{left:22px;background:#fff}
+.cap{display:flex;align-items:center;gap:12px;padding:14px 16px;border-radius:12px;background:var(--panel-2);border:1px solid var(--line)}
+.cap+.cap{margin-top:10px}
+/* registry */
+.regwrap{display:grid;grid-template-columns:236px 1fr;gap:22px}
+.regcat{display:flex;align-items:center;gap:11px;height:42px;padding:0 13px;border-radius:9px;font-size:13.5px;color:var(--txt-2);width:100%;text-align:left}
+.regcat:hover{background:var(--panel)}.regcat.on{background:var(--panel-2);color:var(--txt);box-shadow:var(--top-hi)}
+.regcat .n{margin-left:auto;font-family:"JetBrains Mono";font-size:11px;color:var(--txt-3)}
+.reggrid{display:grid;grid-template-columns:repeat(2,1fr);gap:14px}
+.regitem{padding:17px 19px}
+.regitem .id{font-family:"JetBrains Mono";font-size:12px;color:var(--accent);margin-bottom:7px}
+.regitem .nm{font-family:"Space Grotesk";font-size:15px;font-weight:500;margin-bottom:6px}
+.regitem .ds{color:var(--txt-2);font-size:13px;line-height:1.5}
+@media (max-width:820px){.regwrap{grid-template-columns:1fr}.reggrid{grid-template-columns:1fr}}
 /* FAB */
 .fab{position:fixed;right:28px;bottom:28px;height:52px;padding:0 20px;border-radius:13px;display:flex;align-items:center;gap:10px;z-index:40;font-weight:600;font-size:13.5px;
   background:linear-gradient(180deg,var(--accent-2),var(--accent));color:var(--accent-ink);box-shadow:0 10px 34px -8px var(--glow-strong)}
@@ -412,9 +455,108 @@ a{color:inherit;text-decoration:none}
         </div>
       </section>
 
+      <!-- FLOW · grafo de orquestación -->
+      <section class="screen" data-screen="flow">
+        <div class="pagehead"><div><h2>Flow</h2><div class="sub">Grafo de orquestación · dependencias · niveles topológicos · <span style="color:var(--s-run)">1 en vivo</span></div></div>
+          <div class="seg"><button class="on">Grafo</button><button>Timeline</button></div></div>
+        <div class="graph-wrap"><div class="graph">
+          <svg viewBox="0 0 1160 520">
+            <path class="edge" d="M260,95 C292,95 288,75 320,75"/>
+            <path class="edge" d="M260,95 C295,95 285,205 320,205"/>
+            <path class="edge" d="M260,275 C295,275 285,205 320,205"/>
+            <path class="edge" d="M260,275 C292,275 288,335 320,335"/>
+            <path class="edge hot" d="M540,205 C572,205 568,95 600,95"/>
+            <path class="edge hot" d="M540,205 C572,205 568,235 600,235"/>
+            <path class="edge hot" d="M540,205 C575,205 565,375 600,375"/>
+            <path class="edge" d="M820,375 C852,375 848,235 880,235"/>
+            <path class="edge" d="M820,235 C852,235 848,235 880,235"/>
+          </svg>
+          <div class="glevel" style="left:40px">SP1 · fundaciones</div>
+          <div class="glevel" style="left:320px">nivel 1</div>
+          <div class="glevel" style="left:600px">nivel 2</div>
+          <div class="glevel" style="left:880px">nivel 3</div>
+          <div class="gnode" style="left:40px;top:63px"><div class="gid"><span class="d6" style="color:var(--s-done)"></span>S1-01 · done</div><div class="gttl">Esquema de base de datos</div></div>
+          <div class="gnode" style="left:40px;top:243px"><div class="gid"><span class="d6" style="color:var(--s-done)"></span>S1-02 · done</div><div class="gttl">Registro de usuario</div></div>
+          <div class="gnode" style="left:320px;top:43px"><div class="gid"><span class="d6" style="color:var(--s-ready)"></span>S1-03 · listo</div><div class="gttl">Login con Google</div></div>
+          <div class="gnode live" style="left:320px;top:173px"><div class="gid"><span class="d6" style="color:var(--s-run)"></span>S2-01 · en vivo</div><div class="gttl">Pantalla de reservas</div></div>
+          <div class="gnode" style="left:320px;top:303px"><div class="gid"><span class="d6" style="color:var(--s-review)"></span>S1-04 · revisión</div><div class="gttl">Recuperar contraseña</div></div>
+          <div class="gnode" style="left:600px;top:63px"><div class="gid"><span class="d6" style="color:var(--s-review)"></span>S2-02 · revisión</div><div class="gttl">Calendario del estilista</div></div>
+          <div class="gnode" style="left:600px;top:203px"><div class="gid"><span class="d6" style="color:var(--s-review)"></span>S2-05 · revisión</div><div class="gttl">Perfil del salón</div></div>
+          <div class="gnode" style="left:600px;top:343px"><div class="gid"><span class="d6" style="color:var(--s-backlog)"></span>S2-03 · backlog</div><div class="gttl">Notificaciones push</div></div>
+          <div class="gnode" style="left:880px;top:203px"><div class="gid"><span class="d6" style="color:var(--s-backlog)"></span>S3-01 · gated</div><div class="gttl">Pago con tarjeta</div></div>
+        </div></div>
+      </section>
+
+      <!-- OBSERVABILIDAD -->
+      <section class="screen" data-screen="brain">
+        <div class="pagehead"><div><h2>Observabilidad</h2><div class="sub">Costo · tokens · latencia · trazas del diseño y el build</div></div></div>
+        <div class="kpis stagger" style="margin-bottom:26px">
+          <div class="kpi card"><span class="eyebrow">Costo total</span><div class="n">$4.82</div><div class="s">diseño $3.10 · build $1.72</div></div>
+          <div class="kpi card"><span class="eyebrow">Tokens</span><div class="n">2.4<span style="color:var(--txt-3);font-size:24px">M</span></div><div class="s">in 1.8M · out 0.6M</div></div>
+          <div class="kpi card"><span class="eyebrow">Latencia p50</span><div class="n" style="color:var(--s-ready)">48<span style="font-size:24px;color:var(--txt-3)">s</span></div><div class="s">p95 · 2m 10s</div></div>
+          <div class="kpi card"><span class="eyebrow">Fases · runs</span><div class="n">11<span style="color:var(--txt-3);font-size:24px">/6</span></div><div class="s">fases diseño · runs build</div></div>
+        </div>
+        <div class="tabs"><span class="tab on">Trazas</span><span class="tab">Dashboard</span><span class="tab">Eventos</span></div>
+        <div class="card" style="padding:6px 24px 18px">
+          <div class="trace" style="border-top:0"><span class="ph">Descubrimiento</span><div class="lane"><i style="left:0;width:12%"></i></div><span class="cost dsn">$0.21</span></div>
+          <div class="trace"><span class="ph">PRD</span><div class="lane"><i style="left:11%;width:20%"></i></div><span class="cost dsn">$0.44</span></div>
+          <div class="trace"><span class="ph">Modelo de datos</span><div class="lane"><i style="left:29%;width:16%"></i></div><span class="cost dsn">$0.38</span></div>
+          <div class="trace"><span class="ph">Arquitectura&nbsp; <span style="color:var(--accent);font-family:var(--monly);font-size:11px">◈ gate</span></span><div class="lane"><i style="left:43%;width:25%"></i></div><span class="cost dsn">$0.71</span></div>
+          <div class="trace"><span class="ph">UI / Pantallas</span><div class="lane"><i style="left:66%;width:18%"></i></div><span class="cost dsn">$0.52</span></div>
+          <div class="trace"><span class="ph" style="color:var(--s-run)">S2-01 · build</span><div class="lane"><i style="left:80%;width:19%;background:linear-gradient(90deg,var(--s-run),var(--accent-2))"></i></div><span class="cost">$0.63</span></div>
+        </div>
+      </section>
+
+      <!-- SETTINGS -->
+      <section class="screen" data-screen="settings">
+        <div class="pagehead"><div><h2>Settings</h2><div class="sub">Ejecución · canal de build · capabilities</div></div><button class="btn primary">Guardar</button></div>
+        <div class="grid2" style="align-items:start">
+          <div class="card setblock" style="padding:6px">
+            <div style="padding:16px 16px 6px"><h3>Ejecución</h3></div>
+            <div class="setrow"><div class="info"><div class="t">Despacho automático</div><div class="d">Off = el humano toca ▶ en el pipeline. Evita costo no supervisado.</div></div><div class="toggle"></div></div>
+            <div class="setrow"><div class="info"><div class="t">Unidad de ejecución</div><div class="d">Una story por PR, o el sprint entero en un branch.</div></div><span class="selpill">Story <svg viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg></span></div>
+            <div class="setrow"><div class="info"><div class="t">Workflow de diseño</div><div class="d">Completo (8 fases) o Lean (3 fases).</div></div><span class="selpill">Completo <svg viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg></span></div>
+            <div class="setrow"><div class="info"><div class="t">Auto-merge de PRs</div><div class="d">Mergear al pasar el reviewer + los checks verdes.</div></div><div class="toggle on"></div></div>
+          </div>
+          <div class="card setblock" style="padding:6px">
+            <div style="padding:16px 16px 12px"><h3>Canal de build · capabilities</h3></div>
+            <div style="padding:0 12px 12px">
+              <div class="cap"><span class="d6" style="color:var(--s-done)"></span><div style="flex:1"><div style="font-weight:500;font-size:14px">Claude Code · token</div><div style="color:var(--txt-3);font-size:12px">canal BYO · sembrado</div></div><span class="tag done"><span class="d"></span>listo</span></div>
+              <div class="cap"><span class="d6" style="color:var(--s-done)"></span><div style="flex:1"><div style="font-weight:500;font-size:14px">Firebase · FIREBASE_SERVICE_ACCOUNT</div><div style="color:var(--txt-3);font-size:12px">Hosting · Test Lab · App Distribution</div></div><span class="tag done"><span class="d"></span>listo</span></div>
+              <div class="cap"><span class="d6" style="color:var(--s-backlog)"></span><div style="flex:1"><div style="font-weight:500;font-size:14px">Stripe · STRIPE_SECRET_KEY</div><div style="color:var(--txt-3);font-size:12px">requerida por S3-01 · pago con tarjeta</div></div><button class="btn ghost sm">Sembrar</button></div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- REGISTRY -->
+      <section class="screen" data-screen="registry">
+        <div class="pagehead"><div><h2>Registry</h2><div class="sub">El método como data · agents · skills · workflows · templates</div></div>
+          <div class="field"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4-4"/></svg><input placeholder="Buscar en el registro…"></div></div>
+        <div class="regwrap">
+          <div>
+            <button class="regcat on">Agents<span class="n">44</span></button>
+            <button class="regcat">Skills<span class="n">18</span></button>
+            <button class="regcat">Workflows<span class="n">12</span></button>
+            <button class="regcat">Templates<span class="n">57</span></button>
+            <button class="regcat">Capabilities<span class="n">3</span></button>
+            <button class="regcat">Stacks<span class="n">3</span></button>
+            <button class="regcat">Providers<span class="n">4</span></button>
+          </div>
+          <div class="reggrid">
+            <div class="regitem card"><div class="id">agents/scrum-master</div><div class="nm">Scrum Master</div><div class="ds">Convierte el spec aprobado en un backlog gateado: epics, stories, sprints, deps y matriz de cobertura de UI.</div></div>
+            <div class="regitem card"><div class="id">agents/architect</div><div class="nm">Architect</div><div class="ds">Diseña la arquitectura + el contrato de frontera (provisioning.yaml) y declara las capabilities BYO.</div></div>
+            <div class="regitem card"><div class="id">agents/designer</div><div class="nm">Designer</div><div class="ds">Emite el design system + un mockup HTML por pantalla; modo incremento para stories nuevas.</div></div>
+            <div class="regitem card"><div class="id">agents/iteration-planner</div><div class="nm">Iteration Planner</div><div class="ds">Un change-request → un backlog delta (solo ids nuevos) sobre el producto ya desplegado.</div></div>
+            <div class="regitem card"><div class="id">agents/reviewer</div><div class="nm">Reviewer</div><div class="ds">Juzga la honestidad del PR: anti-stub, métricas ≠ retorno de stub, secretos fail-closed.</div></div>
+            <div class="regitem card"><div class="id">agents/art-director</div><div class="nm">Art Director</div><div class="ds">Compara el screenshot de la UI construida contra el mockup aprobado; un visual roto bloquea el merge.</div></div>
+          </div>
+        </div>
+      </section>
+
       <section class="screen" data-screen="placeholder">
-        <div class="pagehead"><div><h2 id="ph-t">Flow</h2><div class="sub">Esta sección no está en el preview.</div></div></div>
-        <div class="placeholder card">El preview cubre <b style="color:var(--txt)">Overview · Pipeline · Agentes · Studio</b>.<br>El resto reusa el mismo sistema.</div>
+        <div class="pagehead"><div><h2 id="ph-t">Sección</h2><div class="sub">Esta sección no está en el preview.</div></div></div>
+        <div class="placeholder card">El preview cubre todas las secciones principales.<br>Reusan el mismo sistema Mission Control.</div>
       </section>
 
     </main>
@@ -426,7 +568,7 @@ a{color:inherit;text-decoration:none}
 <div class="pv">Mission Control · seed <b>#FF5E2C</b> · <button id="pvTheme" style="color:var(--accent);font-weight:600;font-family:inherit">light / dark</button></div>
 
 <script>
-  const root=document.documentElement, screens=[...document.querySelectorAll('.screen')], built=new Set(['overview','board','agents','studio']);
+  const root=document.documentElement, screens=[...document.querySelectorAll('.screen')], built=new Set(['overview','board','agents','studio','flow','brain','settings','registry']);
   function go(name){const t=built.has(name)?name:'placeholder';
     if(t==='placeholder')document.getElementById('ph-t').textContent=({flow:'Flow',brain:'Observabilidad',assistant:'AI Assistant',registry:'Registry',settings:'Settings'})[name]||'Sección';
     screens.forEach(s=>s.classList.toggle('on',s.dataset.screen===t));
