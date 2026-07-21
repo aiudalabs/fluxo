@@ -2,58 +2,57 @@
    Satoshi (display) vía Fontshare · Instrument Serif + JetBrains Mono vía Google Fonts
    (los <link> se cargan en layout.tsx). */
 
-:root {
-  --bg: #faf8f4;
-  --bg2: #f3f0ea;
-  --bg3: #ebe7de;
-  --ink: #0d0d0f;
-  --ink2: #2a2a2f;
-  --ink3: #52525a;
-  --ink4: #8a8a92;
-  --accent: #e8440a;
-  --accent-h: #d13a06;
-  --accent-soft: rgba(232, 68, 10, 0.07);
-  --accent-line: rgba(232, 68, 10, 0.24);
-  --emerald: #0a7b5a;
-  --emerald-soft: rgba(10, 123, 90, 0.07);
-  --navy: #142850;
-  --navy-soft: rgba(20, 40, 80, 0.07);
-  --amber: #7a5d00;
-  --amber-soft: rgba(180, 140, 20, 0.12);
-  --danger: #9a2020;
-  --danger-soft: rgba(180, 30, 30, 0.08);
-  --stroke: rgba(13, 13, 15, 0.07);
-  --stroke-strong: rgba(13, 13, 15, 0.14);
-  --shadow-soft: 0 16px 42px rgba(13, 13, 15, 0.07);
-  --shadow-accent: 0 12px 28px rgba(232, 68, 10, 0.2);
-  --panel: #fffdf9; /* superficie de card/panel (antes se hardcodeaba #fff) */
-  --display: "Satoshi", system-ui, sans-serif;
-  --serif: "Instrument Serif", Georgia, serif;
-  --mono: "JetBrains Mono", monospace;
+/* ═══ MISSION CONTROL — light (secundario; el hero es dark, abajo) ═══ */
+:root, :root[data-theme="light"] {
+  --bg: #f4f3f6; --bg2: #eeedf2; --bg3: #e4e2ea;
+  --ink: #151219; --ink2: #3a3742; --ink3: #57545f; --ink4: #8a8794;
+  --accent: #ec4a12; --accent-h: #ff6a34;
+  --accent-soft: rgba(236, 74, 18, 0.08); --accent-line: rgba(236, 74, 18, 0.22);
+  --cyan: #1e93d6; --cyan-soft: rgba(30, 147, 214, 0.1);
+  --emerald: #0f9d6e; --emerald-soft: rgba(15, 157, 110, 0.1);
+  --navy: #1e93d6; --navy-soft: rgba(30, 147, 214, 0.1);       /* links → cyan */
+  --amber: #b07a12; --amber-soft: rgba(176, 122, 18, 0.13);
+  --danger: #d63a5a; --danger-soft: rgba(214, 58, 90, 0.1);
+  --stroke: rgba(15, 12, 20, 0.1); --stroke-strong: rgba(15, 12, 20, 0.2);
+  --shadow-soft: 0 12px 32px -14px rgba(20, 16, 30, 0.22); --shadow-accent: 0 8px 22px -8px rgba(236, 74, 18, 0.3);
+  --panel: #ffffff; --panel-2: #f7f6fa; --panel-3: #eeecf2;
+  --glow: rgba(236, 74, 18, 0.16); --glow-strong: rgba(236, 74, 18, 0.28);
+  --card-grad: linear-gradient(168deg, #ffffff, #f8f7fb);
+  --top-hi: inset 0 1px 0 rgba(255, 255, 255, 0.8);
+  --display: "Inter", system-ui, sans-serif;
+  --disp: "Space Grotesk", "Inter", sans-serif;
+  --serif: "Space Grotesk", "Inter", sans-serif;   /* números KPI grandes */
+  --mono: "JetBrains Mono", ui-monospace, monospace;
   --ease: cubic-bezier(0.16, 1, 0.3, 1);
-  --r: 12px;
-  --r-lg: 16px;
-  --r-xl: 28px;
+  --r: 12px; --r-lg: 16px; --r-xl: 28px;
   color-scheme: light;
 }
 
 /* ═══ Tema dark (F6P-07) · opt-in por toggle (data-theme en <html>); Fluxo default light.
    Todo lo que usa los tokens flipea; el barrido de colores hardcodeados en las vistas
    portadas (board/studio, muchos #fff) es un paso siguiente. ═══ */
+/* ═══ MISSION CONTROL — dark (el hero: near-black + un acento ámbar que brilla) ═══ */
 :root[data-theme="dark"] {
-  --bg: #141310; --bg2: #1b1a16; --bg3: #242219;
-  --ink: #f5f1e9; --ink2: #e4dfd4; --ink3: #b0a99a; --ink4: #7e786c;
-  --accent: #ff6a38; --accent-h: #ff824f;
-  --accent-soft: rgba(255, 106, 56, 0.12); --accent-line: rgba(255, 106, 56, 0.3);
-  --emerald: #3fcb97; --emerald-soft: rgba(63, 203, 151, 0.14);
-  --navy: #7fa0d8; --navy-soft: rgba(127, 160, 216, 0.14);
-  --amber: #e0a040; --amber-soft: rgba(224, 160, 64, 0.15);
-  --danger: #f1746b; --danger-soft: rgba(241, 116, 107, 0.12);
-  --stroke: rgba(245, 241, 233, 0.09); --stroke-strong: rgba(245, 241, 233, 0.17);
-  --shadow-soft: 0 16px 42px rgba(0, 0, 0, 0.45); --shadow-accent: 0 12px 28px rgba(255, 106, 56, 0.25);
-  --panel: #1e1d18;
+  --bg: #09090c; --bg2: #0c0b10; --bg3: #211f2b;
+  --ink: #f5f4f8; --ink2: #cfcdd6; --ink3: #a6a3b2; --ink4: #6d6a7a;
+  --accent: #ff5e2c; --accent-h: #ff8154;
+  --accent-soft: rgba(255, 94, 44, 0.12); --accent-line: rgba(255, 94, 44, 0.3);
+  --cyan: #49c1ff; --cyan-soft: rgba(73, 193, 255, 0.14);
+  --emerald: #33d69f; --emerald-soft: rgba(51, 214, 159, 0.14);
+  --navy: #49c1ff; --navy-soft: rgba(73, 193, 255, 0.14);      /* links → cyan */
+  --amber: #f5b13f; --amber-soft: rgba(245, 177, 63, 0.14);
+  --danger: #ff5d78; --danger-soft: rgba(255, 93, 120, 0.12);
+  --stroke: rgba(255, 255, 255, 0.07); --stroke-strong: rgba(255, 255, 255, 0.13);
+  --shadow-soft: 0 14px 40px -12px rgba(0, 0, 0, 0.7); --shadow-accent: 0 8px 24px -8px rgba(255, 94, 44, 0.5);
+  --panel: #141219; --panel-2: #1a1822; --panel-3: #211f2b;
+  --glow: rgba(255, 94, 44, 0.28); --glow-strong: rgba(255, 94, 44, 0.5);
+  --card-grad: linear-gradient(168deg, #17151d, #131118);
+  --top-hi: inset 0 1px 0 rgba(255, 255, 255, 0.06);
   color-scheme: dark;
 }
+/* Alias de tokens que algunas vistas usan sin definir (Agents .bg1/.ink1, Brain --muted/--text).
+   var() es lazy → resuelven al valor del tema activo. */
+:root { --bg1: var(--panel); --ink1: var(--ink); --muted: var(--ink3); --text: var(--ink); }
 
 * {
   box-sizing: border-box;
@@ -65,19 +64,34 @@ html,
 body {
   font-family: var(--display);
   color: var(--ink);
-  font-size: 15px;
-  line-height: 1.6;
+  font-size: 14px;
+  line-height: 1.5;
   -webkit-font-smoothing: antialiased;
-  background: radial-gradient(circle at 12% 2%, rgba(232, 68, 10, 0.1), transparent 27%),
-    radial-gradient(circle at 92% 8%, rgba(20, 40, 80, 0.07), transparent 30%),
-    linear-gradient(180deg, #faf8f4 0%, #f7f4ee 42%, #faf8f4 100%);
-  background-attachment: fixed;
+  background: var(--bg);
   min-height: 100vh;
   /* Off-canvas panels (.drawer) sit beyond the right edge when closed
      (translateX(102%)); clip horizontal overflow so they never create a
      page-wide horizontal scrollbar. Vertical scroll is unaffected. */
   overflow-x: hidden;
 }
+/* Mission Control · atmósfera de sala de control: dot-grid técnico + glow del acento. */
+body::before {
+  content: ""; position: fixed; inset: 0; z-index: 0; pointer-events: none;
+  background-image: radial-gradient(circle, var(--stroke) 1px, transparent 1.4px);
+  background-size: 26px 26px;
+  -webkit-mask-image: radial-gradient(circle at 50% 0%, #000, transparent 80%);
+  mask-image: radial-gradient(circle at 50% 0%, #000, transparent 80%);
+  opacity: 0.5;
+}
+body::after {
+  content: ""; position: fixed; top: -240px; right: -140px; width: 680px; height: 680px; z-index: 0;
+  pointer-events: none; background: radial-gradient(circle, var(--glow) 0%, transparent 62%);
+  filter: blur(20px); opacity: 0.7;
+}
+/* el contenido por encima de la atmósfera */
+.app, .sh-top, .sh-shell { position: relative; z-index: 1; }
+/* headings Mission Control → Space Grotesk */
+h1, h2, h3, .disp { font-family: var(--disp); letter-spacing: -0.01em; }
 
 ::selection {
   background: var(--accent);
@@ -253,7 +267,7 @@ nav a.on .ic {
   border: 1px solid var(--stroke);
   border-radius: var(--r);
   padding: 11px 12px;
-  background: #fff;
+  background: var(--panel);
   cursor: pointer;
 }
 .proj .nm {
@@ -284,7 +298,7 @@ nav a.on .ic {
   bottom: calc(100% + 6px);
   left: 0;
   right: 0;
-  background: #fff;
+  background: var(--panel);
   border: 1px solid var(--stroke);
   border-radius: var(--r);
   box-shadow: 0 8px 28px rgba(0, 0, 0, 0.12);
@@ -349,7 +363,7 @@ header.top .sp {
   display: flex;
   align-items: center;
   gap: 8px;
-  background: #fff;
+  background: var(--panel);
   border: 1px solid var(--stroke);
   border-radius: 999px;
   padding: 7px 14px;
@@ -384,7 +398,7 @@ header.top .sp {
 }
 .bell {
   position: relative;
-  background: #fff;
+  background: var(--panel);
   border: 1px solid var(--stroke);
   border-radius: 50%;
   width: 34px;
@@ -540,7 +554,7 @@ header.top .sp {
   margin: 6px 0 22px;
 }
 .stat {
-  background: #fff;
+  background: var(--panel);
   border: 1px solid var(--stroke);
   border-radius: var(--r-lg);
   padding: 16px 18px;
@@ -591,7 +605,7 @@ header.top .sp {
   gap: 11px;
 }
 .run {
-  background: #fff;
+  background: var(--panel);
   border: 1px solid var(--stroke);
   border-radius: var(--r-lg);
   padding: 15px 18px;
@@ -710,7 +724,7 @@ header.top .sp {
   background: var(--accent-h);
 }
 .btn.ghost {
-  background: #fff;
+  background: var(--panel);
   border: 1px solid var(--stroke-strong);
   color: var(--ink);
 }
@@ -953,7 +967,7 @@ details.log-row[open] > summary::before {
   }
 }
 .card {
-  background: #fff;
+  background: var(--panel);
   border: 1px solid var(--stroke);
   border-radius: var(--r-lg);
   padding: 16px 18px;
@@ -1031,7 +1045,7 @@ details.log-row[open] > summary::before {
 .phase-stepper {
   display: flex;
   gap: 0;
-  background: #fff;
+  background: var(--panel);
   border: 1px solid var(--stroke);
   border-radius: var(--r);
   overflow: hidden;
@@ -1093,7 +1107,7 @@ details.log-row[open] > summary::before {
   display: flex;
   flex-direction: column;
   gap: 14px;
-  background: #fff;
+  background: var(--panel);
   border: 1px solid var(--stroke);
   border-radius: var(--r-lg);
   padding: 20px 22px;
@@ -1307,7 +1321,7 @@ details.log-row[open] > summary::before {
   gap: 10px;
 }
 .phase {
-  background: #fff;
+  background: var(--panel);
   border: 1px solid var(--stroke);
   border-radius: var(--r);
   padding: 13px 16px;
@@ -1348,7 +1362,7 @@ details.log-row[open] > summary::before {
   font-size: 12px;
 }
 .chat {
-  background: #fff;
+  background: var(--panel);
   border: 1px solid var(--stroke);
   border-radius: var(--r-lg);
   padding: 14px;
@@ -1380,7 +1394,7 @@ details.log-row[open] > summary::before {
 
 /* tickets + dag */
 .ttable {
-  background: #fff;
+  background: var(--panel);
   border: 1px solid var(--stroke);
   border-radius: var(--r-lg);
   overflow: hidden;
@@ -1422,7 +1436,7 @@ details.log-row[open] > summary::before {
   color: var(--accent);
 }
 .dag {
-  background: #fff;
+  background: var(--panel);
   border: 1px solid var(--stroke);
   border-radius: var(--r-lg);
   padding: 22px;
@@ -1441,7 +1455,7 @@ details.log-row[open] > summary::before {
   padding: 8px 14px;
   font-size: 13px;
   font-weight: 600;
-  background: #fff;
+  background: var(--panel);
 }
 .node.done {
   border-color: var(--emerald);
@@ -1555,7 +1569,7 @@ details.log-row[open] > summary::before {
   margin-top: 3px;
 }
 .x {
-  background: #fff;
+  background: var(--panel);
   border: 1px solid var(--stroke-strong);
   width: 30px;
   height: 30px;
@@ -1742,7 +1756,7 @@ details.log-row[open] > summary::before {
   padding: 9px 12px;
   font-family: var(--display);
   font-size: 14px;
-  background: #fff;
+  background: var(--panel);
   color: var(--ink);
 }
 .inp.mono {
@@ -1760,7 +1774,7 @@ details.log-row[open] > summary::before {
   border-radius: 999px;
   padding: 6px 12px;
   cursor: pointer;
-  background: #fff;
+  background: var(--panel);
 }
 .chip.on {
   background: var(--ink);
@@ -1781,7 +1795,7 @@ details.log-row[open] > summary::before {
   border: 1.5px solid var(--stroke-strong);
   border-radius: 10px;
   padding: 11px 14px;
-  background: #fff;
+  background: var(--panel);
   display: flex;
   align-items: center;
   gap: 10px;
@@ -1893,7 +1907,7 @@ details.log-row[open] > summary::before {
   font-family: var(--mono);
   font-size: 10.5px;
   color: var(--navy);
-  background: #fff;
+  background: var(--panel);
   border: 1px solid rgba(20, 40, 80, 0.18);
   border-radius: 999px;
   padding: 1px 8px;
@@ -1910,7 +1924,7 @@ details.log-row[open] > summary::before {
   gap: 10px;
 }
 .story-card {
-  background: #fff;
+  background: var(--panel);
   border: 1px solid var(--stroke-strong);
   border-radius: var(--r);
   overflow: hidden;
@@ -1948,7 +1962,7 @@ details.log-row[open] > summary::before {
   padding: 3px 9px;
   border-radius: 999px;
   border: 1px solid var(--stroke);
-  background: #fff;
+  background: var(--panel);
   color: var(--ink3);
   font-family: var(--mono);
 }
@@ -1981,7 +1995,7 @@ details.log-row[open] > summary::before {
 
 /* estados vacío / cargando / error */
 .placeholder {
-  background: #fff;
+  background: var(--panel);
   border: 1px dashed var(--stroke-strong);
   border-radius: var(--r-lg);
   padding: 40px 24px;
@@ -2138,7 +2152,7 @@ details.log-row[open] > summary::before {
 .docs-tree {
   position: sticky;
   top: 18px;
-  background: #fff;
+  background: var(--panel);
   border: 1px solid var(--stroke);
   border-radius: var(--r-lg);
   padding: 10px;
@@ -2206,7 +2220,7 @@ details.log-row[open] > summary::before {
 }
 
 .docs-reader {
-  background: #fff;
+  background: var(--panel);
   border: 1px solid var(--stroke);
   border-radius: var(--r-lg);
   padding: clamp(20px, 2.2vw, 40px) clamp(22px, 3vw, 56px);
@@ -2261,7 +2275,7 @@ details.log-row[open] > summary::before {
   height: 78vh;
   border: 1px solid var(--stroke);
   border-radius: var(--r);
-  background: #fff;
+  background: var(--panel);
 }
 
 /* ── Dependency graph (U3) ─────────────────────────────────────────────────── */
@@ -2349,7 +2363,7 @@ details.log-row[open] > summary::before {
   color: var(--ink);
 }
 .dag-seg-btn.on {
-  background: #fff;
+  background: var(--panel);
   color: var(--accent);
   box-shadow: 0 1px 3px rgba(13, 13, 15, 0.12);
 }
@@ -2397,7 +2411,7 @@ details.log-row[open] > summary::before {
   font-size: 17px;
   line-height: 1.5;
   color: var(--ink);
-  background: #fff;
+  background: var(--panel);
   border: 1.5px solid var(--stroke-strong);
   border-radius: var(--r-lg);
   padding: 18px 20px;
@@ -2418,7 +2432,7 @@ details.log-row[open] > summary::before {
 .entry-chip {
   appearance: none;
   border: 1px solid var(--stroke);
-  background: #fff;
+  background: var(--panel);
   border-radius: 999px;
   padding: 7px 14px;
   font-size: 12.5px;
@@ -2440,7 +2454,7 @@ details.log-row[open] > summary::before {
   flex: 1;
   display: flex;
   align-items: center;
-  background: #fff;
+  background: var(--panel);
   border: 1.5px solid var(--stroke-strong);
   border-radius: var(--r);
   padding: 0 14px;
@@ -2623,7 +2637,7 @@ details.log-row[open] > summary::before {
   margin-top: 22px;
 }
 .ov-card {
-  background: #fff;
+  background: var(--panel);
   border: 1px solid var(--stroke);
   border-radius: var(--r-lg);
   padding: 18px 20px;
@@ -2966,7 +2980,7 @@ details.log-row[open] > summary::before {
   padding: 1px 2px 16px 1px;
 }
 .kb-card {
-  background: #fff;
+  background: var(--panel);
   border: 1px solid var(--stroke);
   border-radius: var(--r);
   padding: 10px 12px;
@@ -3172,7 +3186,7 @@ details.log-row[open] > summary::before {
   max-width: 1440px;
 }
 .sprint-card {
-  background: #fff;
+  background: var(--panel);
   border: 1px solid var(--stroke);
   border-radius: var(--r-lg);
   box-shadow: var(--shadow-soft);
@@ -3373,7 +3387,7 @@ details.log-row[open] > summary::before {
   box-shadow: var(--shadow-accent);
 }
 .brain-bubble.assistant {
-  background: #fff;
+  background: var(--panel);
   color: var(--ink);
   border: 1px solid var(--stroke);
   box-shadow: var(--shadow-soft);
@@ -3435,14 +3449,14 @@ details.log-row[open] > summary::before {
 .brain-action .h .tool {
   font-family: var(--mono);
   font-size: 12px;
-  background: #fff;
+  background: var(--panel);
   border: 1px solid var(--accent-line);
   padding: 1px 7px;
   border-radius: 6px;
   color: var(--accent-h);
 }
 .brain-action pre {
-  background: #fff;
+  background: var(--panel);
   border: 1px solid var(--stroke);
   border-radius: 8px;
   padding: 9px 11px;
@@ -3481,7 +3495,7 @@ details.log-row[open] > summary::before {
   border-radius: 13px;
   font-family: var(--display);
   font-size: 14px;
-  background: #fff;
+  background: var(--panel);
   color: var(--ink);
   line-height: 1.45;
 }
@@ -4311,7 +4325,7 @@ main:has(.studio-shell) > .studio-shell {
   box-sizing: border-box;
   border: 1.5px solid var(--stroke-strong);
   border-radius: 11px;
-  background: #fff;
+  background: var(--panel);
   box-shadow: 0 2px 8px rgba(13, 13, 15, 0.06);
   cursor: pointer;
   user-select: none;
@@ -4371,7 +4385,7 @@ main:has(.studio-shell) > .studio-shell {
   transform: rotate(45deg);
   border: 1.5px solid var(--stroke-strong);
   border-radius: 8px;
-  background: #fff;
+  background: var(--panel);
   display: flex;
   align-items: center;
   justify-content: center;

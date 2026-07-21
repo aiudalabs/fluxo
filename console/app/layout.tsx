@@ -14,14 +14,13 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html lang="es">
       <head>
-        {/* Anti-flash: aplica el tema guardado antes del primer paint (Fluxo default light). */}
-        <script dangerouslySetInnerHTML={{ __html: `try{if(localStorage.getItem('fluxo_theme')==='dark')document.documentElement.setAttribute('data-theme','dark')}catch(e){}` }} />
-        <link rel="preconnect" href="https://api.fontshare.com" crossOrigin="" />
-        <link href="https://api.fontshare.com/v2/css?f[]=satoshi@400,500,700,900&display=swap" rel="stylesheet" />
+        {/* Anti-flash · Mission Control es dark-first: aplica dark salvo que el usuario haya elegido light. */}
+        <script dangerouslySetInnerHTML={{ __html: `try{if(localStorage.getItem('fluxo_theme')!=='light')document.documentElement.setAttribute('data-theme','dark')}catch(e){document.documentElement.setAttribute('data-theme','dark')}` }} />
         <link rel="preconnect" href="https://fonts.googleapis.com" />
         <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="" />
+        {/* Mission Control: Space Grotesk (display) · Inter (UI) · JetBrains Mono (data). */}
         <link
-          href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=JetBrains+Mono:wght@400;500&display=swap"
+          href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500;700&display=swap"
           rel="stylesheet"
         />
       </head>
