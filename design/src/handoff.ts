@@ -6,7 +6,7 @@
 // que publishBacklog espera, y lo publicamos vía el store (RLS por tenant). El outcome se
 // audita en el brain.
 
-import { readFileSync } from "node:fs";
+import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import yaml from "js-yaml";
 import type { HandoffExecutor } from "./engine.ts";
@@ -49,6 +49,33 @@ export function parseBacklog(raw: string): { sprints: SprintSeed[]; stories: Sto
     screen_key: s.screen_key && s.screen_key !== "none" ? s.screen_key : undefined,
   }));
   return { sprints, stories };
+}
+
+// serializeBacklog: {sprints, stories} → docs/backlog.yaml (el schema del scrum-master que
+// parseBacklog lee de vuelta). Se usa para REGENERAR el backlog del repo desde la DB tras un
+// iterate — donde el workdir trae solo el delta. Round-trip con parseBacklog (test). NO preserva
+// las anotaciones design-time del scrum-master (coverage/out_of_scope/epic.name) porque no viven
+// en la DB → por eso el handoff solo regenera cuando el workdir era un DELTA (ver makeHandoff).
+export function serializeBacklog(sprints: SprintSeed[], stories: StorySeed[]): string {
+  const epicId = stories.find((s) => s.epic_id)?.epic_id;
+  const doc: RawBacklog = {
+    ...(epicId ? { epic: { id: epicId } } : {}),
+    sprints: sprints.map((s) => ({ id: s.key, name: s.title, goal: s.goal || undefined })),
+    stories: stories.map((s) => ({
+      id: s.key,
+      title: s.title,
+      ...(s.lane ? { owner: s.lane } : {}),
+      ...(s.sprint ? { sprint_id: s.sprint } : {}),
+      ...(s.deps?.length ? { deps: s.deps } : {}),
+      ...(s.body ? { body: s.body } : {}),
+      ...(s.acceptance ? { acceptance: s.acceptance } : {}),
+      ...(s.kind ? { kind: s.kind } : {}),
+      ...(s.screen_key ? { screen_key: s.screen_key } : {}),
+    })),
+  };
+  return "# backlog.yaml — regenerado desde la DB (verdad mergeada) tras el handoff de un incremento.\n" +
+    "# Es la fuente de las stories/deps; las anotaciones de cobertura viven en el brain versionado.\n" +
+    yaml.dump(doc, { lineWidth: 100, noRefs: true });
 }
 
 // slugify: nombre de proyecto → nombre de repo válido (minúsculas, guiones).
@@ -210,6 +237,21 @@ export function makeHandoff(store: SupabaseDesignStore, workdir: string, github?
       const r = await store.publishBacklog(sprints, stories);
       await store.brainAppend("backlog_published", { sprints: r.sprints, stories: r.stories }, "engine:handoff");
       console.log(`  ↪ handoff: publicadas ${r.stories} stories en ${r.sprints} sprints`);
+      // Deuda-chica 🟠 (2026-07-20): en un iterate el docs/backlog.yaml del workdir es SOLO el DELTA.
+      // publishBacklog mergea a la DB (aditivo, ok), pero planRepoDocs commitea lo que hay en el
+      // workdir → pisaría el backlog completo del repo con el delta (y loadProjectDocs lo sombraría
+      // para el próximo iterate). Fix: si la DB quedó con MÁS stories que las del workdir, el workdir
+      // era un delta → regenerá el backlog del workdir desde la DB (verdad mergeada) ANTES de
+      // commitear. Un diseño fresco (mismos counts) NO se toca → preserva coverage/out_of_scope (P8-A).
+      try {
+        const merged = await store.loadBacklog();
+        if (merged.stories.length > stories.length) {
+          writeFileSync(join(workdir, "docs", "backlog.yaml"), serializeBacklog(merged.sprints, merged.stories), "utf8");
+          console.log(`  ↪ backlog.yaml regenerado desde la DB: ${merged.stories.length} stories mergeadas (el workdir traía ${stories.length}, un delta)`);
+        }
+      } catch (e) {
+        console.error(`  ⚠ no pude regenerar backlog.yaml desde la DB (se commitea el del workdir): ${e instanceof Error ? e.message : e}`);
+      }
       if (github) {
         try {
           await publishToGithub(store, workdir, github, stories);

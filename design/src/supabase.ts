@@ -305,6 +305,34 @@ export class SupabaseDesignStore {
     return { sprints: sprintKeyToId.size, stories: storyKeyToId.size };
   }
 
+  // loadBacklog reconstruye el backlog COMPLETO del proyecto desde la DB (la verdad ya mergeada:
+  // publishBacklog es aditivo). Devuelve el mismo shape que parseBacklog para que el handoff pueda
+  // regenerar docs/backlog.yaml tras un iterate (donde el workdir trae SOLO el delta). Reconstruye
+  // `sprint` (uuid→key) y `deps` (blocked_by uuid[]→keys) via los mapas id→key.
+  async loadBacklog(): Promise<{ sprints: SprintSeed[]; stories: StorySeed[] }> {
+    const proj = this.cfg.project;
+    const sres = await this.rest(`/sprints?project_id=eq.${proj}&select=id,key,title,goal,position&order=position`, { method: "GET", prefer: "count=none" });
+    const sprintRows = (await sres.json()) as Array<{ id: string; key: string; title: string | null; goal: string | null; position: number | null }>;
+    const stres = await this.rest(`/stories?project_id=eq.${proj}&select=id,key,title,lane,sprint_id,body,acceptance,epic_id,kind,screen_key,blocked_by&order=key`, { method: "GET", prefer: "count=none" });
+    const storyRows = (await stres.json()) as Array<{ id: string; key: string; title: string | null; lane: string | null; sprint_id: string | null; body: string | null; acceptance: string | null; epic_id: string | null; kind: string | null; screen_key: string | null; blocked_by: string[] | null }>;
+    const sprintIdToKey = new Map(sprintRows.map((r) => [r.id, r.key]));
+    const storyIdToKey = new Map(storyRows.map((r) => [r.id, r.key]));
+    const sprints: SprintSeed[] = sprintRows.map((r, i) => ({ key: r.key, title: r.title ?? r.key, goal: r.goal ?? "", position: r.position ?? i }));
+    const stories: StorySeed[] = storyRows.map((r) => ({
+      key: r.key,
+      title: r.title ?? r.key,
+      body: r.body ?? undefined,
+      acceptance: r.acceptance ?? undefined,
+      lane: r.lane ?? "",
+      sprint: r.sprint_id ? sprintIdToKey.get(r.sprint_id) : undefined,
+      deps: (r.blocked_by ?? []).map((id) => storyIdToKey.get(id)).filter((k): k is string => !!k),
+      epic_id: r.epic_id ?? undefined,
+      kind: r.kind ?? undefined,
+      screen_key: r.screen_key ?? undefined,
+    }));
+    return { sprints, stories };
+  }
+
   // sink wires phase lifecycle to design_phases and the handoff to the run status.
   get sink(): EngineSink {
     return {
