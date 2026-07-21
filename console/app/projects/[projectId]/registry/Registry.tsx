@@ -115,7 +115,7 @@ export default function Registry() {
           ) : (
             <div className="reg-grid">
               {items.map((it) => (
-                <button key={it.id} className={`reg-item${sel?.id === it.id ? " on" : ""}`} onClick={() => openItem(tab, it.id)}>
+                <button key={it.id} className="reg-item" onClick={() => openItem(tab, it.id)}>
                   <div className="rid">{tab}/{it.id}{it.model && <span className="tag">{it.model}</span>}</div>
                   <div className="rnm">{it.id.replace(/[-_]/g, " ").replace(/\b\w/g, (c) => c.toUpperCase())}</div>
                   {it.summary && <div className="rds" title={it.summary}>{it.summary}</div>}
