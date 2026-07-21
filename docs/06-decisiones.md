@@ -79,6 +79,11 @@ tokens pegados. **N2 (objetivo)** el *feel* de "un click" sin ser hosting compan
 queda en su cuenta (BYO intacto). Es el provisioning-auto que D3 difirió a v1.1. **N3 (DESCARTADO)** ser Lovable/Replit
 (`*.fluxo.app`, Fluxo hostea): sería otro producto (COGS + ops de hosting multi-tenant + inversión del lock-in) y rompe
 la golden rule #5.
+- **N2 auto-provision (Deploy · A3) — diferido a v1.1, diseño en `docs/13`:** el *cómo* de N2 (OAuth app de Fluxo,
+  crear el proyecto vía Resource Manager/Firebase Management/Billing APIs, mintear la SA umbrella) está diseñado en
+  `docs/13-A3-auto-provision-diseno.md` con **5 decisiones abiertas ⚠️** (OAuth app + verification de Google · storage
+  del refresh token/Vault · scopes mínimos · parent org-vs-sin-org · fallo parcial/idempotencia). El build espera esas
+  decisiones — A1/A2 (N1 self-serve) ya entregan el valor; A3 es optimización de fricción, no desbloqueo.
 - **Preview/verify por plataforma (todo BYO, cableado como targets en `provisioning.yaml`, estilo `deploy.yml`):**
   - **Web:** preview = URL de Vercel; verify = **Playwright** (`e2e-verify` + art-director, ya existe).
   - **Mobile (Flutter+Firebase):** preview cliente = **Flutter Web build → Firebase Hosting** (URL que el cliente toca
