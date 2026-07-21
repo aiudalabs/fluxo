@@ -4938,3 +4938,16 @@ main:has(.studio-shell) > .studio-shell {
 .artifact-code .tok-punct { color: var(--ink3); }
 .artifact-code .tok-flag { color: var(--amber); }
 .artifact-code .tok-var { color: var(--accent); }
+
+/* Mission Control · override del vendor @xyflow/react (tab Grafo del Flow) */
+.react-flow__controls { box-shadow: var(--top-hi); border-radius: 10px; overflow: hidden; }
+.react-flow__controls-button {
+  background: var(--panel-2);
+  border-bottom: 1px solid var(--stroke);
+  color: var(--ink2);
+  fill: var(--ink2);
+}
+.react-flow__controls-button:hover { background: var(--panel-3); }
+.react-flow__controls-button svg { fill: var(--ink2); }
+.react-flow__attribution { background: transparent; color: var(--ink4); }
+.react-flow__edge-path { stroke: var(--stroke-strong); }
