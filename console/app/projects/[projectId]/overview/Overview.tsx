@@ -142,7 +142,7 @@ export default function Overview() {
         </div>
         <div className="stat">
           <div className="eyebrow">{t("overview.kpi.inReview")}</div>
-          <div className="n serif" style={{ color: "#7a5d00" }}>{stats.inReview}</div>
+          <div className="n serif" style={{ color: "var(--amber)" }}>{stats.inReview}</div>
           <div className="sub">{t("overview.kpi.inReview.sub")}</div>
         </div>
         <div className="stat">

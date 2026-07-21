@@ -452,6 +452,6 @@ function PhasePanel({ phase, gate, onError }: { phase: Phase; gate: Gate | null;
 
 const inp: React.CSSProperties = {
   width: "100%", boxSizing: "border-box", padding: "8px 10px", fontSize: 13.5,
-  background: "#fff", color: "var(--ink)", border: "1px solid var(--stroke-strong)", borderRadius: 10,
+  background: "var(--panel)", color: "var(--ink)", border: "1px solid var(--stroke-strong)", borderRadius: 10,
   fontFamily: "var(--display)",
 };

@@ -654,44 +654,38 @@ header.top .sp {
   align-items: flex-end;
   gap: 9px;
 }
+/* Mission Control · status como tag con dot que brilla (mono). ready=cyan, running=accent-pulse. */
 .pill {
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.04em;
-  padding: 5px 11px;
-  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--mono);
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  padding: 4px 10px;
+  border-radius: 8px;
   text-transform: uppercase;
+  white-space: nowrap;
 }
-.pill.run_ {
-  background: var(--navy-soft);
-  color: var(--navy);
+.pill::before {
+  content: "";
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: currentColor;
+  box-shadow: 0 0 7px currentColor;
 }
-.pill.await {
-  background: var(--accent-soft);
-  color: var(--accent);
-}
-.pill.done {
-  background: var(--emerald-soft);
-  color: var(--emerald);
-}
-.pill.queued {
-  background: var(--bg3);
-  color: var(--ink3);
-}
-.pill.fail {
-  background: var(--danger-soft);
-  color: var(--danger);
-}
-/* Estados de story que antes colapsaban al color de otro (ready→run_,
-   in_review→queued): cada uno con token propio (ver lib/statusToken.ts). */
-.pill.ready {
-  background: var(--accent-soft);
-  color: var(--accent);
-}
-.pill.review {
-  background: var(--amber-soft);
-  color: var(--amber);
-}
+.pill.queued { background: var(--bg3); color: var(--ink3); }
+.pill.ready  { background: var(--cyan-soft); color: var(--cyan); }
+.pill.run_,
+.pill.await  { background: var(--accent-soft); color: var(--accent); }
+.pill.run_::before { animation: mc-pulse 1.6s ease-in-out infinite; }
+.pill.review { background: var(--amber-soft); color: var(--amber); }
+.pill.done   { background: var(--emerald-soft); color: var(--emerald); }
+.pill.fail,
+.pill.lost   { background: var(--danger-soft); color: var(--danger); }
+@keyframes mc-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
 .tag {
   font-size: 10.5px;
   font-family: var(--mono);
@@ -2691,15 +2685,17 @@ details.log-row[open] > summary::before {
 }
 /* status colors (shared by sprint fill + tag) */
 .st-done    { background: var(--emerald); }
-.st-running { background: var(--navy); }
-.st-failed  { background: #c55; }
-.st-in_review { background: #b48c14; }
-.st-backlog, .st-ready { background: var(--ink4); }
+.st-running { background: var(--accent); }
+.st-failed  { background: var(--danger); }
+.st-in_review { background: var(--amber); }
+.st-backlog { background: var(--ink4); }
+.st-ready   { background: var(--cyan); }
 .ov-sprint-tag.st-done    { background: var(--emerald-soft); color: var(--emerald); }
-.ov-sprint-tag.st-running { background: var(--navy-soft); color: var(--navy); }
-.ov-sprint-tag.st-failed  { background: rgba(180,30,30,0.08); color: #9a2020; }
-.ov-sprint-tag.st-in_review { background: rgba(180,140,20,0.1); color: #7a5d00; }
-.ov-sprint-tag.st-backlog, .ov-sprint-tag.st-ready { background: var(--bg2); color: var(--ink4); }
+.ov-sprint-tag.st-running { background: var(--accent-soft); color: var(--accent); }
+.ov-sprint-tag.st-failed  { background: var(--danger-soft); color: var(--danger); }
+.ov-sprint-tag.st-in_review { background: var(--amber-soft); color: var(--amber); }
+.ov-sprint-tag.st-backlog { background: var(--bg2); color: var(--ink4); }
+.ov-sprint-tag.st-ready { background: var(--cyan-soft); color: var(--cyan); }
 
 @media (max-width: 1000px) {
   .ov-cols { grid-template-columns: 1fr; }
@@ -2980,19 +2976,28 @@ details.log-row[open] > summary::before {
   padding: 1px 2px 16px 1px;
 }
 .kb-card {
-  background: var(--panel);
+  background: var(--card-grad);
   border: 1px solid var(--stroke);
-  border-radius: var(--r);
-  padding: 10px 12px;
+  border-radius: 14px;
+  padding: 15px 16px;
   cursor: pointer;
-  transition: border-color 0.15s var(--ease), box-shadow 0.15s var(--ease);
+  box-shadow: var(--top-hi);
+  transition: border-color 0.18s var(--ease), box-shadow 0.2s var(--ease), transform 0.18s var(--ease);
 }
 .kb-card:hover {
   border-color: var(--stroke-strong);
-  box-shadow: 0 6px 18px rgba(13, 13, 15, 0.07);
+  transform: translateY(-2px);
+  box-shadow: var(--top-hi), 0 14px 34px -16px rgba(0, 0, 0, 0.7);
 }
 .kb-card.gated {
-  opacity: 0.66;
+  opacity: 0.6;
+}
+/* Story en ejecución = el agente vivo: borde ámbar que brilla (glass box). */
+.kb-card.running,
+.kb-card:has(.pill.run_) {
+  border-color: var(--accent-line);
+  border-left: 2px solid var(--accent);
+  box-shadow: var(--top-hi), 0 0 30px -10px var(--glow-strong);
 }
 .kb-top {
   display: flex;
@@ -3013,15 +3018,18 @@ details.log-row[open] > summary::before {
   opacity: 0.85;
 }
 .kb-ttl {
-  font-size: 13px;
-  font-weight: 600;
-  line-height: 1.35;
+  font-family: var(--disp);
+  font-size: 15px;
+  font-weight: 500;
+  line-height: 1.32;
+  letter-spacing: -0.01em;
+  color: var(--ink);
 }
 .kb-body {
-  margin-top: 5px;
-  font-size: 11.5px;
+  margin-top: 8px;
+  font-size: 13px;
   color: var(--ink3);
-  line-height: 1.4;
+  line-height: 1.5;
   display: -webkit-box;
   -webkit-line-clamp: 3;
   -webkit-box-orient: vertical;
@@ -4363,11 +4371,11 @@ main:has(.studio-shell) > .studio-shell {
   color: var(--ink4);
 }
 /* Estado de la fase/gate (5 PhaseState). */
-.flow-node.st-pending, .flow-gate.st-pending { border-color: rgba(13,13,15,0.14); }
-.flow-node.st-running, .flow-gate.st-running { border-color: rgba(20,40,80,0.35); background: var(--navy-soft); }
+.flow-node.st-pending, .flow-gate.st-pending { border-color: var(--stroke-strong); }
+.flow-node.st-running, .flow-gate.st-running { border-color: var(--accent-line); background: var(--accent-soft); box-shadow: 0 0 24px -8px var(--glow-strong); }
 .flow-node.st-awaiting, .flow-gate.st-awaiting { border-color: var(--accent-line); background: var(--accent-soft); }
-.flow-node.st-approved, .flow-gate.st-approved { border-color: var(--emerald); background: var(--emerald-soft); }
-.flow-node.st-failed, .flow-gate.st-failed { border-color: #c55; background: var(--danger-soft); }
+.flow-node.st-approved, .flow-gate.st-approved { border-color: color-mix(in srgb, var(--emerald) 40%, transparent); background: var(--emerald-soft); }
+.flow-node.st-failed, .flow-gate.st-failed { border-color: color-mix(in srgb, var(--danger) 40%, transparent); background: var(--danger-soft); }
 .flow-glyph.ph-ok { background: var(--emerald); color: #fff; }
 .flow-glyph.ph-run { background: var(--navy); color: #fff; }
 .flow-glyph.ph-await { background: var(--accent); color: #fff; }
@@ -4563,20 +4571,19 @@ main:has(.studio-shell) > .studio-shell {
 }
 
 /* ══ Vista CICLO de /flow — diagrama del ciclo Scrum portado del doc SDLC-map ══ */
-/* Tema PROPIO del componente: la paleta Aiuda del documento vive como CSS vars
-   LOCALES (no el theme de la consola), así el diagrama se ve igual en light/dark. */
+/* Mission Control: el diagrama del ciclo usa los tokens de la consola → flipea con el tema. */
 .cyc {
-  --cyc-orange: #e8440a;
-  --cyc-orange-soft: #fdede5;
-  --cyc-blue: #1660c9;
-  --cyc-blue-soft: #e8f0fd;
-  --cyc-amber: #b45309;
-  --cyc-fail: #b3261e;
-  --cyc-ink: #141310;
-  --cyc-ink2: #57534a;
-  --cyc-white: #ffffff;
-  --cyc-card: #ffffff;
-  --cyc-line: #e6e1d8;
+  --cyc-orange: var(--accent);
+  --cyc-orange-soft: var(--accent-soft);
+  --cyc-blue: var(--cyan);
+  --cyc-blue-soft: var(--cyan-soft);
+  --cyc-amber: var(--amber);
+  --cyc-fail: var(--danger);
+  --cyc-ink: var(--ink);
+  --cyc-ink2: var(--ink3);
+  --cyc-white: var(--panel);
+  --cyc-card: transparent;
+  --cyc-line: var(--stroke);
 }
 /* El canvas del ciclo hace SCROLL (no pan/zoom): el SVG escala por viewBox. */
 .cyc-scroll {

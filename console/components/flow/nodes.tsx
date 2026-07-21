@@ -86,7 +86,7 @@ export interface StoryNodeData extends Record<string, unknown> {
 function storyNodeStyle(s: TicketStatus) {
   const tok = statusToken(s);
   return {
-    background: s === "backlog" ? "#fff" : tok.soft,
+    background: s === "backlog" ? "var(--panel)" : tok.soft,
     borderColor: tok.border,
     color: s === "backlog" ? "var(--ink4)" : tok.color,
   };
