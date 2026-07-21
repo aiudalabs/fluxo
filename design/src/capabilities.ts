@@ -162,3 +162,59 @@ export function resolveProjectCapabilities(registryDir: string, provisioningYaml
   }
   return out;
 }
+
+// ── P6-2b · Paso 3 — readiness gate del dispatch (needs por-story + green set) ──────────────────
+// El gate del Paso 1 REPORTA (no traba). Este BLOQUEA (esconde ▶) → el match "la story necesita X"
+// debe ser CONSERVADOR: una story necesita la capability X solo si REFERENCIA el nombre EXACTO de su
+// Actions secret (ej. FIREBASE_SERVICE_ACCOUNT) en su body/acceptance. Substring case-sensitive del
+// nombre del secret (específico) → minimiza falsos positivos (un falso positivo bloquea una story
+// buildeable; preferimos NO gatear ante la duda). Los nombres salen del registry, no hardcodeados.
+export function storyNeedsCapabilities(
+  caps: ResolvedCapability[],
+  story: { body?: string | null; acceptance?: string | null },
+): string[] {
+  const text = `${story.body ?? ""}\n${story.acceptance ?? ""}`;
+  const out: string[] = [];
+  for (const c of caps) {
+    if (c.secret && text.includes(c.secret)) out.push(c.id);
+  }
+  return out;
+}
+
+// CapabilityGate: lo que candidates() necesita para el readiness gate (Paso 3). `needsByStoryId`:
+// por story (id) qué capabilities referencia (solo las no-vacías). `green`: el set de capabilities
+// 🟢 = las NECESITADAS por alguna story cuyo Actions secret está presente.
+export interface CapabilityGate {
+  needsByStoryId: Map<string, string[]>;
+  green: Set<string>;
+}
+
+// computeCapabilityGate: arma el CapabilityGate dado las capabilities resueltas del proyecto y un
+// probe inyectado de "¿el Actions secret está presente?". Puro salvo el probe (el I/O de GitHub vive
+// en el caller: worker=app token, console=user token). Solo probea las capabilities REFERENCIADAS
+// por alguna story (barato: cero probes si nada las necesita). El probe es TRI-ESTADO: true=presente
+// → 🟢; false=confirmado ausente (404) → NO 🟢 (gatea); null=indeterminado (403/red/sin token) →
+// FAIL-OPEN 🟢 (no gateamos ante la duda, misma convención que docsGuardOk(null)).
+export async function computeCapabilityGate(
+  caps: ResolvedCapability[],
+  stories: Array<{ id: string; body?: string | null; acceptance?: string | null }>,
+  secretPresent: (secretName: string) => Promise<boolean | null>,
+): Promise<CapabilityGate> {
+  const needsByStoryId = new Map<string, string[]>();
+  const needed = new Set<string>();
+  for (const s of stories) {
+    const needs = storyNeedsCapabilities(caps, s);
+    if (needs.length) {
+      needsByStoryId.set(s.id, needs);
+      for (const id of needs) needed.add(id);
+    }
+  }
+  const green = new Set<string>();
+  for (const id of needed) {
+    const cap = caps.find((c) => c.id === id);
+    if (!cap?.secret) { green.add(id); continue; } // sin secret que gatear → 🟢
+    const present = await secretPresent(cap.secret); // true | false | null
+    if (present !== false) green.add(id);            // presente O indeterminado → 🟢 (fail-open on doubt)
+  }
+  return { needsByStoryId, green };
+}

@@ -12,7 +12,8 @@
 //      es best-effort y NO revierte (revertir re-despacharía = segundo run pago).
 import { NextRequest, NextResponse } from "next/server";
 import { verifySessionJwt, getUserToken, admin } from "@/lib/server/githubAuth";
-import { loadDispatchContext, computeCandidates } from "@/lib/server/dispatchData";
+import { loadDispatchContext, computeCandidates, loadCapabilityGate } from "@/lib/server/dispatchData";
+import { githubSecretProbe } from "@/lib/server/capabilitiesData";
 import { storyPrompt, sprintPrompt } from "../../../../../../design/src/dispatch.ts";
 
 const API = "https://api.github.com";
@@ -45,17 +46,23 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
   const slug = slugOf(context.repo);
   if (!slug) return NextResponse.json({ error: "el proyecto todavía no tiene repo" }, { status: 400 });
 
+  // Token del usuario ARRIBA: lo necesita el readiness gate por capability (probe de secrets) además
+  // del disparo. Re-derivar la verdad del despacho acá (money-safe) incluye el gate: una story que
+  // referencia el secret de una capability aún no 🟢 NO es candidata (nunca se dispara un run que se
+  // estrellaría). Probe fail-open ante la duda (misma verdad que GET /candidates).
+  const token = await getUserToken(session.sub);
+  const { gate } = await loadCapabilityGate(admin(), id, context.storyRows, githubSecretProbe(slug, token));
+
   // Re-derivar: la verdad del despacho se recomputa acá, no viene del cliente.
-  const cands = computeCandidates(context.storyRows, context.sprintRows, context.settings);
+  const cands = computeCandidates(context.storyRows, context.sprintRows, context.settings, gate);
   const cand = cands.find((c) => c.kind === body.kind && c.id === body.id);
-  // 409: la unidad dejó de estar lista (ya se despachó, cambió una dep, etc.) — el board recarga.
+  // 409: la unidad dejó de estar lista (ya se despachó, cambió una dep, capability no 🟢, etc.).
   if (!cand) return NextResponse.json({ error: "la unidad ya no está lista para despachar" }, { status: 409 });
   if (cand.channel !== "claude_action") {
     return NextResponse.json({ error: `canal "${cand.channel}" no implementado aún (solo claude_action)` }, { status: 501 });
   }
   if (cand.members.length === 0) return NextResponse.json({ error: "candidato sin stories" }, { status: 409 });
 
-  const token = await getUserToken(session.sub);
   if (!token) return NextResponse.json({ error: "github no conectado" }, { status: 403 });
 
   const prompt = cand.kind === "sprint" ? sprintPrompt(cand.title, cand.members) : storyPrompt(cand.members[0]);

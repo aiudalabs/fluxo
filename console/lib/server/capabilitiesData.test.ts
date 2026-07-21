@@ -10,6 +10,7 @@ import {
   secretWhitelist,
   isAllowedSecret,
   resolveProjectCapabilities,
+  githubSecretProbe,
   CLAUDE_SECRET,
   type ResolvedCapability,
 } from "./capabilitiesData.ts";
@@ -54,4 +55,37 @@ test("un proyecto sin provisioning ⇒ solo el token de Claude es sembrable", ()
   assert.deepEqual(caps, []);
   assert.equal(isAllowedSecret(caps, CLAUDE_SECRET), true);
   assert.equal(isAllowedSecret(caps, "FIREBASE_SERVICE_ACCOUNT"), false);
+});
+
+// ── P6-2b · Paso 3 · githubSecretProbe: el probe tri-estado del readiness gate ────
+test("githubSecretProbe: sin token → null (indeterminado, fail-open) sin llamar a la red", async () => {
+  let called = false;
+  const orig = globalThis.fetch;
+  globalThis.fetch = (async () => { called = true; return new Response("", { status: 200 }); }) as typeof fetch;
+  try {
+    assert.equal(await githubSecretProbe("o/r", null)("FIREBASE_SERVICE_ACCOUNT"), null);
+    assert.equal(called, false, "sin token no debe tocar la red");
+  } finally { globalThis.fetch = orig; }
+});
+
+test("githubSecretProbe: 200 → true (🟢), 404 → false (ausente, gatea), 403 → null (fail-open)", async () => {
+  const orig = globalThis.fetch;
+  const withStatus = async (status: number) => {
+    globalThis.fetch = (async () => new Response("", { status })) as typeof fetch;
+    return githubSecretProbe("o/r", "tok")("FIREBASE_SERVICE_ACCOUNT");
+  };
+  try {
+    assert.equal(await withStatus(200), true);
+    assert.equal(await withStatus(404), false);
+    assert.equal(await withStatus(403), null);
+    assert.equal(await withStatus(500), null);
+  } finally { globalThis.fetch = orig; }
+});
+
+test("githubSecretProbe: error de red → null (fail-open, no gatea ante la duda)", async () => {
+  const orig = globalThis.fetch;
+  globalThis.fetch = (async () => { throw new Error("ECONNRESET"); }) as typeof fetch;
+  try {
+    assert.equal(await githubSecretProbe("o/r", "tok")("FIREBASE_SERVICE_ACCOUNT"), null);
+  } finally { globalThis.fetch = orig; }
 });

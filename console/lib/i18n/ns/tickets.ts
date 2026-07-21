@@ -120,6 +120,7 @@ export const tickets = {
     // Sprints
     "tickets.sprints.empty": "Sin sprints planeados todavía.",
     "tickets.sprints.waitingOn": "Esperando a {list}",
+    "tickets.capWaiting": "Esperando capacidad: {list}",
     "tickets.sprints.requeueFailed": "↻ Reencolar fallidas ({n})",
     "tickets.sprints.requeueTitle": "Devuelve al backlog todas las stories fallidas de este sprint para re-ejecutarlas",
     "tickets.sprints.requeueConfirm":
@@ -272,6 +273,7 @@ export const tickets = {
     "tickets.column.empty": "Empty",
     "tickets.sprints.empty": "No sprints planned yet.",
     "tickets.sprints.waitingOn": "Waiting on {list}",
+    "tickets.capWaiting": "Waiting on capability: {list}",
     "tickets.sprints.requeueFailed": "↻ Requeue failed ({n})",
     "tickets.sprints.requeueTitle": "Returns every failed story in this sprint to the backlog to re-run them",
     "tickets.sprints.requeueConfirm":
@@ -421,6 +423,7 @@ export const tickets = {
     "tickets.column.empty": "Vazio",
     "tickets.sprints.empty": "Nenhum sprint planejado ainda.",
     "tickets.sprints.waitingOn": "Aguardando {list}",
+    "tickets.capWaiting": "Aguardando capacidade: {list}",
     "tickets.sprints.requeueFailed": "↻ Reenfileirar falhas ({n})",
     "tickets.sprints.requeueTitle": "Devolve ao backlog todas as stories falhas deste sprint para reexecutá-las",
     "tickets.sprints.requeueConfirm":

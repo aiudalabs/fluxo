@@ -31,16 +31,19 @@ function acceptanceCount(accept?: string): number {
 interface StoryCardProps {
   ticket: OrchestratorTicket;
   gate?: string[];
+  capGate?: string[];
   candidate?: DispatchCandidate;
   onDispatch?: (c: DispatchCandidate) => void;
   onOpenTicket: (id: string) => void;
   onOpenRun: (id: string) => void;
 }
 
-function StoryCard({ ticket, gate, candidate, onDispatch, onOpenTicket, onOpenRun }: StoryCardProps) {
+function StoryCard({ ticket, gate, capGate, candidate, onDispatch, onOpenTicket, onOpenRun }: StoryCardProps) {
   const t = useT();
   const acs = acceptanceCount(ticket.acceptance);
   const gated = !!gate?.length && (ticket.status === "ready" || ticket.status === "backlog");
+  // Gate por capability (P6-2b Paso 3): la story referencia un secret aún no 🟢 → sin ▶, con motivo.
+  const capWaiting = !!capGate?.length && (ticket.status === "ready" || ticket.status === "backlog");
   return (
     <div
       className={`kb-card${gated ? " gated" : ""}`}
@@ -124,6 +127,9 @@ function StoryCard({ ticket, gate, candidate, onDispatch, onOpenTicket, onOpenRu
       {gated && (
         <div className="kb-gate">⧗ {t("tickets.sprints.waitingOn", { list: gate!.join(", ") })}</div>
       )}
+      {capWaiting && (
+        <div className="kb-gate">⧗ {t("tickets.capWaiting", { list: capGate!.join(", ") })}</div>
+      )}
       {ticket.deps && ticket.deps.length > 0 && (
         <div className="kb-deps">dep: {ticket.deps.join(", ")}</div>
       )}
@@ -139,6 +145,7 @@ interface KanbanColumnProps {
   status: TicketStatus;
   tickets: OrchestratorTicket[];
   gates: Map<string, string[]>;
+  capWaiting?: Map<string, string[]>;
   candidates?: Map<string, DispatchCandidate>;
   onDispatch?: (c: DispatchCandidate) => void;
   collapsed: boolean;
@@ -147,7 +154,7 @@ interface KanbanColumnProps {
   onOpenRun: (id: string) => void;
 }
 
-function KanbanColumn({ status, tickets, gates, candidates, onDispatch, collapsed, onToggle, onOpenTicket, onOpenRun }: KanbanColumnProps) {
+function KanbanColumn({ status, tickets, gates, capWaiting, candidates, onDispatch, collapsed, onToggle, onOpenTicket, onOpenRun }: KanbanColumnProps) {
   const t = useT();
   const tok = statusToken(status);
 
@@ -187,6 +194,7 @@ function KanbanColumn({ status, tickets, gates, candidates, onDispatch, collapse
               key={tk.id}
               ticket={tk}
               gate={tk.sprint_id ? gates.get(tk.sprint_id) : undefined}
+              capGate={capWaiting?.get(tk.id)}
               candidate={candidates?.get(tk.id)}
               onDispatch={onDispatch}
               onOpenTicket={onOpenTicket}
@@ -206,13 +214,14 @@ function KanbanColumn({ status, tickets, gates, candidates, onDispatch, collapse
 interface KanbanBoardProps {
   tickets: OrchestratorTicket[];
   gates: Map<string, string[]>;
+  capWaiting?: Map<string, string[]>;
   candidates?: Map<string, DispatchCandidate>;
   onDispatch?: (c: DispatchCandidate) => void;
   onOpenTicket: (id: string) => void;
   onOpenRun: (id: string) => void;
 }
 
-export function KanbanBoard({ tickets, gates, candidates, onDispatch, onOpenTicket, onOpenRun }: KanbanBoardProps) {
+export function KanbanBoard({ tickets, gates, capWaiting, candidates, onDispatch, onOpenTicket, onOpenRun }: KanbanBoardProps) {
   // Agrupar tickets por estado. El estado `ready` (derivado de candidates()) ya viene resuelto en
   // tk.status desde Board.tsx (una sola fuente para las 4 vistas + grafo), así que acá solo
   // agrupamos por status — sin lógica de "ready" duplicada.
@@ -237,6 +246,7 @@ export function KanbanBoard({ tickets, gates, candidates, onDispatch, onOpenTick
           status={s}
           tickets={byStatus.get(s) ?? []}
           gates={gates}
+          capWaiting={capWaiting}
           candidates={candidates}
           onDispatch={onDispatch}
           collapsed={isCollapsed(s)}

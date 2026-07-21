@@ -15,6 +15,7 @@ const st = (over: Partial<DStory>): DStory => ({
   id: over.id ?? `id-${++n}`, key: over.key ?? "S-0", title: over.title ?? "t", lane: over.lane ?? "",
   status: over.status ?? "backlog", sprintId: over.sprintId ?? null, deps: over.deps ?? [],
   issue: "issue" in over ? over.issue! : 1, body: over.body ?? null, acceptance: over.acceptance ?? null,
+  ...("needsCapabilities" in over ? { needsCapabilities: over.needsCapabilities } : {}),
 });
 const sprints = (...ss: DSprint[]) => new Map(ss.map((s) => [s.id, s]));
 
@@ -63,6 +64,50 @@ test("story mode: canal/modelo por lane se resuelven en el candidato", () => {
   assert.equal(c.channel, "copilot");
   assert.equal(c.model, "sonnet");
   assert.deepEqual(c.issues, [7]);
+});
+
+// ── P6-2b · Paso 3 · readiness gate por CAPABILITY (green set entra como param; needs por DStory) ──
+test("cap gate: sin needs y sin green set → candidato normal (backward compatible)", () => {
+  const s = st({ id: "a", issue: 1 });
+  assert.equal(candidates([s], sprints(), pol()).length, 1);            // firma vieja (default set vacío)
+  assert.equal(candidates([s], sprints(), pol(), new Set()).length, 1); // firma nueva, set vacío
+});
+
+test("story mode: needs una capability NO verde → NO candidato; verde → candidato", () => {
+  const s = st({ id: "a", issue: 1, needsCapabilities: ["firebase"] });
+  assert.deepEqual(candidates([s], sprints(), pol(), new Set()), []);              // firebase no verde
+  assert.deepEqual(candidates([s], sprints(), pol(), new Set(["other"])), []);     // otra verde, firebase no
+  const [c] = candidates([s], sprints(), pol(), new Set(["firebase"]));            // firebase verde
+  assert.equal(c?.id, "a");
+});
+
+test("story mode: needs vacío (emulador, no referencia el secret) → candidato aunque nada esté verde", () => {
+  const s = st({ id: "a", issue: 1, needsCapabilities: [] });
+  assert.equal(candidates([s], sprints(), pol(), new Set()).length, 1);
+});
+
+test("story mode: needs con VARIAS capabilities exige TODAS verdes (needs ⊆ green)", () => {
+  const s = st({ id: "a", issue: 1, needsCapabilities: ["firebase", "stripe"] });
+  assert.deepEqual(candidates([s], sprints(), pol(), new Set(["firebase"])), []);            // falta stripe
+  assert.equal(candidates([s], sprints(), pol(), new Set(["firebase", "stripe"])).length, 1); // ambas
+});
+
+test("sprint mode: un miembro backlog con need NO verde gatea TODO el sprint; verde lo libera", () => {
+  const a = st({ id: "a", key: "S1-01", sprintId: "sp1", issue: 11, needsCapabilities: [] });
+  const b = st({ id: "b", key: "S1-02", sprintId: "sp1", issue: 12, needsCapabilities: ["firebase"] });
+  const sm = sprints({ id: "sp1", key: "SP1", title: "Sprint 1" });
+  assert.deepEqual(candidates([a, b], sm, pol({ executionUnit: "sprint" }), new Set()), []);      // b gatea el sprint
+  const out = candidates([a, b], sm, pol({ executionUnit: "sprint" }), new Set(["firebase"]));    // firebase verde
+  assert.equal(out.length, 1);
+  assert.deepEqual(out[0].stories, ["a", "b"]);
+});
+
+test("sprint mode: la story con need ya DONE no gatea (solo backlog cuenta)", () => {
+  const done = st({ id: "a", key: "S1-01", sprintId: "sp1", status: "done", issue: 11, needsCapabilities: ["firebase"] });
+  const pend = st({ id: "b", key: "S1-02", sprintId: "sp1", status: "backlog", issue: 12, needsCapabilities: [] });
+  const out = candidates([done, pend], sprints({ id: "sp1", key: "SP1", title: "" }), pol({ executionUnit: "sprint" }), new Set());
+  assert.equal(out.length, 1);         // el done ya no exige la capability; el sprint corre por su backlog
+  assert.deepEqual(out[0].stories, ["b"]);
 });
 
 // ── SPRINT mode ────────────────────────────────────────────────────────────────────

@@ -4,9 +4,15 @@
 // de la DB). Ownership server-side por el tenant de la sesión. El board pinta el botón ▶ sobre
 // las unidades que este endpoint devuelve.
 import { NextRequest, NextResponse } from "next/server";
-import { verifySessionJwt, admin } from "@/lib/server/githubAuth";
-import { loadDispatchContext, computeCandidates } from "@/lib/server/dispatchData";
+import { verifySessionJwt, admin, getUserToken } from "@/lib/server/githubAuth";
+import { loadDispatchContext, computeCandidates, loadCapabilityGate, capWaitingByKey } from "@/lib/server/dispatchData";
+import { githubSecretProbe } from "@/lib/server/capabilitiesData";
 import type { DispatchCandidate } from "@/lib/types";
+
+function slugOf(repoUrl: string | null): string | null {
+  const m = (repoUrl ?? "").replace(/\/$/, "").match(/github\.com\/([^/]+)\/([^/]+?)(?:\.git)?$/);
+  return m ? `${m[1]}/${m[2]}` : null;
+}
 
 export async function GET(req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
   const auth = req.headers.get("authorization");
@@ -18,14 +24,24 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ id: string 
   if (!context) return NextResponse.json({ error: "project not found" }, { status: 404 });
 
   // Sin repo no hay a dónde despachar → sin candidatos (pero no es un error).
-  if (!context.repo) return NextResponse.json({ candidates: [] });
+  const slug = slugOf(context.repo);
+  if (!slug) return NextResponse.json({ candidates: [], capWaiting: {} });
 
-  const ui = computeCandidates(context.storyRows, context.sprintRows, context.settings);
+  // Readiness gate por capability (P6-2b Paso 3): resolvemos qué capabilities necesita cada story y
+  // cuáles están 🟢 (Actions secret presente, probeado con el token del usuario). Una story que
+  // referencia un secret aún no sembrado NO aparece como candidata (sin ▶) y el board la pinta
+  // "esperando capability". Probe fail-open: sin token / 403 / red → no gatea (misma verdad que POST).
+  const token = await getUserToken(session.sub);
+  const { gate, caps } = await loadCapabilityGate(admin(), id, context.storyRows, githubSecretProbe(slug, token));
+
+  const ui = computeCandidates(context.storyRows, context.sprintRows, context.settings, gate);
   // UICandidate → DispatchCandidate (shape que el board/KanbanBoard ya consume). `stories` = KEYs
   // para mapear el botón a cada card; `executor` = canal; `id` = KEY estable (handle del POST).
   const candidates: DispatchCandidate[] = ui.map((c) => ({
     kind: c.kind, id: c.id, title: c.title, stories: c.storyKeys,
     lane: c.lane, model: c.model, executor: c.channel,
   }));
-  return NextResponse.json({ candidates });
+  // capWaiting: por story KEY, las capabilities no-🟢 que la bloquean (para el "⧗ esperando capability").
+  const capWaiting = capWaitingByKey(context.storyRows, gate, caps);
+  return NextResponse.json({ candidates, capWaiting });
 }

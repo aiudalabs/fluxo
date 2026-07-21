@@ -14,6 +14,7 @@ import {
   registryDir,
   resolveProjectCapabilities,
   secretWhitelist,
+  loadProvisioningYaml,
   CLAUDE_SECRET,
   type ResolvedCapability,
 } from "@/lib/server/capabilitiesData";
@@ -32,16 +33,7 @@ function slugOf(repoUrl: string | null): string | null {
 // (brain_events kind=artifact, project-wide, versionado — la misma que lee el Studio); tomamos la
 // última versión del path. Sin provisioning aún (diseño no corrido) → [] (no rompe el canal claude).
 async function projectCapabilities(projectId: string): Promise<ResolvedCapability[]> {
-  const { data } = await admin()
-    .from("brain_events")
-    .select("payload")
-    .eq("project_id", projectId)
-    .eq("kind", "artifact")
-    .ilike("payload->>path", "%provisioning.yaml")
-    .order("ts", { ascending: false })
-    .limit(1)
-    .maybeSingle();
-  const content = (data?.payload as { content?: string } | undefined)?.content;
+  const content = await loadProvisioningYaml(admin(), projectId);
   if (!content) return [];
   return resolveProjectCapabilities(registryDir(), content);
 }

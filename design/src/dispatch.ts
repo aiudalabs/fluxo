@@ -38,6 +38,9 @@ export interface DStory {
   body: string | null;
   acceptance: string | null;
   screenKey?: string | null;      // role.screen de la pantalla (P8-C); null/ausente = no es pantalla
+  needsCapabilities?: string[];   // capabilities que la story REFERENCIA por su secret (P6-2b Paso 3);
+                                  // el caller lo computa data-driven (capabilities.ts). Vacío/ausente
+                                  // = no gatea. El kernel solo chequea `needs ⊆ greenCapabilities`.
 }
 export interface DSprint { id: string; key: string; title: string }
 
@@ -75,7 +78,20 @@ function dominantLane(members: DStory[]): string {
 
 // candidates: qué se puede despachar AHORA bajo la política. Vacío si el canal está lleno
 // (concurrencia) o no hay unidades listas. Solo stories espejadas (issue != null) califican.
-export function candidates(stories: DStory[], sprintsById: Map<string, DSprint>, pol: Policy): Candidate[] {
+//
+// P6-2b · Paso 3 — readiness gate por CAPABILITY: una story que REFERENCIA el secret de una
+// capability (needsCapabilities, computado data-driven por el caller) NO despacha hasta que esa
+// capability esté 🟢 (su Actions secret presente). El estado 🟢 es NETWORK → no puede resolverse en
+// el kernel: entra como `greenCapabilities` (el caller lo probea y lo pasa). El kernel solo hace el
+// chequeo PURO `needs ⊆ green`. Set vacío por defecto = gate off (backward-compatible: una story sin
+// needs, o sin green set, se comporta igual que antes). Gate BLANDO: apenas la capability pasa a 🟢,
+// la story vuelve a ser candidata.
+export function candidates(
+  stories: DStory[],
+  sprintsById: Map<string, DSprint>,
+  pol: Policy,
+  greenCapabilities: ReadonlySet<string> = new Set(),
+): Candidate[] {
   const byId = new Map(stories.map((s) => [s.id, s]));
   const inFlight = stories.filter((s) => s.status === "running").length;
   // Tope de concurrencia: con el cupo lleno no hay candidatos.
@@ -84,7 +100,9 @@ export function candidates(stories: DStory[], sprintsById: Map<string, DSprint>,
   const mirrored = (s: DStory) => s.issue != null;
   const done = (id: string) => byId.get(id)?.status === "done";
   const depsDone = (s: DStory) => s.deps.every(done);
-  const storyReady = (s: DStory) => s.status === "backlog" && mirrored(s) && depsDone(s);
+  // needsMet: todas las capabilities que la story referencia están 🟢. Sin needs → true (no gatea).
+  const needsMet = (s: DStory) => (s.needsCapabilities ?? []).every((c) => greenCapabilities.has(c));
+  const storyReady = (s: DStory) => s.status === "backlog" && mirrored(s) && depsDone(s) && needsMet(s);
   const byKey = (a: DStory, b: DStory) => (a.key < b.key ? -1 : a.key > b.key ? 1 : 0);
 
   // ── STORY mode ────────────────────────────────────────────────────────────────
@@ -115,16 +133,21 @@ export function candidates(stories: DStory[], sprintsById: Map<string, DSprint>,
   }
   const out: Candidate[] = [];
   for (const [sid, members] of bySprint) {
-    let pending = 0, flight = 0, gated = false;
+    let pending = 0, flight = 0, gated = false, capGated = false;
     for (const st of members) {
-      if (st.status === "backlog") pending++;
-      else if (st.status === "running" || st.status === "review") flight++;
+      if (st.status === "backlog") {
+        pending++;
+        // El sprint despacha como UNA unidad atómica (goal-mode, un run): si un miembro backlog
+        // referencia una capability aún no 🟢, el run se estrellaría en esa story → gateamos TODO
+        // el sprint hasta que esté verde (P6-2b Paso 3).
+        if (!needsMet(st)) capGated = true;
+      } else if (st.status === "running" || st.status === "review") flight++;
       for (const dep of st.deps) {
         const depSt = byId.get(dep);
         if (depSt && depSt.sprintId !== sid && !done(dep)) gated = true;
       }
     }
-    if (pending === 0 || flight > 0 || gated) continue;
+    if (pending === 0 || flight > 0 || gated || capGated) continue;
     const ordered = [...members].sort(byKey);
     const backlog = ordered.filter((st) => st.status === "backlog"); // orden de deps por convención (key)
     const lane = dominantLane(members);

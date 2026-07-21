@@ -310,4 +310,19 @@ export class GithubRepo {
     if (!res.ok) throw new Error(`GET contents/${path}?ref=${ref} → ${res.status} ${await res.text()}`);
     return true;
   }
+
+  // secretPresent: ¿el Actions secret `name` existe en el repo? (Secrets:read). Modela el probe del
+  // readiness gate por capability (P6-2b Paso 3). TRI-ESTADO: true=presente (🟢), false=404 confirmado
+  // ausente (gatea), null=indeterminado (403 sin permiso / error de red → el caller fail-open, no
+  // gatea ante la duda). NO expone el valor del secret — GitHub solo devuelve metadata.
+  async secretPresent(name: string): Promise<boolean | null> {
+    try {
+      const res = await fetch(`${API}/repos/${this.owner}/${this.repo}/actions/secrets/${name}`, { headers: H(this.token) });
+      if (res.status === 404) return false;
+      if (res.ok) return true;
+      return null;
+    } catch {
+      return null;
+    }
+  }
 }

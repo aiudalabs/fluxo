@@ -80,6 +80,9 @@ export default function Board() {
   // mapea su candidato a CADA card miembro → el botón ▶ aparece en todas). `busy` evita el
   // doble-click (doble run pago) mientras un POST /dispatch está en vuelo.
   const [candidates, setCandidates] = useState<Map<string, DispatchCandidate>>(new Map());
+  // Readiness gate por capability (P6-2b Paso 3): por story KEY, las capabilities no-🟢 que la
+  // bloquean. El board pinta "⧗ esperando capability: X" en vez de un ▶ que llevaría a un stub.
+  const [capWaiting, setCapWaiting] = useState<Map<string, string[]>>(new Map());
   const [busy, setBusy] = useState(false);
 
   // refreshCandidates: corre el kernel candidates() server-side (GET /candidates, DB-only). Se
@@ -89,12 +92,13 @@ export default function Board() {
     const tok = activeToken();
     try {
       const res = await fetch(`/api/projects/${projectId}/candidates`, { headers: tok ? { Authorization: `Bearer ${tok}` } : {} });
-      if (!res.ok) { setCandidates(new Map()); return; }
-      const data = (await res.json()) as { candidates: DispatchCandidate[] };
+      if (!res.ok) { setCandidates(new Map()); setCapWaiting(new Map()); return; }
+      const data = (await res.json()) as { candidates: DispatchCandidate[]; capWaiting?: Record<string, string[]> };
       const map = new Map<string, DispatchCandidate>();
       for (const c of data.candidates) for (const k of c.stories) map.set(k, c);
       setCandidates(map);
-    } catch { setCandidates(new Map()); }
+      setCapWaiting(new Map(Object.entries(data.capWaiting ?? {})));
+    } catch { setCandidates(new Map()); setCapWaiting(new Map()); }
   }, [projectId]);
 
   // onDispatch: confirma → POST /dispatch (server re-deriva y matchea el candidato, marca running
@@ -257,7 +261,7 @@ export default function Board() {
         <div className="tickets-canvas"><DepGraph tickets={filtered} onOpenTicket={setOpenId} /></div>
       ) : (
         <div className="tickets-canvas">
-          <KanbanBoard tickets={filtered} gates={gates} candidates={candidates} onDispatch={onDispatch} onOpenTicket={setOpenId} onOpenRun={() => {}} />
+          <KanbanBoard tickets={filtered} gates={gates} candidates={candidates} capWaiting={capWaiting} onDispatch={onDispatch} onOpenTicket={setOpenId} onOpenRun={() => {}} />
         </div>
       )}
 

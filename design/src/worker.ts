@@ -22,9 +22,11 @@ import { Projector, type MirroredStory } from "./projection.ts";
 import { candidates, storyPrompt, sprintPrompt, docsGuardOk, type Policy, type DStory, type DSprint } from "./dispatch.ts";
 import { AutoMerger, prNumFromUrl } from "./automerge.ts";
 import { Approver } from "./approve.ts";
+import { resolveProjectCapabilities, computeCapabilityGate } from "./capabilities.ts";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const mainScript = resolve(here, "main.ts");
+const registryDir = resolve(here, "..", "..", "registry");
 
 const url = process.env.SUPABASE_URL;
 const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -289,6 +291,29 @@ async function reconcileCosts() {
   }
 }
 
+// provisioningYamlFor: la última versión de docs/provisioning.yaml del proyecto desde el brain
+// (brain_events kind=artifact, project-wide, versionado — la MISMA fuente que el channel route del
+// console y el Studio). null si el diseño aún no la produjo (degrada: gate off).
+async function provisioningYamlFor(projectId: string): Promise<string | null> {
+  const rows = await rest<Array<{ payload: { content?: string } }>>(
+    `/brain_events?project_id=eq.${projectId}&kind=eq.artifact&payload->>path=ilike.*provisioning.yaml&order=ts.desc&limit=1&select=payload`,
+  );
+  return rows[0]?.payload?.content ?? null;
+}
+
+// capabilityGateFor: el readiness gate por capability del proyecto (P6-2b Paso 3). Resuelve las
+// capabilities del stack (registry) desde provisioning.yaml y probea qué Actions secret está presente
+// en el repo (con el app token, Secrets:read). Sin provisioning / sin capabilities → gate vacío
+// (no-op: candidates() se comporta igual que antes). En dry-run (repo null) el probe es fail-open.
+async function capabilityGateFor(projectId: string, dstories: DStory[], repo: GithubRepo | null) {
+  const empty = { needsByStoryId: new Map<string, string[]>(), green: new Set<string>() };
+  const prov = await provisioningYamlFor(projectId);
+  if (!prov) return empty;
+  const caps = resolveProjectCapabilities(registryDir, prov);
+  if (caps.length === 0) return empty;
+  return computeCapabilityGate(caps, dstories, (name) => (repo ? repo.secretPresent(name) : Promise.resolve(null)));
+}
+
 async function reconcileBuild() {
   if (!app) return; // sin credenciales de la App no hay build
   const projects = await rest<Array<{ id: string; name: string; org: string | null; repo: string | null; settings: Settings | null }>>(`/projects?select=id,name,org,repo,settings&repo=not.is.null`);
@@ -324,18 +349,29 @@ async function reconcileBuild() {
     const sprintRows = await rest<Array<{ id: string; key: string; title: string | null }>>(`/sprints?project_id=eq.${p.id}&select=id,key,title`);
     const sprintsById = new Map<string, DSprint>(sprintRows.map((s) => [s.id, { id: s.id, key: s.key, title: s.title ?? "" }]));
 
-    const cands = candidates(dstories, sprintsById, pol);
-    if (cands.length === 0) continue;
+    // Pre-check barato: sin candidatos siquiera SIN el gate por capability, no hay nada que gatear →
+    // evitá el I/O del gate (brain read + probe de secrets) en los proyectos ociosos de este tick. El
+    // gate solo QUITA candidatos, así que un set ungated vacío ya es final.
+    if (candidates(dstories, sprintsById, pol).length === 0) continue;
+
+    // Readiness gate por capability (P6-2b Paso 3): una story que referencia el secret de una
+    // capability (ej. $FIREBASE_SERVICE_ACCOUNT) NO se auto-despacha hasta que su Actions secret esté
+    // 🟢. El estado 🟢 es network → se resuelve acá (probe con el app token) y entra al kernel como
+    // green set + needs por-story. El repo se construye ACÁ (antes que candidates) para poder probear.
+    const byId = new Map(dstories.map((s) => [s.id, s]));
+    let repo: GithubRepo | null = null;
+    if (!dryRun) repo = GithubRepo.fromUrl(await repoTokenFor(p.org), p.repo);
+    const gate = await capabilityGateFor(p.id, dstories, repo);
+    for (const s of dstories) { const needs = gate.needsByStoryId.get(s.id); if (needs) s.needsCapabilities = needs; }
+
+    const cands = candidates(dstories, sprintsById, pol, gate.green);
+    if (cands.length === 0) continue; // todo lo despachable quedó gateado por una capability aún ⚪
 
     // Slots: cuántas stories running podemos SUMAR este tick (una unidad sprint puede pasarse del
     // cupo, como en v1 — pero ninguna unidad nueva arranca una vez alcanzado). 0 = ilimitado.
     const inFlight = dstories.filter((s) => s.status === "running").length;
     let slots = pol.maxConcurrency > 0 ? Math.max(0, pol.maxConcurrency - inFlight) : Infinity;
     if (slots <= 0) continue;
-
-    const byId = new Map(dstories.map((s) => [s.id, s]));
-    let repo: GithubRepo | null = null;
-    if (!dryRun) repo = GithubRepo.fromUrl(await repoTokenFor(p.org), p.repo);
 
     for (const c of cands) {
       if (slots <= 0) break;

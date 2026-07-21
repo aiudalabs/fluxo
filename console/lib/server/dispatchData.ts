@@ -15,6 +15,11 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 // (Next/SWC en el build, tsc con allowImportingTsExtensions, y node --experimental-strip-types en
 // los tests) — el mismo idioma de imports que usa el paquete design/.
 import { candidates, type Policy, type DStory, type DSprint } from "../../../design/src/dispatch.ts";
+import {
+  resolveProjectCapabilities, computeCapabilityGate,
+  type CapabilityGate, type ResolvedCapability,
+} from "../../../design/src/capabilities.ts";
+import { loadProvisioningYaml, registryDir } from "./capabilitiesData.ts";
 
 // Settings del proyecto que el despacho consume (espeja worker.ts `Settings`/`policyFrom`).
 export interface Settings {
@@ -86,14 +91,20 @@ export interface UICandidate {
 // kernel y traduce uuids → KEYs. Filtra a claude_action: es el único canal cableado en v2 (copilot
 // = permiso pendiente), así que un botón para copilot solo fallaría — no lo mostramos (el POST
 // igual re-valida el canal). Espeja el skip del worker.
-export function computeCandidates(storyRows: StoryRow[], sprintRows: SprintRow[], settings: Settings): UICandidate[] {
+// gate opcional (P6-2b Paso 3): needs por-story + green set del readiness gate por capability. Sin
+// gate = comportamiento anterior (no gatea). El caller lo arma con loadCapabilityGate (I/O: brain +
+// probe de secrets); acá solo se aplica al kernel (needs por DStory + green a candidates()).
+export function computeCandidates(
+  storyRows: StoryRow[], sprintRows: SprintRow[], settings: Settings, gate?: CapabilityGate,
+): UICandidate[] {
   const pol = policyFrom(settings);
   const dstories = storyRows.map(toDStory);
+  if (gate) for (const s of dstories) { const needs = gate.needsByStoryId.get(s.id); if (needs) s.needsCapabilities = needs; }
   const byId = new Map(dstories.map((s) => [s.id, s]));
   const keyByStoryId = new Map(dstories.map((s) => [s.id, s.key]));
   const sprintsById = new Map<string, DSprint>(sprintRows.map((s) => [s.id, { id: s.id, key: s.key, title: s.title ?? "" }]));
 
-  return candidates(dstories, sprintsById, pol)
+  return candidates(dstories, sprintsById, pol, gate?.green ?? new Set())
     .map((c): UICandidate => {
       const members = c.stories.map((id) => byId.get(id)!).filter(Boolean);
       const key = c.kind === "sprint" ? (sprintsById.get(c.id)?.key ?? c.id) : (keyByStoryId.get(c.id) ?? c.id);
@@ -132,4 +143,48 @@ export async function loadDispatchContext(db: SupabaseClient, tenant: string, pr
     storyRows: (stories as StoryRow[]) ?? [],
     sprintRows: (sprints as SprintRow[]) ?? [],
   };
+}
+
+// ── P6-2b · Paso 3 · readiness gate por capability (console) ──────────────────────
+const EMPTY_GATE: CapabilityGate = { needsByStoryId: new Map(), green: new Set() };
+
+// loadCapabilityGate: arma el gate por capability del proyecto (needs por-story + green set). Lee su
+// provisioning.yaml del brain → resuelve las capabilities del stack (registry) → probea qué Actions
+// secret está presente (probe inyectado: el route lo hace con el token del usuario). Sin provisioning
+// / sin capabilities → gate vacío (no-op). Devuelve también las caps resueltas (para nombrar el
+// "esperando capability: X" del board).
+export async function loadCapabilityGate(
+  db: SupabaseClient,
+  projectId: string,
+  storyRows: StoryRow[],
+  secretPresent: (secretName: string) => Promise<boolean | null>,
+): Promise<{ gate: CapabilityGate; caps: ResolvedCapability[] }> {
+  const prov = await loadProvisioningYaml(db, projectId);
+  if (!prov) return { gate: EMPTY_GATE, caps: [] };
+  const caps = resolveProjectCapabilities(registryDir(), prov);
+  if (caps.length === 0) return { gate: EMPTY_GATE, caps: [] };
+  const gate = await computeCapabilityGate(
+    caps,
+    storyRows.map((r) => ({ id: r.id, body: r.body, acceptance: r.acceptance })),
+    secretPresent,
+  );
+  return { gate, caps };
+}
+
+// capWaitingByKey: por story KEY, los NOMBRES de capability que la story necesita y que NO están 🟢 —
+// lo que el board pinta como "⧗ esperando capability: Firebase". Solo stories backlog (una running/done
+// no espera nada). Deriva del MISMO gate que candidates() (una sola verdad).
+export function capWaitingByKey(
+  storyRows: StoryRow[], gate: CapabilityGate, caps: ResolvedCapability[],
+): Record<string, string[]> {
+  const nameById = new Map(caps.map((c) => [c.id, c.name]));
+  const out: Record<string, string[]> = {};
+  for (const r of storyRows) {
+    if (r.status !== "backlog") continue;
+    const needs = gate.needsByStoryId.get(r.id);
+    if (!needs) continue;
+    const waiting = needs.filter((id) => !gate.green.has(id)).map((id) => nameById.get(id) ?? id);
+    if (waiting.length) out[r.key] = waiting;
+  }
+  return out;
 }

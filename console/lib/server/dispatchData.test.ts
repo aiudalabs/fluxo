@@ -7,16 +7,17 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { computeCandidates, policyFrom, type Settings } from "./dispatchData.ts";
+import { computeCandidates, capWaitingByKey, policyFrom, type Settings } from "./dispatchData.ts";
+import type { CapabilityGate, ResolvedCapability } from "../../../design/src/capabilities.ts";
 
 type Row = {
   id: string; key: string; title: string; lane: string | null; status: string;
   sprint_id: string | null; blocked_by: string[] | null; external_ref: string | null;
-  body: string | null; acceptance: string | null;
+  body: string | null; acceptance: string | null; screen_key: string | null;
 };
 const story = (o: Partial<Row> & { id: string; key: string; status: string }): Row => ({
   title: o.key, lane: null, sprint_id: null, blocked_by: null, external_ref: null,
-  body: null, acceptance: null, ...o,
+  body: null, acceptance: null, screen_key: null, ...o,
 });
 const ref = (n: number) => `github:nmlemus/idearium#${n}`;
 const sprints = [{ id: "sp1", key: "SP1", title: "Sprint 1" }, { id: "sp2", key: "SP2", title: "Sprint 2" }];
@@ -76,4 +77,45 @@ test("concurrencia: con max_concurrency=1 y una running, no hay candidatos", () 
     story({ id: "b", key: "S1-02", status: "backlog", external_ref: ref(2) }),
   ];
   assert.deepEqual(computeCandidates(rows, sprints, { max_concurrency: 1 }), []);
+});
+
+// ── P6-2b · Paso 3 · readiness gate por capability (glue del console) ─────────────
+const gateOf = (needs: Record<string, string[]>, green: string[]): CapabilityGate => ({
+  needsByStoryId: new Map(Object.entries(needs)),
+  green: new Set(green),
+});
+const CAPS: ResolvedCapability[] = [{ id: "firebase", name: "Firebase", secret: "FIREBASE_SERVICE_ACCOUNT" }];
+
+test("computeCandidates(gate): story con need NO 🟢 no es candidata; 🟢 sí (mismo mapeo uuid→KEY)", () => {
+  const rows: Row[] = [story({ id: "a", key: "S1-01", status: "backlog", external_ref: ref(1) })];
+  const needs = { a: ["firebase"] };
+  assert.deepEqual(computeCandidates(rows, sprints, {}, gateOf(needs, [])), []);           // firebase ⚪
+  const ok = computeCandidates(rows, sprints, {}, gateOf(needs, ["firebase"]));             // firebase 🟢
+  assert.deepEqual(ok.map((c) => c.id), ["S1-01"]);
+});
+
+test("computeCandidates(gate): sin gate = comportamiento anterior (no gatea)", () => {
+  const rows: Row[] = [story({ id: "a", key: "S1-01", status: "backlog", external_ref: ref(1) })];
+  assert.deepEqual(computeCandidates(rows, sprints, {}).map((c) => c.id), ["S1-01"]);
+});
+
+test("capWaitingByKey: story backlog con need no-🟢 → nombre de capability por KEY; 🟢 → nada", () => {
+  const rows: Row[] = [
+    story({ id: "a", key: "S1-01", status: "backlog", external_ref: ref(1) }),
+    story({ id: "b", key: "S1-02", status: "backlog", external_ref: ref(2) }),
+  ];
+  const gate = gateOf({ a: ["firebase"], b: ["firebase"] }, ["firebase"]); // b's need SÍ está verde
+  // solo `a` espera si firebase NO está verde:
+  const w = capWaitingByKey(rows, gateOf({ a: ["firebase"] }, []), CAPS);
+  assert.deepEqual(w, { "S1-01": ["Firebase"] });
+  // con firebase verde, nadie espera:
+  assert.deepEqual(capWaitingByKey(rows, gate, CAPS), {});
+});
+
+test("capWaitingByKey: solo stories backlog (una done/running no espera aunque referencie el secret)", () => {
+  const rows: Row[] = [
+    story({ id: "a", key: "S1-01", status: "done", external_ref: ref(1) }),
+    story({ id: "b", key: "S1-02", status: "running", external_ref: ref(2) }),
+  ];
+  assert.deepEqual(capWaitingByKey(rows, gateOf({ a: ["firebase"], b: ["firebase"] }, []), CAPS), {});
 });
