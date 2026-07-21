@@ -11,6 +11,11 @@ RUN cd console && npm ci
 # fuentes: console + el kernel importado + el registry leído en runtime
 COPY console ./console
 COPY design ./design
+# El console importa design/src/*.ts cross-paquete (capabilities/dispatch); capabilities.ts usa
+# js-yaml. Webpack resuelve los imports RELATIVO al archivo importado → busca en design/node_modules,
+# NO en console/node_modules. Sin esto, `next build` falla "Can't resolve 'js-yaml'" (destapado al
+# desplegar P6-2b a prod). Instalamos las deps RUNTIME de design (js-yaml + SDK) desde su lock.
+RUN cd design && npm ci --omit=dev
 COPY registry ./registry
 ENV NEXT_TELEMETRY_DISABLED=1
 # NEXT_PUBLIC_* se INLINEAN en el bundle del browser en build-time → van como build-args, NO como
