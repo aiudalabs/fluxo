@@ -431,6 +431,35 @@ async function tick() {
   }
 }
 
+// Preflight de schema (deuda-chica 🔴 2026-07-20): el drift local↔prod (una migración aplicada a un
+// entorno pero no al otro) mató el worker DOS veces a mitad de run — 42P01 (increment_requests) y
+// PGRST204 (design_phases.cache_read_tokens) — y en un caso abortó un iteration-planner grande YA
+// PAGADO (el PATCH de costos falló al escribir). Chequeá al ARRANCAR que el schema esperado existe;
+// si falta algo, fallá rápido con un mensaje accionable en vez de un 400 a mitad de un run pago.
+const SCHEMA_PROBES: Array<{ table: string; column: string; migration: string }> = [
+  { table: "increment_requests", column: "id", migration: "20260719140000_increment_requests.sql" },
+  { table: "design_phases", column: "cache_read_tokens", migration: "20260719120000_design_phase_costs.sql" },
+];
+async function preflightSchema(): Promise<void> {
+  const missing: string[] = [];
+  for (const p of SCHEMA_PROBES) {
+    try {
+      const res = await fetch(`${base}/${p.table}?select=${p.column}&limit=0`, { headers: svc });
+      if (!res.ok) missing.push(`  · ${p.table}.${p.column} (migración ${p.migration}) → ${res.status} ${(await res.text()).slice(0, 140)}`);
+    } catch (e) {
+      missing.push(`  · ${p.table}.${p.column} (migración ${p.migration}) → ${e instanceof Error ? e.message : e}`);
+    }
+  }
+  if (missing.length) {
+    console.error(
+      `✖ schema drift — el worker espera tablas/columnas que NO existen en ${url}:\n${missing.join("\n")}\n` +
+      `→ aplicá las migraciones faltantes a ESTE entorno (supabase db push, o las de supabase/migrations/) antes de arrancar.`,
+    );
+    process.exit(1);
+  }
+}
+
+await preflightSchema();
 console.log(`⚙  worker Fluxo · tick ${intervalMs / 1000}s · workflow=${workflow} · build=${!noBuild && !!app ? "on" : "off"}${dryRun ? " · DRY-RUN" : ""}`);
 tokenByOrg.clear();
 await tick();
