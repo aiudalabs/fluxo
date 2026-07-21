@@ -104,13 +104,15 @@ jobs:
 
       # Distribución a link de prueba (Sprint P3 / F8-03): si hay Firebase App Distribution
       # configurado, subimos el APK a un grupo de testers → link instalable. BYO-credencial: sin
-      # FIREBASE_APP_ID → skip (queda el artifact del run). Secrets: FIREBASE_APP_ID,
-      # FIREBASE_SERVICE_ACCOUNT_JSON (service account con rol Firebase App Distribution Admin).
+      # FIREBASE_APP_ID → skip (queda el artifact del run). Secrets: FIREBASE_APP_ID (el app id de
+      # Firebase) + FIREBASE_SERVICE_ACCOUNT (el MISMO secret umbrella de la capability que usan deploy/
+      # device-verify; para App Distribution el SA necesita el rol Firebase App Distribution Admin,
+      # roles/firebaseappdistro.admin — ver registry/capabilities/firebase.yaml).
       - name: Distribute to Firebase App Distribution (si está configurado)
         if: ${{ hashFiles('{{app_path}}/pubspec.yaml') != '' && env.FIREBASE_APP_ID != '' }}
         uses: wzieba/Firebase-Distribution-Github-Action@v1
         with:
           appId: ${{ secrets.FIREBASE_APP_ID }}
-          serviceCredentialsFileContent: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_JSON }}
+          serviceCredentialsFileContent: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
           groups: testers
           file: ${{ env.APP_PATH }}/build/app/outputs/flutter-apk/app-release.apk

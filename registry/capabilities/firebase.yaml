@@ -13,7 +13,7 @@ name: Firebase
 # no re-enuncia el provisioning.
 provisioning:
   summary: "Crear el proyecto Firebase en plan Blaze (pago-por-uso) con billing habilitado y Firestore activado."
-  guide: "https://console.firebase.google.com → Add project → Upgrade to Blaze → Build → Firestore Database → Create. La service-account que genera el JSON de abajo necesita, según lo que uses: para el deploy web (Firebase Hosting) el rol Firebase Hosting Admin (roles/firebasehosting.admin); para el verify en dispositivo (Firebase Test Lab) los roles Firebase Test Lab Admin (roles/cloudtestservice.testAdmin) + Firebase Analytics Viewer (roles/firebase.analyticsViewer). Concedelos en IAM & Admin → Service Accounts → tu SA → Grant role."
+  guide: "https://console.firebase.google.com → Add project → Upgrade to Blaze → Build → Firestore Database → Create. La service-account que genera el JSON de abajo necesita, según lo que uses: para el deploy web (Firebase Hosting) el rol Firebase Hosting Admin (roles/firebasehosting.admin); para el verify en dispositivo (Firebase Test Lab) los roles Firebase Test Lab Admin (roles/cloudtestservice.testAdmin) + Firebase Analytics Viewer (roles/firebase.analyticsViewer); para distribuir el APK a testers (Firebase App Distribution) el rol Firebase App Distribution Admin (roles/firebaseappdistro.admin). Concedelos en IAM & Admin → Service Accounts → tu SA → Grant role."
   # markers — frases que, si aparecen en un AC de BUILD, delatan que el provisioning humano se coló
   # como criterio no-despachable. Las lee el gate determinista (design-time, repodocs.ts): un AC que
   # contiene un marker (normalizado, substring) → se reporta al brain (heurística de reporte, no traba
@@ -35,7 +35,7 @@ provisioning:
 secret:
   name: FIREBASE_SERVICE_ACCOUNT
   kind: service_account_json
-  description: "Service-account key JSON del proyecto Firebase del cliente (el mínimo que el deploy/verify requiere) — es el secret UMBRELLA: el MISMO SA cubre Firestore, deploy web y verify en dispositivo, con distintos roles IAM. El deploy web (Firebase Hosting) exige el rol Firebase Hosting Admin (roles/firebasehosting.admin); el verify en dispositivo (Firebase Test Lab) exige Firebase Test Lab Admin (roles/cloudtestservice.testAdmin) + Firebase Analytics Viewer (roles/firebase.analyticsViewer); todo además del acceso a Firestore."
+  description: "Service-account key JSON del proyecto Firebase del cliente (el mínimo que el deploy/verify requiere) — es el secret UMBRELLA: el MISMO SA cubre Firestore, deploy web, verify en dispositivo y distribución del APK, con distintos roles IAM. El deploy web (Firebase Hosting) exige el rol Firebase Hosting Admin (roles/firebasehosting.admin); el verify en dispositivo (Firebase Test Lab) exige Firebase Test Lab Admin (roles/cloudtestservice.testAdmin) + Firebase Analytics Viewer (roles/firebase.analyticsViewer); la distribución del APK a testers (Firebase App Distribution) exige Firebase App Distribution Admin (roles/firebaseappdistro.admin); todo además del acceso a Firestore."
 
 # probe — cómo el onboarding verifica 🟢 que el secret es válido antes de habilitar el dispatch de
 # una story que dependa de esta capability (readiness gate, D8).

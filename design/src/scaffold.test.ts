@@ -104,6 +104,16 @@ test("buildScaffold (aiuda-flutter-firebase) emite device-verify.yml (Deploy A2)
   assert.ok("jobs" in doc, "device-verify.yml (Flutter) sin jobs");
 });
 
+test("buildScaffold (aiuda-flutter-firebase) — build-apk.yml usa el secret UMBRELLA FIREBASE_SERVICE_ACCOUNT (no el _JSON legacy)", () => {
+  const { files } = buildScaffold(registryDir, FLUTTER_VARS);
+  const apk = files.find((f) => f.path === ".github/workflows/build-apk.yml");
+  assert.ok(apk, "falta build-apk.yml en el scaffold del stack Flutter");
+  const c = apk!.content;
+  // Un solo nombre de secret de SA en todo el stack (capability + deploy A1 + device-verify A2 + build-apk).
+  assert.match(c, /secrets\.FIREBASE_SERVICE_ACCOUNT\b/, "build-apk debe usar el secret umbrella");
+  assert.doesNotMatch(c, /FIREBASE_SERVICE_ACCOUNT_JSON/, "build-apk no debe usar el nombre legacy _JSON");
+});
+
 test("NINGÚN archivo emitido conserva una var {{...}} sin resolver", () => {
   const { files } = buildScaffold(registryDir, VARS);
   for (const f of files) assert.deepEqual(leftoverVars(f.content), [], `${f.path} tiene vars sin resolver`);
