@@ -321,11 +321,12 @@ async function reconcileBuild() {
     if (!p.repo || !p.org) continue;
 
     // dispatch_mode "manual" = botón-only: la UI (POST /api/projects/[id]/dispatch, F6a) despacha;
-    // el worker NO auto-despacha. Default "auto" = el worker despacha por tick (comportamiento
-    // actual). Espeja el gate de v1 (app.go: si dispatch_mode != auto, corta antes de Candidates).
+    // el worker NO auto-despacha. "auto" = el worker despacha por tick. DEFAULT = "manual" (deuda-chica
+    // #3, 2026-07-21): un proyecto sin setting explícito NO dispara agentes pagos solo — el humano toca
+    // ▶ en el board. El `auto` ya sorprendió una vez con costo; quien lo quiera lo activa en Settings.
     // La PROYECCIÓN y el AUTO-MERGE no se ven afectados (corren en sus propios reconcilers): en
     // modo manual el worker sigue moviendo review→done y mergeando; solo cede el disparo al humano.
-    if ((p.settings?.dispatch_mode ?? "auto") === "manual") continue;
+    if ((p.settings?.dispatch_mode ?? "manual") === "manual") continue;
 
     // Guard docs-on-main (Fase 5): no despachar si el PRD del proyecto no está en `main` (evita
     // arrancar agentes sobre un repo sin el contrato de diseño publicado). Fail-open: un error de

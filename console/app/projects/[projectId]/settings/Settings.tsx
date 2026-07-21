@@ -24,11 +24,11 @@ interface ProjSettings {
   lanes?: Record<string, LaneCfg>;
 }
 // Los defaults DEBEN espejar los del motor (design/src/worker.ts policyFrom + el gate de dispatch):
-// execution_unit ausente → "story", dispatch_mode ausente → "auto", max_concurrency → 3 (MAX). Si la
-// UI muestra un default distinto al que el motor asume ante el campo ausente, MIENTE (bug: mostraba
-// "Sprint" mientras el motor corría "story"). dispatch_mode se incluye acá para que Guardar lo
-// PERSISTA y no lo borre en silencio (revertía a auto-dispatch).
-const DEFAULTS: ProjSettings = { channel: "claude_action", merge_mode: "manual", dispatch_mode: "auto", execution_unit: "story", max_concurrency: 3, workflow_approval: "manual", workflow: "design", lanes: {} };
+// execution_unit ausente → "story", dispatch_mode ausente → "manual" (deuda-chica #3, 2026-07-21: un
+// proyecto sin setting NO auto-despacha agentes pagos), max_concurrency → 3 (MAX). Si la UI muestra un
+// default distinto al que el motor asume ante el campo ausente, MIENTE (bug: mostraba "Sprint" mientras
+// el motor corría "story"). dispatch_mode se incluye acá para que Guardar lo PERSISTA (no lo borre).
+const DEFAULTS: ProjSettings = { channel: "claude_action", merge_mode: "manual", dispatch_mode: "manual", execution_unit: "story", max_concurrency: 3, workflow_approval: "manual", workflow: "design", lanes: {} };
 const MODELS = ["auto", "claude-opus-4-8", "claude-sonnet-5", "claude-haiku-4-5-20251001"];
 
 interface ChannelInfo { id: string; available: boolean; reason: string; secretsPermMissing: boolean }
