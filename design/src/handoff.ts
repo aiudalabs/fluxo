@@ -229,14 +229,23 @@ async function publishToGithub(store: SupabaseDesignStore, workdir: string, gh: 
 // makeHandoff: el HandoffExecutor completo. Publica al board SIEMPRE (Supabase); si se pasa
 // `github`, además crea el repo + docs + issues. El tramo GitHub DEGRADA con gracia: si falla
 // (ej. falta el permiso Administration en la installation) loguea y sigue — el board ya quedó.
-export function makeHandoff(store: SupabaseDesignStore, workdir: string, github?: GithubTarget): HandoffExecutor {
+export function makeHandoff(store: SupabaseDesignStore, workdir: string, github?: GithubTarget, opts?: { full?: boolean }): HandoffExecutor {
   return {
     async run(): Promise<void> {
       const raw = readFileSync(join(workdir, "docs", "backlog.yaml"), "utf8");
       const { sprints, stories } = parseBacklog(raw);
-      const r = await store.publishBacklog(sprints, stories);
+      // full = re-handoff completo (design) → puede ENCOGER; iterate = delta aditivo (nunca encoge).
+      const r = await store.publishBacklog(sprints, stories, { full: opts?.full ?? false });
       await store.brainAppend("backlog_published", { sprints: r.sprints, stories: r.stories }, "engine:handoff");
       console.log(`  ↪ handoff: publicadas ${r.stories} stories en ${r.sprints} sprints`);
+      // Deuda-chica (2026-07-20): huérfanos al encoger. En un re-handoff FULL, stories 'backlog' que
+      // ya no están en el backlog aprobado quedan en la DB. NO se borran (perdería trabajo despachado)
+      // — se REPORTAN al brain para que sean visibles (patrón P8-B). Archivarlas de verdad exige un
+      // status 'archived' (migración + filtro del board) → diferido para no reintroducir drift.
+      if (r.orphans.length) {
+        console.error(`  ⚠ backlog: ${r.orphans.length} story(s) huérfana(s) (en la DB, 'backlog', ya no en el backlog aprobado): ${r.orphans.join(", ")}`);
+        await store.brainAppend("backlog_orphans", { orphans: r.orphans }, "engine:handoff");
+      }
       // Deuda-chica 🟠 (2026-07-20): en un iterate el docs/backlog.yaml del workdir es SOLO el DELTA.
       // publishBacklog mergea a la DB (aditivo, ok), pero planRepoDocs commitea lo que hay en el
       // workdir → pisaría el backlog completo del repo con el delta (y loadProjectDocs lo sombraría

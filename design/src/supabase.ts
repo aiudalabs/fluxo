@@ -255,7 +255,7 @@ export class SupabaseDesignStore {
   // el repo sin crear). En su lugar: leé lo que YA existe e insertá solo lo que falta; re-cableá
   // deps SIEMPRE (una PATCH es idempotente) para completar lo que un resume anterior dejó sin deps.
   // Las stories ya existentes NO se tocan (no pisar status/sprint de una que ya se despachó).
-  async publishBacklog(sprints: SprintSeed[], stories: StorySeed[]): Promise<{ sprints: number; stories: number }> {
+  async publishBacklog(sprints: SprintSeed[], stories: StorySeed[], opts?: { full?: boolean }): Promise<{ sprints: number; stories: number; orphans: string[] }> {
     const s = this.scope();
 
     // 1) sprints faltantes → luego mapa completo key→id
@@ -302,7 +302,19 @@ export class SupabaseDesignStore {
         });
       }
     }
-    return { sprints: sprintKeyToId.size, stories: storyKeyToId.size };
+    // 4) Huérfanos al ENCOGER (deuda-chica 2026-07-20): en un re-handoff FULL (design, no iterate),
+    // una story que estaba en la DB pero YA NO está en el backlog aprobado, y que NUNCA se despachó
+    // (status 'backlog'), quedó huérfana. NO se borra: DELETE está revocado para authenticated y
+    // borrar una story ya despachada (ready/running/review/done) perdería trabajo real. Se REPORTAN
+    // (patrón "report, don't destroy" de P8-B) para que sean visibles. En un iterate (full=false) el
+    // backlog es un DELTA aditivo → NUNCA hay huérfanos (no computar, o archivaríamos todo el backlog).
+    let orphans: string[] = [];
+    if (opts?.full) {
+      const newKeys = new Set(stories.map((st) => st.key));
+      const res = await this.rest(`/stories?project_id=eq.${this.cfg.project}&status=eq.backlog&select=key`, { method: "GET", prefer: "count=none" });
+      orphans = ((await res.json()) as Array<{ key: string }>).map((r) => r.key).filter((k) => !newKeys.has(k));
+    }
+    return { sprints: sprintKeyToId.size, stories: storyKeyToId.size, orphans };
   }
 
   // loadBacklog reconstruye el backlog COMPLETO del proyecto desde la DB (la verdad ya mergeada:

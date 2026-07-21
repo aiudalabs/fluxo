@@ -170,3 +170,26 @@ test("sink.onPhaseDone: la versión del doc se registra ANTES del write de costo
     assert.ok(costWriteAttempted, "el write de costos se intentó (y falló, pero no abortó onPhaseDone)");
   });
 });
+
+// ── publishBacklog: huérfanos al encoger (deuda-chica 2026-07-20) ────────────────────────────────
+test("publishBacklog(full=true): reporta como huérfana la story 'backlog' que ya no está en el backlog", async () => {
+  await withFetch(async () => {
+    const fake = fakePostgrest({ stories: [{ key: "S1-01" }, { key: "S1-02" }] }); // la DB ya tenía 2
+    globalThis.fetch = fake.fetchFn as typeof fetch;
+    const store = new SupabaseDesignStore(CFG);
+    // Re-handoff FULL con solo S1-01 (S1-02 se cayó del backlog) → S1-02 es huérfana.
+    const r = await store.publishBacklog([], [{ key: "S1-01", title: "a" }], { full: true });
+    assert.deepEqual(r.orphans, ["S1-02"]);
+  });
+});
+
+test("publishBacklog(full=false, iterate): NUNCA reporta huérfanos (el delta es aditivo)", async () => {
+  await withFetch(async () => {
+    const fake = fakePostgrest({ stories: [{ key: "S1-01" }, { key: "S1-02" }] });
+    globalThis.fetch = fake.fetchFn as typeof fetch;
+    const store = new SupabaseDesignStore(CFG);
+    // Un iterate publica un DELTA (solo S1-03); S1-01/02 NO son huérfanas.
+    const r = await store.publishBacklog([], [{ key: "S1-03", title: "c" }], { full: false });
+    assert.deepEqual(r.orphans, []);
+  });
+});

@@ -149,7 +149,9 @@ if (ghAppId && (ghKeyPath || ghKey) && project.org) {
   };
   console.log(`  handoff GitHub: org ${project.org} · repo ${project.name} · owner-token ${ownerToken ? "sí" : "no"}`);
 }
-const handoff = makeHandoff(store, workdir, github);
+// full=true salvo iterate: solo un re-handoff completo (design) puede ENCOGER el backlog y dejar
+// huérfanos; el iterate publica un DELTA aditivo (marcarlo full archivaría todo lo no-delta).
+const handoff = makeHandoff(store, workdir, github, { full: workflowId !== "iterate" });
 try {
   const res = await runDesign(
     wf,
