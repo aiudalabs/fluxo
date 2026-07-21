@@ -1,0 +1,111 @@
+name: deploy
+
+# ÚLTIMA MILLA · MOBILE (Deploy A1 · D7=BYO) — publicá la app con UN CLICK contra la infra del CLIENTE.
+# Compila la app Flutter a WEB y la publica a la **Firebase Hosting del cliente** (cero COGS: BYO). Es la
+# "preview que el cliente toca en el browser" que D7 define para el stack Flutter+Firebase (cubre el 90%);
+# la app firmada en el teléfono es build-apk.yml (App Distribution). Es "declarativo": lo que este repo
+# declara en docs/provisioning.yaml (Firebase Hosting como target del frontend) es lo que este workflow
+# ejecuta — igual que el deploy.yml de react-supabase mapea Vercel. La config de Hosting (qué carpeta
+# publicar) vive en firebase.json del repo (BYO), no acá.
+#
+# BYO-CREDENCIAL — configurá este secret del repo (Settings → Secrets → Actions) para habilitar el deploy.
+# Sin el secret (o sin firebase.json) el job se SALTEA limpio (aditivo: el workflow no falla por lo no
+# configurado):
+#   · Hosting : FIREBASE_SERVICE_ACCOUNT  (service-account JSON del proyecto Firebase del cliente; el SA
+#               necesita el rol Firebase Hosting Admin — ver registry/capabilities/firebase.yaml)
+#
+# El project_id sale del propio JSON del service-account (no hay un secret extra que sembrar).
+#
+# Disparo MANUAL (workflow_dispatch): elegís preview o prod. NO deploya solo en cada push — publicar es una
+# acción deliberada del humano.
+#
+# MULTI-APP (v1): deployamos SOLO la app primaria ({{app_path}}). Un producto Flutter multi-app
+# (customer + provider) a canales/sitios separados queda DIFERIDO (liga L-LM-4 / P2-3) — no shippeamos una
+# matrix sin testear.
+
+on:
+  workflow_dispatch:
+    inputs:
+      target:
+        description: "Entorno a publicar"
+        type: choice
+        options: [preview, prod]
+        default: preview
+
+permissions:
+  contents: read
+
+env:
+  # App a compilar y publicar (misma variable que ui-verify / build-apk; el generador la sustituye,
+  # default apps/customer).
+  APP_PATH: "{{app_path}}"
+
+jobs:
+  # Frontend Flutter-web → Firebase Hosting (prod si target=prod; si no, canal de preview temporal).
+  web:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+    steps:
+      - name: Detect Firebase Hosting config
+        id: cfg
+        run: |
+          # Habilitá el tramo solo con: el secret BYO + la app primaria en el árbol + firebase.json (donde
+          # el repo declara qué publicar). Si falta cualquiera → skip limpio, el job pasa en verde.
+          if [ -n "$FIREBASE_SERVICE_ACCOUNT" ] && [ -f "$APP_PATH/pubspec.yaml" ] && [ -f firebase.json ]; then
+            echo "on=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "on=false" >> "$GITHUB_OUTPUT"
+            echo "deploy(web): falta FIREBASE_SERVICE_ACCOUNT, $APP_PATH/pubspec.yaml o firebase.json — skip."
+          fi
+
+      - name: Checkout
+        if: steps.cfg.outputs.on == 'true'
+        uses: actions/checkout@v4
+
+      - name: Set up Flutter
+        if: steps.cfg.outputs.on == 'true'
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Set up Node (firebase-tools runtime)
+        if: steps.cfg.outputs.on == 'true'
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Build Flutter web
+        if: steps.cfg.outputs.on == 'true'
+        working-directory: ${{ env.APP_PATH }}
+        run: |
+          set -euo pipefail
+          flutter config --enable-web
+          # `flutter build web` corre pub get; genera build/web (lo que firebase.json publica).
+          flutter build web --release
+
+      - name: Deploy to Firebase Hosting
+        if: steps.cfg.outputs.on == 'true'
+        env:
+          # firebase-tools autentica non-interactive vía Application Default Credentials (el SA JSON).
+          GOOGLE_APPLICATION_CREDENTIALS: ${{ github.workspace }}/firebase-sa.json
+        run: |
+          set -euo pipefail
+          npm install -g firebase-tools
+          # El SA JSON al disco (para GOOGLE_APPLICATION_CREDENTIALS) + project_id derivado del mismo JSON.
+          printf '%s' "$FIREBASE_SERVICE_ACCOUNT" > "$GOOGLE_APPLICATION_CREDENTIALS"
+          PID="$(python3 -c 'import json,os;print(json.load(open(os.environ["GOOGLE_APPLICATION_CREDENTIALS"]))["project_id"])')"
+          echo "deploy(web): proyecto Firebase = $PID (target=${{ inputs.target }})"
+          if [ "${{ inputs.target }}" = "prod" ]; then
+            firebase deploy --only hosting --project "$PID" --non-interactive
+            echo "### Firebase Hosting (prod) — proyecto $PID publicado." >> "$GITHUB_STEP_SUMMARY"
+          else
+            # Canal de preview temporal: firebase imprime la URL efímera que el cliente toca en el browser.
+            firebase hosting:channel:deploy preview --project "$PID" --non-interactive | tee channel.out
+            url="$(grep -oE 'https://[^ ]*web\.app[^ ]*' channel.out | head -n1 || true)"
+            echo "Preview publicado: ${url:-ver el log del deploy}"
+            echo "### Firebase Hosting (preview): ${url:-ver el log del deploy}" >> "$GITHUB_STEP_SUMMARY"
+          fi
+        working-directory: ${{ github.workspace }}

@@ -15,6 +15,13 @@ const VARS: ScaffoldVars = {
   lanes: "- backend\n- frontend", art_director: "on",
 };
 
+// Vars para un proyecto del stack aiuda-flutter-firebase. app_path resuelto (la app primaria) — lo usan
+// build-apk / ui-verify / deploy; los demás (path_map_*, design_tokens…) quedan sin generador y saltean.
+const FLUTTER_VARS: ScaffoldVars = {
+  project_name: "MiSalon", stack: "aiuda-flutter-firebase", language: "es",
+  lanes: "- flutter\n- firebase", art_director: "on", app_path: "apps/customer",
+};
+
 // ── substitute ────────────────────────────────────────────────────────────────
 test("substitute reemplaza {{project_name}} y NO toca ${{ ... }} de GitHub Actions", () => {
   const out = substitute("gate for {{project_name}} — ${{ secrets.X }} — {{project_name}}", VARS);
@@ -53,6 +60,27 @@ test("buildScaffold (react-supabase) emite deploy.yml (última milla, P3) con wo
   assert.match(dep!.content, /workflow_dispatch/);
   const doc = yaml.load(dep!.content) as Record<string, unknown>;
   assert.ok("jobs" in doc, "deploy.yml sin jobs");
+});
+
+test("buildScaffold (aiuda-flutter-firebase) emite deploy.yml (Deploy A1) — Flutter-web → Firebase Hosting, preview+prod, skip-clean BYO", () => {
+  const { files } = buildScaffold(registryDir, FLUTTER_VARS);
+  const dep = files.find((f) => f.path === ".github/workflows/deploy.yml");
+  assert.ok(dep, "falta deploy.yml en el scaffold del stack Flutter");
+  const c = dep!.content;
+  // Disparo manual + los dos modos declarativos (como react-supabase).
+  assert.match(c, /workflow_dispatch/);
+  assert.match(c, /options:\s*\[preview,\s*prod\]/);
+  // Compila Flutter-web del app primario y publica a Firebase Hosting.
+  assert.match(c, /flutter build web/);
+  assert.match(c, /hosting:channel:deploy/);        // preview → URL temporal
+  assert.match(c, /firebase deploy --only hosting/); // prod
+  // BYO skip-clean: el tramo se salta sin el secret de la capability (aditivo, no rompe).
+  assert.match(c, /FIREBASE_SERVICE_ACCOUNT/);
+  assert.match(c, /on=false/);
+  // app_path resuelto (no quedó ninguna var sin resolver) + YAML válido con jobs.
+  assert.deepEqual(leftoverVars(c), [], "deploy.yml del stack Flutter tiene vars sin resolver");
+  const doc = yaml.load(c) as Record<string, unknown>;
+  assert.ok("jobs" in doc, "deploy.yml (Flutter) sin jobs");
 });
 
 test("NINGÚN archivo emitido conserva una var {{...}} sin resolver", () => {
