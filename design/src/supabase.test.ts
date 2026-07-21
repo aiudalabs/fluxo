@@ -131,3 +131,42 @@ test("rest reintenta UNA vez cuando el JWT vence en vuelo (401 → re-mint → 2
     assert.equal(seen.length >= 2, true, "debió reintentar tras el 401");
   });
 });
+
+// ── sink.onPhaseDone: hardening (deuda-chica 2026-07-20) ────────────────────────────────────────
+// La VERSIÓN del doc (brainAppend) debe registrarse ANTES del write de costos. Antes, un drift de
+// la columna cache_read_tokens hacía fallar el patch de costos y la versión del delta se perdía.
+test("sink.onPhaseDone: la versión del doc se registra ANTES del write de costos; un fallo de costos NO la pierde", async () => {
+  await withFetch(async () => {
+    const brainAppends: Array<string> = [];
+    let statusDone = false;
+    let costWriteAttempted = false;
+    globalThis.fetch = (async (url: string | URL | Request, init?: RequestInit): Promise<Response> => {
+      const u = new URL(String(url));
+      const method = init?.method ?? "GET";
+      const body = init?.body ? JSON.parse(String(init.body)) : {} as Record<string, unknown>;
+      const j = (b: unknown, status = 200) => new Response(JSON.stringify(b), { status, headers: { "content-type": "application/json" } });
+      if (u.pathname.endsWith("/brain_events") && method === "POST") {
+        brainAppends.push(((body.payload as { path?: string })?.path) ?? "");
+        return j([], 201);
+      }
+      if (u.pathname.endsWith("/design_phases") && method === "PATCH") {
+        if ("status" in body) { statusDone = body.status === "done"; return j([], 200); }
+        if ("cache_read_tokens" in body) { costWriteAttempted = true; return j({ code: "PGRST204", message: "cache_read_tokens column not found" }, 400); } // drift simulado
+        return j([], 200);
+      }
+      return j({}, 500);
+    }) as typeof fetch;
+
+    const store = new SupabaseDesignStore(CFG);
+    store.runId = "run-1";
+    // NO debe lanzar aunque el write de costos falle (drift de schema simulado).
+    await store.sink.onPhaseDone!("scrum-master", {
+      text: "backlog",
+      artifacts: [{ path: "docs/backlog.yaml", content: "sprints: []" }],
+      usage: { usd: 0.5, inputTokens: 100, outputTokens: 50, cacheReadTokens: 10, durationMs: 1000, model: "opus" },
+    });
+    assert.deepEqual(brainAppends, ["docs/backlog.yaml"], "la versión del doc DEBE registrarse (durable, antes de costos)");
+    assert.ok(statusDone, "la fase debe quedar 'done'");
+    assert.ok(costWriteAttempted, "el write de costos se intentó (y falló, pero no abortó onPhaseDone)");
+  });
+});

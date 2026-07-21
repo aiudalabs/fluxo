@@ -310,22 +310,30 @@ export class SupabaseDesignStore {
     return {
       onPhaseStart: (phaseId) => this.patchPhase(phaseId, { status: "running" }),
       onPhaseDone: async (phaseId, result: PhaseResult) => {
-        // Costo/tokens/latencia de la fase (P4-2) → design_phases. Overwrite con la última corrida
-        // (un revise sobrescribe; acumular por-intento es v2). Mismos nombres que run_costs → la
-        // vista Observabilidad une diseño+build uniforme.
-        const u = result.usage;
-        await this.patchPhase(phaseId, {
-          status: "done",
-          artifacts: result.artifacts ?? [],
-          ...(u ? {
-            usd: u.usd, input_tokens: u.inputTokens, output_tokens: u.outputTokens,
-            cache_read_tokens: u.cacheReadTokens, duration_ms: u.durationMs, model: u.model,
-          } : {}),
-        });
-        // Cada doc cosechado → un evento artifact append-only en el brain: es la fuente de
-        // las VERSIONES en el Studio (los chips vN). Re-correr la fase agrega otra versión.
+        // DURABLE PRIMERO (hardening del sink): cada doc cosechado → un evento artifact append-only
+        // en el brain (la fuente de las VERSIONES del Studio, chips vN). Se registra ANTES del write
+        // de métricas: la versión del doc es lo que NO se puede perder, y un fallo de un dato
+        // secundario (ej. drift de una columna de costos) NO debe abortar el guardado del doc.
+        // (deuda-chica 2026-07-20: el drift de cache_read_tokens hizo fallar el patch de costos y la
+        //  versión del delta nunca se registró — ahora el orden lo garantiza.)
         for (const a of result.artifacts ?? []) {
           await this.brainAppend("artifact", { path: a.path, content: a.content, message: `design: ${phaseId}` }, `agent:${phaseId}`);
+        }
+        // Estado + artifacts (durable): el mínimo para que la fase quede 'done' y un resume no la repita.
+        await this.patchPhase(phaseId, { status: "done", artifacts: result.artifacts ?? [] });
+        // Costo/tokens/latencia (P4-2) → best-effort: es MÉTRICA secundaria (vista Observabilidad).
+        // Mismos nombres que run_costs → la vista une diseño+build uniforme. Si el write falla (ej.
+        // drift de schema), se loguea y se sigue: la versión del doc y el estado ya están a salvo.
+        const u = result.usage;
+        if (u) {
+          try {
+            await this.patchPhase(phaseId, {
+              usd: u.usd, input_tokens: u.inputTokens, output_tokens: u.outputTokens,
+              cache_read_tokens: u.cacheReadTokens, duration_ms: u.durationMs, model: u.model,
+            });
+          } catch (e) {
+            console.error(`onPhaseDone(${phaseId}): write de costos falló (métrica secundaria, se ignora):`, e instanceof Error ? e.message : e);
+          }
         }
       },
       onHandoff: () => this.setRunStatus("awaiting_handoff"),
