@@ -4973,3 +4973,17 @@ main:has(.studio-shell) > .studio-shell {
 .reg-back { display: inline-flex; align-items: center; gap: 7px; font-size: 13px; color: var(--ink3); margin-bottom: 14px; background: transparent; }
 .reg-back:hover { color: var(--accent); }
 @media (max-width: 900px) { .reg-wrap { grid-template-columns: 1fr; } .reg-grid { grid-template-columns: 1fr; } }
+
+/* Mission Control · Overview "Actividad en vivo" (glass box, tiempo real) */
+.ov-feed { background: var(--card-grad); border: 1px solid var(--stroke); border-radius: 16px; box-shadow: var(--top-hi); padding: 20px 24px; }
+.ov-feed-h { display: flex; align-items: baseline; gap: 12px; margin-bottom: 8px; }
+.ov-feed-h h3 { margin: 0; font-family: var(--disp); font-size: 16px; font-weight: 600; color: var(--ink); }
+.ov-feed-sub { font-size: 11px; color: var(--ink4); letter-spacing: .08em; text-transform: uppercase; }
+.ov-ev { display: flex; gap: 13px; padding: 11px 0; border-top: 1px solid var(--stroke); }
+.ov-ev:first-of-type { border-top: 0; }
+.ov-ev-dot { width: 8px; height: 8px; border-radius: 50%; margin-top: 6px; flex: 0 0 auto; background: currentColor; box-shadow: 0 0 8px currentColor; }
+.ov-ev-tx { flex: 1; display: flex; flex-direction: column; gap: 2px; font-size: 13.5px; color: var(--ink2); line-height: 1.45; }
+.ov-ev-tx b { color: var(--ink); }
+.ov-ev-t { font-family: var(--mono); font-size: 11px; color: var(--ink4); }
+.ov-ev-lk { color: var(--cyan); }
+.ov-ev-lk:hover { text-decoration: underline; }

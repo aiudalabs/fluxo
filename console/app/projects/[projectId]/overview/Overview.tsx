@@ -11,6 +11,29 @@ import { useProject } from "@/lib/project";
 import { IncrementRequest } from "@/components/IncrementRequest";
 import { useT } from "@/lib/i18n";
 import type { OrchestratorTicket, TicketStatus } from "@/lib/types";
+import { statusToken } from "@/lib/statusToken";
+
+// Actividad en vivo — cada story reciente como una línea del "glass box".
+type Rec = { key: string; title: string; status: TicketStatus; pr: string | null; session: string | null; at: string };
+function relTime(iso: string): string {
+  const d = Math.max(0, Date.now() - new Date(iso).getTime());
+  const m = Math.floor(d / 60000), h = Math.floor(m / 60), day = Math.floor(h / 24);
+  if (m < 1) return "recién";
+  if (m < 60) return `hace ${m} min`;
+  if (h < 24) return `hace ${h} h`;
+  if (day === 1) return "ayer";
+  return `hace ${day} d`;
+}
+function activityPhrase(s: TicketStatus, session: string | null): string {
+  switch (s) {
+    case "running": return session ? "un agente la está construyendo · sesión activa" : "un agente la está construyendo";
+    case "in_review": return "PR abierto — esperando revisión";
+    case "done": return "entregada — merge a main";
+    case "ready": return "lista para despachar";
+    case "failed": return "falló — vuelve al backlog";
+    default: return "en el backlog";
+  }
+}
 
 const DOC_TITLE_KEY: Record<string, string> = {
   "BRIEF.md": "overview.doc.brief",
@@ -55,16 +78,22 @@ export default function Overview() {
   const t = useT();
   const [tickets, setTickets] = useState<OrchestratorTicket[]>([]);
   const [docNames, setDocNames] = useState<string[]>([]);
+  const [recent, setRecent] = useState<Rec[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     let cancelled = false;
     const load = async () => {
-      const [{ data: rows }, { data: runs }] = await Promise.all([
+      const [{ data: rows }, { data: runs }, { data: rec }] = await Promise.all([
         supabase.from("stories").select("key,title,status,sprint_id,blocked_by").eq("project_id", projectId),
         supabase.from("design_runs").select("id").eq("project_id", projectId).order("created_at", { ascending: false }).limit(1),
+        supabase.from("stories").select("key,title,status,pr_url,session_url,updated_at").eq("project_id", projectId).order("updated_at", { ascending: false }).limit(6),
       ]);
       if (cancelled) return;
+      setRecent(((rec as Record<string, unknown>[]) ?? []).map((s) => ({
+        key: s.key as string, title: (s.title as string) ?? "", status: mapStatus(s.status as string),
+        pr: (s.pr_url as string | null) ?? null, session: (s.session_url as string | null) ?? null, at: s.updated_at as string,
+      })));
       const sprintKeyRes = await supabase.from("sprints").select("id,key").eq("project_id", projectId);
       const sprintKey = new Map((sprintKeyRes.data ?? []).map((s) => [s.id as string, s.key as string]));
       setTickets(((rows as Record<string, unknown>[]) ?? []).map((s) => ({
@@ -83,6 +112,12 @@ export default function Overview() {
       setLoading(false);
     };
     void load();
+    // Tiempo real: cualquier cambio de estado de una story refresca la actividad (glass box).
+    const ch = supabase
+      .channel(`overview:${projectId}`)
+      .on("postgres_changes", { event: "*", schema: "public", table: "stories", filter: `project_id=eq.${projectId}` }, () => void load())
+      .subscribe();
+    return () => { cancelled = true; void supabase.removeChannel(ch); };
   }, [projectId, supabase]);
 
   const stats = useMemo(() => {
@@ -113,6 +148,28 @@ export default function Overview() {
           <div className="ov-bar"><div className="ov-bar-fill" style={{ width: `${stats.pct}%` }} /></div>
         </div>
       </div>
+
+      {/* Actividad en vivo — el "glass box": qué está pasando en la fábrica ahora mismo. */}
+      {recent.length > 0 && (
+        <div className="ov-feed">
+          <div className="ov-feed-h">
+            <h3>Actividad en vivo</h3>
+            <span className="ov-feed-sub mono">tiempo real</span>
+          </div>
+          {recent.map((r) => {
+            const link = r.session ?? r.pr ?? null;
+            return (
+              <div key={r.key} className="ov-ev">
+                <span className="ov-ev-dot" style={{ color: statusToken(r.status).color }} />
+                <div className="ov-ev-tx">
+                  <span><b className="mono">{r.key}</b> {r.title} — {activityPhrase(r.status, r.session)}</span>
+                  <span className="ov-ev-t">{relTime(r.at)}{link && <a href={link} target="_blank" rel="noreferrer" className="ov-ev-lk"> · abrir ↗</a>}</span>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
 
       {/* Guía para no quedar en un dead-end: si todavía no hay backlog (stories), el proyecto está
           EN DISEÑO → el próximo paso es el Studio (responder gates, aprobar fases). CTA prominente. */}
