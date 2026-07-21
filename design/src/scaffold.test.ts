@@ -83,6 +83,27 @@ test("buildScaffold (aiuda-flutter-firebase) emite deploy.yml (Deploy A1) — Fl
   assert.ok("jobs" in doc, "deploy.yml (Flutter) sin jobs");
 });
 
+test("buildScaffold (aiuda-flutter-firebase) emite device-verify.yml (Deploy A2) — Firebase Test Lab verify, manual, skip-clean BYO", () => {
+  const { files } = buildScaffold(registryDir, FLUTTER_VARS);
+  const dev = files.find((f) => f.path === ".github/workflows/device-verify.yml");
+  assert.ok(dev, "falta device-verify.yml en el scaffold del stack Flutter");
+  const c = dev!.content;
+  // Disparo MANUAL: Test Lab corre sobre el Firebase del cliente (cuesta plata) → deliberado, no on-PR.
+  assert.match(c, /workflow_dispatch/);
+  // Compila los integration tests a APK y los corre en Firebase Test Lab (device farm de Google).
+  assert.match(c, /integration_test/);
+  assert.match(c, /assembleAndroidTest/);
+  assert.match(c, /gcloud firebase test android run/);
+  assert.match(c, /--type instrumentation/);
+  // BYO skip-clean: el tramo se salta sin el secret umbrella de la capability (aditivo, no rompe).
+  assert.match(c, /FIREBASE_SERVICE_ACCOUNT/);
+  assert.match(c, /on=false/);
+  // app_path resuelto (ninguna var sin resolver) + YAML válido con jobs.
+  assert.deepEqual(leftoverVars(c), [], "device-verify.yml del stack Flutter tiene vars sin resolver");
+  const doc = yaml.load(c) as Record<string, unknown>;
+  assert.ok("jobs" in doc, "device-verify.yml (Flutter) sin jobs");
+});
+
 test("NINGÚN archivo emitido conserva una var {{...}} sin resolver", () => {
   const { files } = buildScaffold(registryDir, VARS);
   for (const f of files) assert.deepEqual(leftoverVars(f.content), [], `${f.path} tiene vars sin resolver`);

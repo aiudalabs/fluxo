@@ -1,0 +1,116 @@
+name: device-verify
+
+# ÚLTIMA MILLA · MOBILE · VERIFY (Deploy A2 · D7=BYO) — el tramo *verify* que D7 define para mobile y que
+# A1 (deploy/preview a Hosting) no cubrió. Compila los **integration tests** de la app Flutter primaria a
+# APK y los corre en **Firebase Test Lab** (el device-farm gestionado de Google) sobre el proyecto Firebase
+# del CLIENTE (BYO, cero COGS), devolviendo video/screenshots/logs. Es el equivalente mobile del
+# `e2e-verify`/`ui-verify` (Playwright) que ya cubre web (D7 §mobile).
+#
+# BYO-CREDENCIAL — configurá este secret del repo (Settings → Secrets → Actions) para habilitar el verify.
+# Sin el secret (o sin integration tests en el árbol) el job se SALTEA limpio (aditivo: no falla por lo no
+# configurado):
+#   · Test Lab : FIREBASE_SERVICE_ACCOUNT  (el MISMO secret umbrella de la capability firebase — Hosting y
+#                Test Lab usan el mismo service-account; para Test Lab el SA necesita los roles
+#                Firebase Test Lab Admin + Firebase Analytics Viewer — ver registry/capabilities/firebase.yaml)
+#
+# El project_id sale del propio JSON del service-account (no hay un secret extra que sembrar) — igual que A1.
+#
+# Disparo MANUAL (workflow_dispatch): a diferencia de `ui-verify`/`test-verify` (que corren en cada PR sobre
+# los runners de GitHub, gratis), Test Lab corre en el Firebase del cliente y CUESTA por ejecución → dispararlo
+# on-PR sería una sorpresa de costo (la misma disciplina que build-apk y el `dispatch_mode:manual`). Verificar
+# en dispositivo es una acción deliberada del humano.
+#
+# DISPOSITIVO: se usa el device por DEFAULT de Test Lab (no fijamos un model/version acá — un id de device se
+# pone stale con el catálogo de Google). Una matrix de dispositivos configurable queda DIFERIDA (v1.1).
+#
+# MULTI-APP (v1): se verifica SOLO la app primaria ({{app_path}}) y el PRIMER test de integración como driver
+# del build. Un producto Flutter multi-app (customer + provider) o N superficies queda DIFERIDO (liga L-LM-4 /
+# P2-3) — no shippeamos una matrix sin testear.
+
+on:
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+env:
+  # App a verificar (misma variable que ui-verify / build-apk / deploy; el generador la sustituye,
+  # default apps/customer).
+  APP_PATH: "{{app_path}}"
+
+jobs:
+  device-verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+    steps:
+      - name: Detect Test Lab config
+        id: cfg
+        run: |
+          # Habilitá el tramo solo con: el secret BYO + la app primaria + al menos un test de integración.
+          # Si falta cualquiera → skip limpio, el job pasa en verde.
+          if [ -n "$FIREBASE_SERVICE_ACCOUNT" ] && [ -f "$APP_PATH/pubspec.yaml" ] \
+             && ls "$APP_PATH"/integration_test/*_test.dart >/dev/null 2>&1; then
+            echo "on=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "on=false" >> "$GITHUB_OUTPUT"
+            echo "device-verify: falta FIREBASE_SERVICE_ACCOUNT, $APP_PATH/pubspec.yaml o $APP_PATH/integration_test/*_test.dart — skip."
+          fi
+
+      - name: Checkout
+        if: steps.cfg.outputs.on == 'true'
+        uses: actions/checkout@v4
+
+      - name: Set up Flutter
+        if: steps.cfg.outputs.on == 'true'
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Set up Java (Android build toolchain)
+        if: steps.cfg.outputs.on == 'true'
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - name: Build app + androidTest APKs (integration_test)
+        if: steps.cfg.outputs.on == 'true'
+        working-directory: ${{ env.APP_PATH }}
+        run: |
+          set -euo pipefail
+          # Driver del build = el primer test de integración (una superficie, v1). Path relativo a la raíz
+          # del proyecto Flutter, que es como el gradle plugin de Flutter resuelve -Ptarget.
+          TEST_FILE="$(ls integration_test/*_test.dart | head -n1)"
+          echo "device-verify: driver = $TEST_FILE"
+          # `flutter build apk --debug` corre pub get; genera build/app/outputs/apk/debug/app-debug.apk.
+          flutter build apk --debug
+          # Los dos APKs que Test Lab necesita (app + instrumentation), vía el gradle de Android:
+          pushd android
+          ./gradlew app:assembleAndroidTest
+          ./gradlew app:assembleDebug -Ptarget="$TEST_FILE"
+          popd
+
+      - name: Run integration tests on Firebase Test Lab
+        if: steps.cfg.outputs.on == 'true'
+        working-directory: ${{ env.APP_PATH }}
+        env:
+          # gcloud autentica non-interactive con el SA JSON (ADC); gcloud ya viene en ubuntu-latest.
+          GOOGLE_APPLICATION_CREDENTIALS: ${{ github.workspace }}/firebase-sa.json
+        run: |
+          set -euo pipefail
+          printf '%s' "$FIREBASE_SERVICE_ACCOUNT" > "$GOOGLE_APPLICATION_CREDENTIALS"
+          PID="$(python3 -c 'import json,os;print(json.load(open(os.environ["GOOGLE_APPLICATION_CREDENTIALS"]))["project_id"])')"
+          gcloud auth activate-service-account --key-file="$GOOGLE_APPLICATION_CREDENTIALS"
+          gcloud --quiet config set project "$PID"
+          echo "device-verify: Firebase Test Lab en proyecto $PID"
+          # Sin --device → Test Lab usa su device por default (no fijamos un model/version que se pone stale).
+          # Falla el job (exit != 0) si un test de integración falla en el dispositivo → es un GATE de verdad.
+          gcloud firebase test android run \
+            --type instrumentation \
+            --app build/app/outputs/apk/debug/app-debug.apk \
+            --test build/app/outputs/apk/androidTest/debug/app-debug-androidTest.apk \
+            --timeout 10m
+          echo "### Firebase Test Lab (device-verify) — proyecto $PID: integration tests corridos en dispositivo." >> "$GITHUB_STEP_SUMMARY"
