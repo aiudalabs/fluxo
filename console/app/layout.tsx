@@ -14,8 +14,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html lang="es">
       <head>
-        {/* Anti-flash · Mission Control es dark-first: aplica dark salvo que el usuario haya elegido light. */}
-        <script dangerouslySetInnerHTML={{ __html: `try{if(localStorage.getItem('fluxo_theme')!=='light')document.documentElement.setAttribute('data-theme','dark')}catch(e){document.documentElement.setAttribute('data-theme','dark')}` }} />
+        {/* Anti-flash · Mission Control dark-first: pone SIEMPRE el atributo explícito (light si el
+            usuario lo eligió, dark si no) antes del primer paint — así el toggle nunca queda ambiguo. */}
+        <script dangerouslySetInnerHTML={{ __html: `try{var t=localStorage.getItem('fluxo_theme');document.documentElement.setAttribute('data-theme',t==='light'?'light':'dark')}catch(e){document.documentElement.setAttribute('data-theme','dark')}` }} />
         <link rel="preconnect" href="https://fonts.googleapis.com" />
         <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="" />
         {/* Mission Control: Space Grotesk (display) · Inter (UI) · JetBrains Mono (data). */}

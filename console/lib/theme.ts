@@ -12,8 +12,9 @@ export function currentTheme(): Theme {
 
 export function setTheme(t: Theme) {
   if (typeof document === "undefined") return;
-  if (t === "dark") document.documentElement.setAttribute("data-theme", "dark");
-  else document.documentElement.removeAttribute("data-theme");
+  // SIEMPRE explícito (light o dark) — el CSS define :root[data-theme="light"] y "dark". Removerlo
+  // dejaba el estado light sin atributo y currentTheme() (default dark) no lo detectaba → toggle trabado.
+  document.documentElement.setAttribute("data-theme", t);
   try { localStorage.setItem(KEY, t); } catch { /* ignore */ }
 }
 
