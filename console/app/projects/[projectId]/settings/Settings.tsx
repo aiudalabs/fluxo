@@ -32,7 +32,10 @@ const DEFAULTS: ProjSettings = { channel: "claude_action", merge_mode: "manual",
 const MODELS = ["auto", "claude-opus-4-8", "claude-sonnet-5", "claude-haiku-4-5-20251001"];
 
 interface ChannelInfo { id: string; available: boolean; reason: string; secretsPermMissing: boolean }
-interface Probe { channels: ChannelInfo[]; defaultChannel: string; permissionsUrl: string | null }
+// Capability del proyecto (Firebase, Vercel…): data del registry resuelta server-side. status: "ready"
+// = el Actions secret está presente (🟢) · "missing" = falta (⚪) · "n/a" = la capability no pide secret.
+interface CapabilityInfo { id: string; name: string; secret: string | null; guide: string | null; summary: string | null; status: "ready" | "missing" | "n/a"; secretsPermMissing: boolean }
+interface Probe { channels: ChannelInfo[]; capabilities?: CapabilityInfo[]; defaultChannel: string; permissionsUrl: string | null }
 
 // Presets = azúcar sobre merge_mode + workflow_approval (como v1). No hay concepto de preset abajo.
 const PRESETS: Record<string, Pick<ProjSettings, "merge_mode" | "workflow_approval">> = {
@@ -52,6 +55,7 @@ export default function Settings() {
   const [lanes, setLanes] = useState<string[]>([]);
   const [probe, setProbe] = useState<Probe | null>(null);
   const [token, setToken] = useState("");
+  const [capTokens, setCapTokens] = useState<Record<string, string>>({}); // valor pegado por capability (no se persiste)
   const [busy, setBusy] = useState<string | null>(null);
   const [msg, setMsg] = useState<{ kind: "ok" | "err"; text: string } | null>(null);
   const [installedOrgs, setInstalledOrgs] = useState<string[] | null>(null);
@@ -114,6 +118,28 @@ export default function Settings() {
     if (p) setProbe(p);
   }
 
+  // Sembrar el Actions secret de una capability (Firebase…). Mismo patrón BYO que el token de Claude:
+  // va a `gh secret set` vía el PUT del canal (whitelist server-side), NO se guarda en Fluxo.
+  async function seedCapability(cap: CapabilityInfo) {
+    if (!cap.secret) return;
+    const value = (capTokens[cap.id] ?? "").trim();
+    if (value.length < 10) return;
+    setBusy(`cap:${cap.id}`); setMsg(null);
+    const s = sessionToken();
+    const res = await fetch(`/api/projects/${projectId}/channel`, {
+      method: "PUT", headers: { "Content-Type": "application/json", Authorization: `Bearer ${s}` },
+      body: JSON.stringify({ secret: cap.secret, value }),
+    });
+    const d = await res.json().catch(() => ({}));
+    setBusy(null);
+    if (!res.ok) { setMsg({ kind: "err", text: d.error ?? "no se pudo guardar el secret" }); return; }
+    setCapTokens((m) => ({ ...m, [cap.id]: "" }));
+    setMsg({ kind: "ok", text: `${cap.name}: secret guardado en el repo. Verificando…` });
+    const H = { Authorization: `Bearer ${s}` };
+    const p = await fetch(`/api/projects/${projectId}/channel`, { headers: H }).then((r) => r.json()).catch(() => null);
+    if (p) setProbe(p);
+  }
+
   const claude = probe?.channels.find((c) => c.id === "claude_action");
   const orgInstalled = project?.org && installedOrgs ? installedOrgs.includes(project.org) : null;
   const preset = presetOf(settings);
@@ -154,6 +180,40 @@ export default function Settings() {
             <option value="copilot">GitHub Copilot (próximamente)</option>
           </select>
         </div>
+
+        {/* Integraciones / Capabilities — las integraciones externas BYO que el stack del proyecto
+            necesita (Firebase, Vercel…), resueltas del registry. El usuario hace el paso humano
+            one-time (link guiado) y pega su secret → se siembra como Actions secret del repo. */}
+        {probe?.capabilities && probe.capabilities.length > 0 && (
+          <div className="stg-caps">
+            <div className="stg-caps-h"><b>Integraciones</b><span>Las cuentas externas que tu app usa. Creá cada una una vez y pegá su credencial — se guarda como secret de tu repo, nunca en Fluxo.</span></div>
+            {probe.capabilities.map((cap) => (
+              <div key={cap.id} className="stg-cap">
+                <div className="stg-cap-row">
+                  <span className={`stg-dot ${cap.status === "ready" ? "on" : "off"}`} />
+                  <b>{cap.name}</b>
+                  <span className="stg-chan-reason">
+                    {cap.status === "ready" ? "listo 🟢"
+                      : cap.secretsPermMissing ? "la app necesita el permiso «Secrets: Read & write»"
+                      : cap.status === "n/a" ? "sin credencial requerida"
+                      : "falta la credencial ⚪"}
+                  </span>
+                </div>
+                {cap.summary && <p className="stg-cap-guide">{cap.summary}{cap.guide && <> · <a href={cap.guide} target="_blank" rel="noreferrer">guía paso a paso</a></>}</p>}
+                {cap.secret && (
+                  <>
+                    <label className="stg-lbl">Pegá tu <code>{cap.secret}</code> (no se guarda en Fluxo, va al secret del repo)</label>
+                    <div className="stg-secret">
+                      <input type="password" value={capTokens[cap.id] ?? ""} onChange={(e) => setCapTokens((m) => ({ ...m, [cap.id]: e.target.value }))} placeholder={cap.status === "ready" ? "•••••• (ya sembrado — pegá para reemplazar)" : "pegá la credencial…"} spellCheck={false} />
+                      <button disabled={busy === `cap:${cap.id}` || (capTokens[cap.id] ?? "").trim().length < 10 || !project?.repo} onClick={() => seedCapability(cap)}>{busy === `cap:${cap.id}` ? "Guardando…" : "Sembrar secret"}</button>
+                    </div>
+                  </>
+                )}
+              </div>
+            ))}
+            {!project?.repo && <p className="stg-fine">El repo se crea al publicar el backlog; después podés sembrar los secrets.</p>}
+          </div>
+        )}
       </section>
 
       {/* 2 · Autonomía / merge */}

@@ -10,14 +10,40 @@ import { NextRequest, NextResponse } from "next/server";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { verifySessionJwt, getUserToken, admin } from "@/lib/server/githubAuth";
+import {
+  registryDir,
+  resolveProjectCapabilities,
+  secretWhitelist,
+  CLAUDE_SECRET,
+  type ResolvedCapability,
+} from "@/lib/server/capabilitiesData";
 
 const pexec = promisify(execFile);
-const SECRET = "CLAUDE_CODE_OAUTH_TOKEN";
+const SECRET = CLAUDE_SECRET; // el canal de build de Claude (siempre presente, no es una capability)
 const APP_SETTINGS_PERMS = "https://github.com/settings/apps/fluxo-by-aiudalabs-com/permissions";
 
 function slugOf(repoUrl: string | null): string | null {
   const m = (repoUrl ?? "").replace(/\/$/, "").match(/github\.com\/([^/]+)\/([^/]+?)(?:\.git)?$/);
   return m ? `${m[1]}/${m[2]}` : null;
+}
+
+// projectCapabilities: resuelve las capabilities del proyecto (data-driven) desde el registry a
+// partir del `stack` de su docs/provisioning.yaml. La fuente del provisioning.yaml es el brain
+// (brain_events kind=artifact, project-wide, versionado — la misma que lee el Studio); tomamos la
+// última versión del path. Sin provisioning aún (diseño no corrido) → [] (no rompe el canal claude).
+async function projectCapabilities(projectId: string): Promise<ResolvedCapability[]> {
+  const { data } = await admin()
+    .from("brain_events")
+    .select("payload")
+    .eq("project_id", projectId)
+    .eq("kind", "artifact")
+    .ilike("payload->>path", "%provisioning.yaml")
+    .order("ts", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  const content = (data?.payload as { content?: string } | undefined)?.content;
+  if (!content) return [];
+  return resolveProjectCapabilities(registryDir(), content);
 }
 
 // projectFor: lee el proyecto SOLO si es del tenant de la sesión (ownership server-side).
@@ -74,10 +100,35 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ id: string 
   // Copilot en v2 sigue detrás del permiso Copilot de la App (degradado). Honesto: no listo.
   const copilot = { id: "copilot", available: false, reason: "próximamente — requiere el permiso Copilot de la App", workflowPresent: false, secretPresent: false, secretsPermMissing: false };
 
+  // Capabilities del proyecto (Firebase, Vercel…): por cada una, ¿está su Actions secret presente en
+  // el repo? v1 del probe = "secret presente" (igual que el token de Claude); el probe pesado del YAML
+  // (correr contra el servicio real) se difiere. Reusamos el `token` (ya refrescado por el bloque de
+  // arriba si hizo falta). Un secret ausente → ⚪ (falta); presente → 🟢.
+  const caps = await projectCapabilities(id);
+  const capabilities = await Promise.all(
+    caps.map(async (c) => {
+      if (!c.secret) {
+        return { id: c.id, name: c.name, secret: null, guide: c.guide ?? null, summary: c.summary ?? null, status: "n/a", secretsPermMissing: false };
+      }
+      const r = await fetch(`https://api.github.com/repos/${slug}/actions/secrets/${c.secret}`, { headers: H(token) });
+      const permMissing = r.status === 401 || r.status === 403;
+      return {
+        id: c.id,
+        name: c.name,
+        secret: c.secret,
+        guide: c.guide ?? null,
+        summary: c.summary ?? null,
+        status: r.ok ? "ready" : "missing",
+        secretsPermMissing: permMissing,
+      };
+    }),
+  );
+
   return NextResponse.json({
     channels: [claude, copilot],
+    capabilities,
     defaultChannel: (project.settings.channel as string) ?? "claude_action",
-    permissionsUrl: secretsPermMissing ? APP_SETTINGS_PERMS : null,
+    permissionsUrl: secretsPermMissing || capabilities.some((c) => c.secretsPermMissing) ? APP_SETTINGS_PERMS : null,
   });
 }
 
@@ -91,15 +142,27 @@ export async function PUT(req: NextRequest, ctx: { params: Promise<{ id: string 
   const slug = slugOf(project.repo);
   if (!slug) return NextResponse.json({ error: "el proyecto todavía no tiene repo" }, { status: 400 });
 
-  const { token } = (await req.json().catch(() => ({}))) as { token?: string };
-  if (!token || token.length < 10) return NextResponse.json({ error: "token vacío o inválido" }, { status: 400 });
+  // Acepta { secret, value } (una capability) o el legacy { token } (el canal de Claude). El valor
+  // NUNCA se persiste en Fluxo — pasa derecho a `gh secret set`.
+  const body = (await req.json().catch(() => ({}))) as { secret?: string; value?: string; token?: string };
+  const secretName = (body.secret ?? SECRET).trim();
+  const secretValue = body.value ?? body.token;
+  if (!secretValue || secretValue.length < 10) return NextResponse.json({ error: "valor del secret vacío o inválido" }, { status: 400 });
+
+  // ⚠️ SEGURIDAD: solo se siembra un secret de la whitelist del proyecto (el token de Claude ∪ los
+  // secrets de las capabilities que el registry declara para su stack). NUNCA un secret arbitrario.
+  const caps = await projectCapabilities(id);
+  if (!secretWhitelist(caps).has(secretName)) {
+    return NextResponse.json({ error: `secret «${secretName}» no permitido para este proyecto` }, { status: 400 });
+  }
+
   let ghToken = await getUserToken(session.sub);
   if (!ghToken) return NextResponse.json({ error: "github no conectado" }, { status: 403 });
 
   // `gh secret set` cifra el valor con la public key del repo y lo sube. El token del usuario
   // (con el permiso Secrets de la App) autentica. NO se persiste en Fluxo — pasa a GitHub y ya.
   const permRe = /401|403|Bad credentials|not accessible|Resource not accessible/i;
-  const seed = (t: string) => pexec("gh", ["secret", "set", SECRET, "--repo", slug, "--body", token], { env: { ...process.env, GH_TOKEN: t } });
+  const seed = (t: string) => pexec("gh", ["secret", "set", secretName, "--repo", slug, "--body", secretValue], { env: { ...process.env, GH_TOKEN: t } });
   try {
     await seed(ghToken);
   } catch (e) {

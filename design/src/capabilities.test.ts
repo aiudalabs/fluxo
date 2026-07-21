@@ -9,6 +9,8 @@ import {
   stackCapabilities,
   parseAccountCapabilities,
   resolveFrontierMarkers,
+  parseStack,
+  resolveProjectCapabilities,
 } from "./capabilities.ts";
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -76,4 +78,44 @@ test("resolveFrontierMarkers resuelve por el stack aunque falte el bloque accoun
 test("resolveFrontierMarkers sin provisioning.yaml ⇒ {} (gate off, degrada con gracia)", () => {
   const wd = makeWorkdir({});
   assert.deepEqual(resolveFrontierMarkers(registryDir, wd), {});
+});
+
+// ── parseStack: la llave de resolución del stack ────────────────────────────────
+test("parseStack lee el stack declarado; degrada a null si falta/malformado", () => {
+  assert.equal(parseStack("version: 1\nstack: aiuda-flutter-firebase\n"), "aiuda-flutter-firebase");
+  assert.equal(parseStack("version: 1\nroles: []\n"), null);
+  assert.equal(parseStack("{{{ malformado"), null);
+});
+
+// ── resolveProjectCapabilities: la resolución self-serve contra el registry REAL ──
+test("resolveProjectCapabilities(aiuda-flutter-firebase) resuelve firebase con su secret+guía", () => {
+  const prov = "version: 1\nstack: aiuda-flutter-firebase\naccounts:\n  - capability: firebase\n";
+  const caps = resolveProjectCapabilities(registryDir, prov);
+  const fb = caps.find((c) => c.id === "firebase");
+  assert.ok(fb, "debe resolver la capability firebase del stack");
+  assert.equal(fb!.secret, "FIREBASE_SERVICE_ACCOUNT", "aporta el nombre del Actions secret BYO");
+  assert.equal(fb!.name, "Firebase");
+  assert.ok(fb!.summary && fb!.summary.length > 0, "aporta el summary de provisioning");
+  assert.ok(fb!.guide && fb!.guide.startsWith("http"), "aporta el link guiado de provisioning");
+});
+
+test("resolveProjectCapabilities resuelve por el stack aunque falte accounts (robustez)", () => {
+  const caps = resolveProjectCapabilities(registryDir, "version: 1\nstack: aiuda-flutter-firebase\n");
+  assert.ok(caps.some((c) => c.id === "firebase"));
+});
+
+test("resolveProjectCapabilities no duplica cuando accounts y stack declaran la misma capability", () => {
+  const prov = "version: 1\nstack: aiuda-flutter-firebase\naccounts:\n  - capability: firebase\n";
+  const caps = resolveProjectCapabilities(registryDir, prov);
+  assert.equal(caps.filter((c) => c.id === "firebase").length, 1);
+});
+
+test("resolveProjectCapabilities sin stack ni accounts ⇒ [] (proyecto sin provisioning)", () => {
+  assert.deepEqual(resolveProjectCapabilities(registryDir, "version: 1\nroles: []\n"), []);
+  assert.deepEqual(resolveProjectCapabilities(registryDir, "{{{ malformado"), []);
+});
+
+test("resolveProjectCapabilities saltea capabilities que no existen en el registry", () => {
+  const prov = "version: 1\naccounts:\n  - capability: no-existe\n";
+  assert.deepEqual(resolveProjectCapabilities(registryDir, prov), []);
 });

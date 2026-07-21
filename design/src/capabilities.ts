@@ -61,6 +61,18 @@ interface ProvisioningDoc {
   accounts?: Array<{ capability?: unknown } | null>;
 }
 
+// parseStack: el `stack:` declarado en docs/provisioning.yaml (el architect §8). null si falta/no
+// parsea. Es la llave para resolver `registry/stacks/<stack>.yaml` → sus capabilities.
+export function parseStack(provisioningYaml: string): string | null {
+  try {
+    const doc = (yaml.load(provisioningYaml) ?? {}) as ProvisioningDoc;
+    const s = doc.stack != null ? String(doc.stack).trim() : "";
+    return s || null;
+  } catch {
+    return null;
+  }
+}
+
 // parseAccountCapabilities: los capability ids del bloque `accounts:` de provisioning.yaml — la
 // grada de frontera humana que el architect declara. Ausente/malformado → [] (proyecto viejo).
 export function parseAccountCapabilities(provisioningYaml: string): string[] {
@@ -100,6 +112,53 @@ export function resolveFrontierMarkers(registryDir: string, workdir: string): Re
   for (const id of ids) {
     const markers = loadCapability(registryDir, id)?.provisioning?.markers ?? [];
     if (markers.length) out[id] = markers;
+  }
+  return out;
+}
+
+// ResolvedCapability: la forma que el onboarding self-serve necesita de una capability — nombre para
+// mostrar, el nombre del Actions secret BYO que el usuario siembra, y la guía humana de provisioning.
+// `secret` es null si la capability no declara uno (nada que sembrar).
+export interface ResolvedCapability {
+  id: string;
+  name: string;
+  secret: string | null;
+  summary?: string;
+  guide?: string;
+}
+
+function secretName(cap: Capability): string | null {
+  const n = cap.secret?.name;
+  return typeof n === "string" && n.trim() ? n.trim() : null;
+}
+
+// resolveProjectCapabilities: dado el contenido de docs/provisioning.yaml de un proyecto (venga del
+// brain o del filesystem), resuelve sus capabilities contra el registry REAL. Set de ids = las del
+// bloque `accounts:` ∪ las que declara el stack (misma unión robusta que resolveFrontierMarkers: aun
+// si el architect olvidó `accounts`, el stack ya declara firebase). Orden estable (stack primero, en
+// orden de declaración; luego accounts extra). Capability inexistente en el registry → se saltea.
+export function resolveProjectCapabilities(registryDir: string, provisioningYaml: string): ResolvedCapability[] {
+  const stack = parseStack(provisioningYaml);
+  const ids: string[] = [];
+  const seen = new Set<string>();
+  const push = (id: string) => {
+    const t = id.trim();
+    if (t && !seen.has(t)) { seen.add(t); ids.push(t); }
+  };
+  if (stack) for (const id of stackCapabilities(registryDir, stack)) push(id);
+  for (const id of parseAccountCapabilities(provisioningYaml)) push(id);
+
+  const out: ResolvedCapability[] = [];
+  for (const id of ids) {
+    const cap = loadCapability(registryDir, id);
+    if (!cap) continue;
+    out.push({
+      id,
+      name: cap.name ?? id,
+      secret: secretName(cap),
+      summary: cap.provisioning?.summary,
+      guide: cap.provisioning?.guide,
+    });
   }
   return out;
 }
