@@ -97,6 +97,30 @@ one story at a time, just before it is built.
    the surface. If `provisioning.yaml` is absent (older project), skip this step entirely
    and produce the backlog exactly as before — it is purely additive.
 
+3c-bis. **The `accounts:` block is the HUMAN FRONTIER — NEVER a build AC (P6-2b/D8).** The
+   top rung of `docs/provisioning.yaml`, `accounts:`, lists projects/accounts + billing a
+   HUMAN creates one-time (a Firebase project on the Blaze plan + billing, a Vercel org, a
+   Stripe account). **No agent can create a GCP project + billing**, so an acceptance
+   criterion like *"Existe el proyecto Firebase Blaze con billing configurada"* is
+   NON-DISPATCHABLE and is a design bug (it is exactly the bug the E2E caught on S-fbmig-1).
+   The rule, without exception:
+   - **Never** re-state an `accounts:` item as a story AC. It is the human's job, resolved
+     out-of-band by the self-serve onboarding (which seeds the capability's secret).
+   - Stories **reference the capability's secret** instead: `deploy usando
+     $FIREBASE_SERVICE_ACCOUNT contra el proyecto ya concedido`. Each `accounts:` item names
+     its `capability` (registry/capabilities/<id>.yaml); that file declares the BYO secret.
+   - The ACs a story CAN carry are only what the agent fulfills: **build + test against the
+     emulator** (Firebase/Supabase emulator — no real project needed) and **deploy/verify
+     against the already-granted project** (using the secret). Split "provision" out entirely;
+     never fold it into "build".
+   - This is DISTINCT from §3c: `roles`/`indexes`/`dependencies`/`authz` items DO become
+     falsifiable ACs (the agent writes the RLS policy, the index, the env-var). Only the
+     `accounts:` rung is the human frontier. A deterministic gate at handoff cross-checks the
+     ACs against the capabilities' provisioning markers and reports any leak — but the cure is
+     here: reference the capability, do not re-state the provisioning.
+   - If `provisioning.yaml` has no `accounts:` block (older project, or a fully local/emulated
+     stack), this step is a no-op — purely additive, like §3c.
+
 3d. **Every frontend story MUST declare `screen_key` — a real key or `none`.** Any story
    owned by a frontend lane (`react-dev` / `flutter-dev`) carries a `screen_key` field with
    one of two legal values:
@@ -161,6 +185,10 @@ one story at a time, just before it is built.
    - If `docs/UI_SCREENS.md` exists: EVERY screen id it specifies appears exactly once in
      `coverage:` (→ a real story id) OR in `out_of_scope:` (→ a reason). A screen id in
      neither is a silently-dropped screen and is reported by the coverage check.
+   - No AC re-states an `accounts:` / human-provisioning item (create project + billing). If
+     `provisioning.yaml` declares `accounts:`, every deploy story references the capability's
+     secret ($FIREBASE_SERVICE_ACCOUNT…) and tests against the emulator — never "create the
+     project". A create-project-and-billing AC fails the deterministic provisioning gate.
    - Every P0 FR has ≥1 story; every data-model entity has a creation story (migration/seed);
      every external integration has an integration-layer story; ≥1 story covers observability
      (logging / metrics / health check).

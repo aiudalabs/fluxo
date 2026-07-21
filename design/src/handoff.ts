@@ -15,6 +15,7 @@ import { GithubApp, GithubRepo } from "./github.ts";
 import { labelSpecsFor } from "./labels.ts";
 import { buildScaffold, type ScaffoldVars } from "./scaffold.ts";
 import { planRepoDocs } from "./repodocs.ts";
+import { resolveFrontierMarkers } from "./capabilities.ts";
 
 interface RawBacklog {
   epic?: { id?: string; title?: string; description?: string };
@@ -127,7 +128,10 @@ async function publishToGithub(store: SupabaseDesignStore, workdir: string, gh: 
   // installation token (solo orgs con la App instalada). Los issues/docs usan el mismo token.
   const token = gh.userToken ?? await gh.app.installationToken(gh.org);
   const repo = await GithubRepo.create(token, gh.org, slugify(gh.repoName), { private: true, description: gh.description });
-  const plan = planRepoDocs(workdir, gh.declaredOutputs ?? [], stories);
+  // P6-2b · markers de provisioning humano de las capabilities de frontera de este run (accounts
+  // de provisioning.yaml ∪ capabilities del stack) — para cazar ACs de build no-despachables.
+  const markersByCapability = resolveFrontierMarkers(gh.registryDir, workdir);
+  const plan = planRepoDocs(workdir, gh.declaredOutputs ?? [], stories, markersByCapability);
   for (const rel of plan.files) {
     await repo.putFile(rel, readFileSync(join(workdir, rel)), `design: ${rel.replace(/^docs\//, "")}`);
   }
@@ -151,6 +155,16 @@ async function publishToGithub(store: SupabaseDesignStore, workdir: string, gh: 
     console.error(`  ✗ docs: ${plan.uncoveredScreens.length} pantalla(s) de UI_SCREENS.md SIN story ni marca out_of_scope en el backlog (nunca se construirán):`);
     console.error(`     · ${plan.uncoveredScreens.join(", ")}`);
     await store.brainAppend("handoff_screens_uncovered", { screens: plan.uncoveredScreens }, "engine:handoff");
+  }
+  // P6-2b · gate capability-aware: ACs de build que re-enuncian provisioning HUMANO one-time (crear
+  // proyecto + billing) — NO despachables (ningún agente crea un proyecto GCP+billing). Es el bug que
+  // el E2E cazó en S-fbmig-1. Reporta fuerte (como uncoveredScreens); NO falla el handoff: el board ya
+  // se publicó y el match marker↔AC es heurístico. La cura de raíz es aguas arriba (scrum-master
+  // referencia la capability en vez de re-enunciar el provisioning).
+  if (plan.provisioningLeaks.length) {
+    console.error(`  ✗ backlog: ${plan.provisioningLeaks.length} AC(s) re-enuncian PROVISIONING HUMANO (no-despachable — ningún agente crea proyecto+billing):`);
+    for (const l of plan.provisioningLeaks) console.error(`     · ${l.story} [${l.capability}] «${l.marker}» → ${l.ac}`);
+    await store.brainAppend("handoff_backlog_provisioning_leak", { leaks: plan.provisioningLeaks }, "engine:handoff");
   }
   // Scaffold: el canal de build + el HARNESS DE VERIFY (e2e-verify/provisioning-lint/ui-verify +
   // .fluxo/verify/**). Se construye acá (workdir con docs → stack + lanes). Los archivos que aún

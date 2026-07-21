@@ -4,7 +4,7 @@ import { mkdtempSync, mkdirSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { planRepoDocs, parseScreenIds, MAX_DOC_BYTES } from "./repodocs.ts";
+import { planRepoDocs, parseScreenIds, findProvisioningLeaks, MAX_DOC_BYTES } from "./repodocs.ts";
 import { loadWorkflow, declaredOutputs } from "./workflow.ts";
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -194,6 +194,81 @@ out_of_scope:
   const wd = makeWorkdir({ "docs/UI_SCREENS.md": UI_SCREENS_FIXTURE, "docs/backlog.yaml": backlog });
   const plan = planRepoDocs(wd, [], []);
   assert.deepEqual(plan.uncoveredScreens, []);
+});
+
+// ── P6-2b · gate capability-aware: un AC de build que re-enuncia provisioning HUMANO ──
+// Bug probado por el E2E (2026-07-20): el scrum-master emitió en S-fbmig-1 el AC "Existe el
+// proyecto Firebase en plan Blaze con Firestore habilitado y billing account configurada" —
+// ningún agente crea un proyecto GCP + billing. Una story de BUILD con un paso de PROVISIONING
+// HUMANO adentro rompe el self-serve. El gate cruza los ACs contra los markers de las capabilities
+// de frontera humana (resueltas de provisioning.yaml `accounts:` + el stack) y lo REPORTA.
+
+// markers de la capability firebase (los mismos de registry/capabilities/firebase.yaml).
+const FIREBASE_MARKERS = {
+  firebase: ["proyecto firebase", "firebase project", "plan blaze", "blaze", "billing account", "cuenta de facturacion"],
+};
+
+test("findProvisioningLeaks caza el AC no-despachable de S-fbmig-1 y deja pasar el AC referenciado", () => {
+  const stories = [
+    {
+      key: "S-fbmig-1",
+      // El AC REAL que el E2E cazó (con acento en 'colección' para probar la normalización).
+      acceptance:
+        "- Existe el proyecto Firebase en plan Blaze con Firestore habilitado y billing account configurada.\n" +
+        "- La colección `users` niega lecturas cross-user.",
+    },
+    {
+      key: "S-fbmig-2",
+      // La forma CORRECTA: referencia la capability + testea contra el emulador → NO es leak.
+      acceptance:
+        "- El deploy usa $FIREBASE_SERVICE_ACCOUNT contra el proyecto ya concedido.\n" +
+        "- Los tests corren contra el emulador de Firestore.",
+    },
+  ];
+  const leaks = findProvisioningLeaks(stories, FIREBASE_MARKERS);
+  const s1 = leaks.filter((l) => l.story === "S-fbmig-1");
+  assert.ok(s1.length >= 1, "el AC de provisioning humano de S-fbmig-1 DEBE ser cazado");
+  assert.equal(s1[0].capability, "firebase");
+  assert.match(s1[0].ac, /Blaze/);
+  // S-fbmig-2 no re-enuncia provisioning: referencia el secret + emulador.
+  assert.deepEqual(leaks.filter((l) => l.story === "S-fbmig-2"), []);
+});
+
+test("findProvisioningLeaks: sin markers (gate off) o AC vacío ⇒ nada (degrada con gracia)", () => {
+  const stories = [{ key: "S1-01", acceptance: "- Existe el proyecto Firebase en plan Blaze." }];
+  assert.deepEqual(findProvisioningLeaks(stories, {}), []);
+  assert.deepEqual(findProvisioningLeaks([{ key: "S1-02", acceptance: undefined }], FIREBASE_MARKERS), []);
+});
+
+test("findProvisioningLeaks: un solo leak por (story, línea, capability) aunque varios markers matcheen", () => {
+  // La línea contiene 'proyecto firebase' + 'plan blaze' + 'blaze' + 'billing account': 1 leak, no 4.
+  const stories = [{
+    key: "S-fbmig-1",
+    acceptance: "- Existe el proyecto Firebase en plan Blaze con billing account configurada.",
+  }];
+  const leaks = findProvisioningLeaks(stories, FIREBASE_MARKERS);
+  assert.equal(leaks.length, 1);
+});
+
+test("planRepoDocs integra provisioningLeaks cuando se le inyectan markers (S-fbmig-1)", () => {
+  const wd = makeWorkdir({ "docs/PRD.md": "p" });
+  const stories = [
+    { key: "S-fbmig-1", lane: "firebase-dev", screen_key: undefined,
+      acceptance: "- Existe el proyecto Firebase en plan Blaze con billing account configurada." },
+  ];
+  const plan = planRepoDocs(wd, [], stories, FIREBASE_MARKERS);
+  assert.equal(plan.provisioningLeaks.length, 1);
+  assert.equal(plan.provisioningLeaks[0].story, "S-fbmig-1");
+});
+
+test("planRepoDocs sin markers ⇒ provisioningLeaks vacío (gate off por defecto)", () => {
+  const wd = makeWorkdir({ "docs/PRD.md": "p" });
+  const stories = [
+    { key: "S-fbmig-1", lane: "firebase-dev", screen_key: undefined,
+      acceptance: "- Existe el proyecto Firebase en plan Blaze." },
+  ];
+  const plan = planRepoDocs(wd, [], stories);
+  assert.deepEqual(plan.provisioningLeaks, []);
 });
 
 // ── declaredOutputs contra el registry REAL: el contract test que faltó al nacer ─

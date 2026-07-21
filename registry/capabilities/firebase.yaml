@@ -1,0 +1,49 @@
+# registry/capabilities/firebase.yaml
+#
+# Una CAPABILITY: una integración externa BYO. Data (golden rule #1/#5, D8). El stack declara qué
+# capabilities necesita (registry/stacks/<stack>.yaml); el architect vuelca a docs/provisioning.yaml
+# qué es frontera humana (bloque `accounts:`); el onboarding self-serve la resuelve (checklist +
+# semáforo 🟢 + siembra el secret como Actions secret, canal BYO como el token de Claude).
+id: firebase
+name: Firebase
+
+# provisioning — la grada de ARRIBA del contrato de frontera: lo que el HUMANO crea one-time ANTES
+# de que un agente pueda construir o deployar. NUNCA un AC de build: ningún agente crea un proyecto
+# GCP + billing. El scrum-master referencia la capability ("deploy usando $FIREBASE_SERVICE_ACCOUNT"),
+# no re-enuncia el provisioning.
+provisioning:
+  summary: "Crear el proyecto Firebase en plan Blaze (pago-por-uso) con billing habilitado y Firestore activado."
+  guide: "https://console.firebase.google.com → Add project → Upgrade to Blaze → Build → Firestore Database → Create"
+  # markers — frases que, si aparecen en un AC de BUILD, delatan que el provisioning humano se coló
+  # como criterio no-despachable. Las lee el gate determinista (design-time, repodocs.ts): un AC que
+  # contiene un marker (normalizado, substring) → se reporta al brain (heurística de reporte, no traba
+  # el handoff). Mantené frases específicas (no palabras sueltas ambiguas) para minimizar falsos +.
+  markers:
+    - "proyecto firebase"
+    - "firebase project"
+    - "plan blaze"
+    - "blaze"
+    - "billing account"
+    - "cuenta de facturacion"
+    - "habilitar billing"
+    - "enable billing"
+    - "crear el proyecto gcp"
+    - "google cloud project"
+
+# secret — el/los secret(s) BYO que el usuario siembra (Actions secret). El agente deploya/testea
+# contra el proyecto ya concedido usando esto — cero COGS (BYO, D7).
+secret:
+  name: FIREBASE_SERVICE_ACCOUNT
+  kind: service_account_json
+  description: "Service-account key JSON del proyecto Firebase del cliente (el mínimo que el deploy requiere)."
+
+# probe — cómo el onboarding verifica 🟢 que el secret es válido antes de habilitar el dispatch de
+# una story que dependa de esta capability (readiness gate, D8).
+probe:
+  kind: firebase_service_account
+  hint: "Valida que el JSON parsea, expone project_id, y la key autentica contra el proyecto."
+
+# emulator — si true, el AGENTE construye y testea la lógica LOCAL contra el emulador de Firebase
+# (Firestore/Auth), SIN proyecto real. El deploy/verify server sí requieren el proyecto concedido.
+# Distinción D7: emulador de Firebase (lógica, para el agente) ≠ emulador de dispositivo (UI, humano).
+emulator: true

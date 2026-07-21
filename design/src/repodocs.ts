@@ -39,6 +39,49 @@ export interface RepoDocsPlan {
   // El scrum-master pudo comprimir N pantallas en menos stories → pantallas enteras nunca
   // tuvieron ticket → nunca se construyeron (panel del dueño de MiSalon esquelético, n=3).
   uncoveredScreens: string[];
+  // ACs de build que re-enuncian provisioning HUMANO one-time (crear proyecto+billing) — NO
+  // despachables (P6-2b). Se cruzan contra los markers de las capabilities de frontera humana.
+  provisioningLeaks: ProvisioningLeak[];
+}
+
+// Un AC de build que se coló re-enunciando un item de provisioning humano de una capability.
+export interface ProvisioningLeak {
+  story: string;      // key de la story
+  capability: string; // id de la capability cuyo provisioning se filtró (firebase, …)
+  marker: string;     // la frase de provisioning que matcheó
+  ac: string;         // la línea de AC ofensora (trim)
+}
+
+// normalize: minúsculas + sin acentos (facturación ≈ facturacion) para un match robusto del gate.
+function normalize(s: string): string {
+  return s.toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
+}
+
+// findProvisioningLeaks: cruza los ACs del backlog contra los markers de provisioning de las
+// capabilities de frontera humana. Un AC que re-enuncia un item de provisioning (crear el proyecto,
+// habilitar billing, plan Blaze…) es NO-DESPACHABLE — ningún agente crea un proyecto GCP + billing.
+// Es una HEURÍSTICA de reporte (substring por línea, normalizada), como parseScreenIds: un falso
+// positivo es ruido barato (el handoff reporta, no traba). A lo sumo UN leak por (story, línea,
+// capability) aunque varios markers matcheen. `markersByCapability` vacío ⇒ gate off.
+export function findProvisioningLeaks(
+  stories: Pick<StorySeed, "key" | "acceptance">[],
+  markersByCapability: Record<string, string[]>,
+): ProvisioningLeak[] {
+  const caps = Object.entries(markersByCapability).filter(([, ms]) => ms.length);
+  const leaks: ProvisioningLeak[] = [];
+  if (!caps.length) return leaks;
+  for (const st of stories) {
+    if (!st.acceptance) continue;
+    for (const line of st.acceptance.split(/\r?\n/)) {
+      const ln = normalize(line);
+      if (!ln.trim()) continue;
+      for (const [cap, markers] of caps) {
+        const hit = markers.find((m) => ln.includes(normalize(m)));
+        if (hit) leaks.push({ story: st.key, capability: cap, marker: hit, ac: line.trim() });
+      }
+    }
+  }
+  return leaks;
 }
 
 // parseScreenIds: extrae el set de IDs de pantalla de un docs/UI_SCREENS.md. El ID es el token
@@ -105,7 +148,10 @@ function walk(dir: string, out: string[]): void {
 export function planRepoDocs(
   workdir: string,
   declaredOutputs: string[],
-  stories: Pick<StorySeed, "key" | "screen_key" | "lane">[],
+  stories: Pick<StorySeed, "key" | "screen_key" | "lane" | "acceptance">[],
+  // Markers de provisioning de las capabilities de frontera humana (capabilities.resolveFrontier
+  // Markers). Inyectados por el handoff (que conoce el registryDir); ausente ⇒ gate off.
+  markersByCapability?: Record<string, string[]>,
 ): RepoDocsPlan {
   const docsDir = join(workdir, "docs");
   const files: string[] = [];
@@ -160,7 +206,10 @@ export function planRepoDocs(
     }
   }
 
-  return { files, excluded, missingDeclared, missingMockups, uncoveredScreens };
+  // P6-2b · gate capability-aware: ACs de build que re-enuncian provisioning humano (no-despachable).
+  const provisioningLeaks = markersByCapability ? findProvisioningLeaks(stories, markersByCapability) : [];
+
+  return { files, excluded, missingDeclared, missingMockups, uncoveredScreens, provisioningLeaks };
 }
 
 // readDoc: lee un doc del workdir/docs; null si no existe (degradación con gracia).

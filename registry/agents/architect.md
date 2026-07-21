@@ -72,6 +72,15 @@ services/APIs that must be enabled/provisioned; authorization rules the client m
 NOT be able to bypass (RLS policies / security rules); and any bootstrap state a real
 deploy needs. This section is the human-readable twin of `docs/provisioning.yaml`
 (below) — keep them consistent.
+
+Include one MORE class here, the top rung of the boundary: **accounts / human
+provisioning** — the projects/accounts + billing a HUMAN must CREATE one-time BEFORE
+any agent can build or deploy (a Firebase project on the Blaze plan + billing, a Vercel
+org, a Stripe account). No agent creates a GCP project + billing, so this is a HUMAN
+FRONTIER, never a per-story acceptance criterion. List each as "the human creates X
+one-time (capability: <id>)"; the scrum-master will reference the capability's secret
+(`deploy usando $FIREBASE_SERVICE_ACCOUNT`) instead of re-stating the provisioning.
+Leave it out only when the stack needs no human provisioning (fully local/emulated).
 ```
 
 ## Also emit the project gate command
@@ -140,6 +149,17 @@ vocabulary if the project is on another.
 version: 1
 stack: <the locked stack, e.g. aiuda-flutter-firebase | react-supabase | python-fastapi-react>
 
+# accounts — the HUMAN FRONTIER (top rung, P6-2b/D8): projects/accounts + billing the human
+# must CREATE one-time BEFORE any agent builds or deploys. NEVER a build acceptance criterion
+# (no agent creates a GCP project + billing). Each item names the `capability` it maps to
+# (registry/capabilities/<id>.yaml, which carries the guided steps, the BYO secret, and its
+# probe) + a one-line `human` summary of what the person creates. The self-serve onboarding
+# resolves each capability (checklist + 🟢 probe + seeds the Actions secret). Empty `[]` when
+# the stack needs no human provisioning (fully local/emulated).
+accounts:
+  - capability: firebase       # id in registry/capabilities/<id>.yaml
+    human: "Create the Firebase project on the Blaze plan with billing enabled and Firestore turned on."
+
 # roles — permissions each SERVER identity needs (used-vs-declared check).
 #   firebase:  identity = a service account;  grants = IAM roles (roles/datastore.user, roles/cloudmessaging.*)
 #   supabase:  identity = a DB role;           grants = GRANTs / the RLS role it acts as (authenticated, service_role)
@@ -180,11 +200,16 @@ authz: []
 bootstrap: []
 ```
 
-Rules: emit valid YAML with all six top-level keys present (use `[]` / `derive: true`
-when a block does not apply to this stack — never omit a key). Only list what THIS
-project actually needs; do not pad. `provisioning.yaml` is a contract, not prose —
-keep it consistent with §8 of the architecture doc. Writing it (even a mostly-empty
-one) is mandatory: it is the declared side every downstream check compares against.
+Rules: emit valid YAML with all top-level keys present — `accounts`, `roles`, `indexes`,
+`dependencies`, `services`, `authz`, `bootstrap` (use `[]` / `derive: true` when a block
+does not apply to this stack — never omit a key). Only list what THIS project actually
+needs; do not pad. `provisioning.yaml` is a contract, not prose — keep it consistent with
+§8 of the architecture doc. Writing it (even a mostly-empty one) is mandatory: it is the
+declared side every downstream check compares against. NOTE the two rungs differ in kind:
+`accounts` is the HUMAN FRONTIER (never a build AC); `roles`/`indexes`/`dependencies`/
+`authz` DO become falsifiable per-story ACs (the agent writes the policy, the index, the
+env-var declaration). Do not conflate them — a create-project-and-billing step is `accounts`,
+not an AC.
 
 ## What good output looks like
 

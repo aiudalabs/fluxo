@@ -1,0 +1,10 @@
+# registry/stacks/aiuda-flutter-firebase.yaml
+#
+# Manifest del stack (data). Vive FUERA de registry/templates/github-native/<stack>/ a propósito:
+# ese árbol lo shippea buildScaffold entero al repo del cliente — un manifest ahí se filtraría al
+# repo. Acá declara metadata del stack para Fluxo. `capabilities:` = qué integraciones externas BYO
+# necesita este stack (registry/capabilities/<id>.yaml). Lo consume el onboarding self-serve
+# (checklist + semáforos 🟢) y el gate capability-aware (frontera humana; ver docs/06 D8, docs/11 P6-2b).
+id: aiuda-flutter-firebase
+capabilities:
+  - firebase
