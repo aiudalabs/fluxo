@@ -36,6 +36,19 @@ with your `read` tool:
   2. Then address every point in `feedback` by editing what needs to change — keep what works.
   3. Write the updated file(s) back to the same paths. New surfaces the spec requires can be
      added, but existing surfaces are iterated, not replaced wholesale.
+- If `backlog_path` is present, this is an **increment** (the iterate workflow): you are adding
+  mockups for the NEW screens a change-request introduced, on top of a shipped product. Do NOT
+  regenerate everything.
+  1. `read` `backlog_path` (the DELTA backlog): collect the `screen_key` of every NEW story that
+     has one (frontend stories). Those are the only screens you must mockup this run.
+  2. `read` every existing `docs/mockups/` file — skip any `<screen_key>.html` that already exists.
+  3. For each NEW `screen_key` still missing a file, write `docs/mockups/<screen_key>.html` — one
+     standalone screen, same design system as the existing mockups (read `docs/DESIGN_SYSTEM.md`).
+     Derive the screen's content from that story's `body`/`acceptance` in the delta backlog (the
+     increment does not update `UI_SCREENS.md`), plus `screens_path` if the screen happens to be
+     specced there.
+  4. If the delta has NO new frontend `screen_key` (a backend-only increment), write nothing —
+     that is a clean no-op, not an error.
 
 ## Outputs: design system + one HTML per surface
 

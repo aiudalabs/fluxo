@@ -24,6 +24,28 @@ steps:
       goto: plan
       feedback: $plan_gate.detail
 
+  # Mockups del DELTA (deuda-chica 🟡 2026-07-20): un change-request que agrega pantallas nuevas
+  # publica stories con `screen_key` pero SIN mockup → el art-director de ui-verify (P2-1) no puede
+  # juzgarlas y la UI del incremento se shippea sin verificación de juicio. Esta fase corre el
+  # `designer` en MODO INCREMENTO: genera un `docs/mockups/<screen_key>.html` por pantalla NUEVA del
+  # delta (deriva el contenido del body/acceptance de la story — el iteration-planner NO actualiza
+  # UI_SCREENS.md). Lee los mockups existentes y solo agrega los que faltan; si el delta es
+  # backend-only (sin screen_key nuevos) no escribe nada — no-op limpio. Sin gate propio: el
+  # art-director en build-time (ui-verify) es el gate real; iterate se mantiene liviano.
+  - id: mockups
+    type: design
+    label: Mockups del incremento
+    agent: designer
+    inputs:
+      backlog_path: docs/backlog.yaml      # el DELTA — de acá salen los screen_key nuevos a mockear
+      screens_path: docs/UI_SCREENS.md     # specs existentes (si el screen ya estaba); puede faltar
+      prd_path: docs/PRD.md
+      output: docs/mockups/index.html
+    on_fail:
+      goto: mockups
+      max: 3
+      feedback: "La generación anterior se cortó (stall/timeout). Reintenta INCREMENTAL: un docs/mockups/<screen_key>.html por pantalla NUEVA del delta backlog, guardando tras cada uno. Continúa donde quedó si hay parciales. Nunca pases varios minutos sin escribir a disco."
+
   # Publish the delta into the native ticket store (idempotent append — existing
   # stories/sprints are untouched; the new ones become buildable backlog).
   - id: handoff
