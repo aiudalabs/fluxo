@@ -4808,18 +4808,18 @@ main:has(.studio-shell) > .studio-shell {
 .ob-theme{position:fixed;top:16px;right:16px;width:34px;height:34px;border-radius:10px;border:1px solid var(--stroke);background:var(--panel);color:var(--ink3);font-size:14px;cursor:pointer}
 
 /* ── Settings del proyecto (F6P-Settings) ─────────────────────────────────────── */
-.stg { max-width: 860px; margin: 0 auto; padding: 28px 22px 80px; display: flex; flex-direction: column; gap: 18px; }
+.stg { max-width: 1040px; margin: 0 auto; padding: 28px 22px 80px; display: flex; flex-direction: column; gap: 18px; }
 .stg-head { display: flex; flex-direction: column; gap: 4px; }
 .stg-eye { font-family: var(--mono); font-size: 11px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--ink3); }
-.stg-head h1 { font-family: var(--display); font-size: 24px; font-weight: 800; color: var(--ink); }
+.stg-head h1 { font-family: var(--disp); font-size: 24px; font-weight: 800; color: var(--ink); }
 .stg-head p { font-size: 13.5px; line-height: 1.55; color: var(--ink2); max-width: 68ch; }
 .stg-msg { padding: 10px 14px; border-radius: var(--r); font-size: 13px; }
 .stg-msg.ok { background: var(--emerald-soft, rgba(16,140,88,0.1)); border: 1px solid var(--emerald, #108a58); color: var(--emerald, #108a58); }
 .stg-msg.err { background: var(--accent-soft); border: 1px solid var(--accent-line); color: var(--accent); }
 
-.stg-card { background: var(--panel); border: 1px solid var(--stroke); border-radius: 16px; padding: 20px 22px; display: flex; flex-direction: column; gap: 16px; }
+.stg-card { background: var(--card-grad); box-shadow: var(--top-hi); border: 1px solid var(--stroke); border-radius: 16px; padding: 22px 24px; display: flex; flex-direction: column; gap: 16px; }
 .stg-card-h { display: flex; flex-direction: column; gap: 3px; }
-.stg-card-h h2 { font-family: var(--display); font-size: 16px; font-weight: 700; color: var(--ink); }
+.stg-card-h h2 { font-family: var(--disp); font-size: 16px; font-weight: 700; color: var(--ink); }
 .stg-card-h span { font-size: 12.5px; color: var(--ink2); line-height: 1.5; }
 
 .stg-field { display: flex; flex-direction: column; gap: 5px; }
@@ -4861,7 +4861,7 @@ main:has(.studio-shell) > .studio-shell {
 .stg-cap code { font-family: var(--mono); font-size: 11.5px; color: var(--ink); }
 
 .stg-presets { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
-.stg-preset { text-align: left; display: flex; flex-direction: column; gap: 3px; padding: 12px 14px; border: 1px solid var(--stroke-strong); border-radius: 12px; background: var(--bg); cursor: pointer; transition: 0.15s var(--ease); }
+.stg-preset { text-align: left; display: flex; flex-direction: column; gap: 3px; padding: 13px 15px; border: 1px solid var(--stroke); border-radius: 12px; background: var(--panel-2); box-shadow: var(--top-hi); cursor: pointer; transition: 0.15s var(--ease); }
 .stg-preset b { font-size: 13px; color: var(--ink); }
 .stg-preset span { font-size: 11.5px; color: var(--ink3); line-height: 1.4; }
 .stg-preset.on { border-color: var(--accent); background: var(--accent-soft); }
@@ -4951,3 +4951,25 @@ main:has(.studio-shell) > .studio-shell {
 .react-flow__controls-button svg { fill: var(--ink2); }
 .react-flow__attribution { background: transparent; color: var(--ink4); }
 .react-flow__edge-path { stroke: var(--stroke-strong); }
+
+/* Mission Control · Registry — sidebar de categorías + grid de cards (composición del mockup) */
+.reg-wrap { display: grid; grid-template-columns: 240px 1fr; gap: 22px; margin-top: 6px; }
+.reg-cats { display: flex; flex-direction: column; gap: 3px; }
+.reg-cat { display: flex; align-items: center; gap: 11px; height: 42px; padding: 0 14px; border-radius: 10px;
+  font-size: 13.5px; font-weight: 500; color: var(--ink3); width: 100%; text-align: left; background: transparent;
+  border: 1px solid transparent; transition: background .15s var(--ease), color .15s; }
+.reg-cat:hover { background: var(--panel); color: var(--ink); }
+.reg-cat.on { background: var(--panel-2); color: var(--ink); box-shadow: var(--top-hi); border-color: var(--stroke); }
+.reg-cat .n { margin-left: auto; font-family: var(--mono); font-size: 11px; color: var(--ink4); }
+.reg-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 14px; align-content: start; }
+.reg-item { background: var(--card-grad); border: 1px solid var(--stroke); border-radius: 14px; box-shadow: var(--top-hi);
+  padding: 17px 19px; text-align: left; cursor: pointer; transition: border-color .18s var(--ease), transform .18s var(--ease), box-shadow .2s; }
+.reg-item:hover { border-color: var(--stroke-strong); transform: translateY(-2px); box-shadow: var(--top-hi), 0 14px 34px -16px rgba(0,0,0,.7); }
+.reg-item.on { border-color: var(--accent-line); box-shadow: var(--top-hi), 0 0 26px -10px var(--glow-strong); }
+.reg-item .rid { font-family: var(--mono); font-size: 12px; color: var(--accent); margin-bottom: 7px; display: flex; align-items: center; gap: 8px; }
+.reg-item .rid .tag { color: var(--ink4); }
+.reg-item .rnm { font-family: var(--disp); font-size: 15px; font-weight: 500; margin-bottom: 6px; color: var(--ink); }
+.reg-item .rds { color: var(--ink3); font-size: 13px; line-height: 1.5; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+.reg-back { display: inline-flex; align-items: center; gap: 7px; font-size: 13px; color: var(--ink3); margin-bottom: 14px; background: transparent; }
+.reg-back:hover { color: var(--accent); }
+@media (max-width: 900px) { .reg-wrap { grid-template-columns: 1fr; } .reg-grid { grid-template-columns: 1fr; } }

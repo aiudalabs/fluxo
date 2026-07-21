@@ -77,62 +77,55 @@ export default function Registry() {
       <div className="sectitle">
         <h2>{t("registry.title")}</h2>
         <span className="c">{t("registry.subtitle")}</span>
-        <span className="sp" style={{ flex: 1 }} />
-        <div style={{ display: "flex", gap: 2, background: "var(--bg2)", border: "1px solid var(--stroke)", borderRadius: 10, padding: 3 }}>
+      </div>
+
+      <div className="reg-wrap">
+        {/* Sidebar de categorías (composición del mockup) */}
+        <div className="reg-cats">
           {(["agents", "skills", "workflows", "providers", "templates", "prompts"] as Tab[]).map((k) => (
-            <button key={k} className={`btn sm${tab === k ? " primary" : " ghost"}`}
-              style={{ borderRadius: 7, border: "none", boxShadow: "none" }}
+            <button key={k} className={`reg-cat${tab === k ? " on" : ""}`}
               onClick={() => { setTab(k); setSel(null); setDetail(null); }}>
               {t(`registry.tab.${k}`)}
+              {tab === k && k !== "prompts" && k !== "templates" && <span className="n">{items.length}</span>}
             </button>
           ))}
         </div>
-      </div>
 
-      {loading ? (
-        <div className="placeholder"><span className="spin" /></div>
-      ) : tab === "prompts" ? (
-        <PromptsPane data={prompts} t={t} />
-      ) : tab === "templates" ? (
-        <TemplatesPane templates={templates} t={t} />
-      ) : (
-        <div style={{ display: "grid", gridTemplateColumns: "320px 1fr", gap: 16, alignItems: "start" }}>
-          {/* Lista */}
-          <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-            <div className="eyebrow acc">{t("registry.count", { n: items.length })}</div>
-            {items.map((it) => (
-              <button key={it.id} className="kb-card" style={{ textAlign: "left", cursor: "pointer", border: sel?.id === it.id && sel.kind === tab ? "1px solid var(--accent-line)" : undefined }}
-                onClick={() => openItem(tab, it.id)}>
-                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                  <span className="kb-id" style={{ fontWeight: 600 }}>{it.id}</span>
-                  {it.model && <span className="tag" style={{ fontSize: 10 }}>{it.model}</span>}
-                </div>
-                {it.summary && <div className="kb-body" title={it.summary} style={{ marginTop: 4 }}>{it.summary}</div>}
-              </button>
-            ))}
-            {items.length === 0 && <div className="td-empty">—</div>}
-          </div>
-          {/* Detalle */}
-          <div style={{ position: "sticky", top: 8 }}>
-            {!sel ? (
-              <div className="placeholder"><div className="ph-ic">▦</div>{t("registry.select")}</div>
-            ) : !detail ? (
-              <div className="placeholder"><span className="spin" /></div>
-            ) : (
-              <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-                <h3 style={{ margin: 0 }}>{sel.id}</h3>
-                {detail.yaml && (<><div className="eyebrow acc">{t("registry.detail.meta")}</div><DocView content={detail.yaml} path={`${sel.id}.yaml`} /></>)}
-                {detail.md && (
-                  <>
-                    <div className="eyebrow acc">{t("registry.detail.persona")}</div>
-                    <DocView content={detail.md} path={`${sel.id}.md`} />
-                  </>
-                )}
-              </div>
-            )}
-          </div>
+        {/* Contenido: grid de cards (default) · detalle (drill-down) · panes especiales */}
+        <div>
+          {loading ? (
+            <div className="placeholder"><span className="spin" /></div>
+          ) : tab === "prompts" ? (
+            <PromptsPane data={prompts} t={t} />
+          ) : tab === "templates" ? (
+            <TemplatesPane templates={templates} t={t} />
+          ) : sel ? (
+            <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+              <button className="reg-back" onClick={() => { setSel(null); setDetail(null); }}>← {t("registry.count", { n: items.length })}</button>
+              <h3 style={{ margin: 0 }}>{sel.id}</h3>
+              {!detail ? (
+                <div className="placeholder"><span className="spin" /></div>
+              ) : (
+                <>
+                  {detail.yaml && (<><div className="eyebrow acc">{t("registry.detail.meta")}</div><DocView content={detail.yaml} path={`${sel.id}.yaml`} /></>)}
+                  {detail.md && (<><div className="eyebrow acc">{t("registry.detail.persona")}</div><DocView content={detail.md} path={`${sel.id}.md`} /></>)}
+                </>
+              )}
+            </div>
+          ) : (
+            <div className="reg-grid">
+              {items.map((it) => (
+                <button key={it.id} className={`reg-item${sel?.id === it.id ? " on" : ""}`} onClick={() => openItem(tab, it.id)}>
+                  <div className="rid">{tab}/{it.id}{it.model && <span className="tag">{it.model}</span>}</div>
+                  <div className="rnm">{it.id.replace(/[-_]/g, " ").replace(/\b\w/g, (c) => c.toUpperCase())}</div>
+                  {it.summary && <div className="rds" title={it.summary}>{it.summary}</div>}
+                </button>
+              ))}
+              {items.length === 0 && <div className="td-empty">—</div>}
+            </div>
+          )}
         </div>
-      )}
+      </div>
     </div>
   );
 }
