@@ -1,13 +1,13 @@
-// F6P-07 · Tema light/dark. Fluxo default LIGHT (su identidad); el toggle opta a dark y se
+// Tema light/dark. Mission Control es DARK-first (su identidad); el toggle opta a light y se
 // persiste. El data-theme lo aplica un script anti-flash en el <head> (layout) antes del
-// primer paint; este helper solo lo togglea en runtime.
+// primer paint (dark salvo elección 'light'); este helper solo lo togglea en runtime.
 
 export type Theme = "light" | "dark";
 const KEY = "fluxo_theme";
 
 export function currentTheme(): Theme {
-  if (typeof document === "undefined") return "light";
-  return (document.documentElement.getAttribute("data-theme") as Theme) || "light";
+  if (typeof document === "undefined") return "dark";
+  return (document.documentElement.getAttribute("data-theme") as Theme) || "dark";
 }
 
 export function setTheme(t: Theme) {
