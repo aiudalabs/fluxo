@@ -71,5 +71,41 @@ feature re-arme el token/cliente (hoy cada una lo hacía), y deja un único punt
 GitHub-OAuth. La URL sigue llevando el estado (proyecto + vista). Sin tabla `projects` aún (dev usa
 `NEXT_PUBLIC_DEV_PROJECT_ID` + JWT pre-minteado); "cargar el proyecto" hoy = establecer ese contexto compartido.
 
+## ✅ D7 · Modelo de deploy / preview / verify: **BYO auto-provision (Nivel 2), NO Fluxo-hosted (Nivel 3)** (2026-07-20)
+**Decidido:** Fluxo entrega apps que el **cliente posee** — deploy/preview/verify siempre contra la **infra del cliente**
+(BYO, cero COGS), NO a un sustrato hosteado por Fluxo. Tres niveles: **N1** (hoy) `deploy.yml` BYO a Vercel/Railway con
+tokens pegados. **N2 (objetivo)** el *feel* de "un click" sin ser hosting company: OAuth con Vercel/Supabase/Firebase +
+**provisioning-auto** que crea el proyecto **en la cuenta del usuario** vía la API de la plataforma → deploy. El app
+queda en su cuenta (BYO intacto). Es el provisioning-auto que D3 difirió a v1.1. **N3 (DESCARTADO)** ser Lovable/Replit
+(`*.fluxo.app`, Fluxo hostea): sería otro producto (COGS + ops de hosting multi-tenant + inversión del lock-in) y rompe
+la golden rule #5.
+- **Preview/verify por plataforma (todo BYO, cableado como targets en `provisioning.yaml`, estilo `deploy.yml`):**
+  - **Web:** preview = URL de Vercel; verify = **Playwright** (`e2e-verify` + art-director, ya existe).
+  - **Mobile (Flutter+Firebase):** preview cliente = **Flutter Web build → Firebase Hosting** (URL que el cliente toca
+    en el browser, cubre el 90%) + **App Distribution** (P3-3, app firmada en su teléfono). Verify server = **Firebase
+    Test Lab** (Google levanta el device, corre integration tests, devuelve video/screenshots — BYO sobre su Firebase)
+    + golden tests de Flutter. **Emulador nativo streameado al browser** (Appetize/Test-Lab-interactivo) = **opcional
+    premium** (rompe cero-COGS si lo hosteás) → se prefiere Flutter-web.
+- **Distinción a no confundir:** *emulador de Firebase* (Firestore/Auth local, para que el AGENTE testee lógica) ≠
+  *emulador de dispositivo / Flutter-web* (corre la UI para que un HUMANO la pruebe). Son cosas separadas.
+**Rationale:** el ICP son **agencias que entregan a un cliente**; el cliente (ej. Rosa/MiSalon) quiere su app en **su**
+Supabase/Vercel/Firebase, auditable y de su propiedad — no atada a que Fluxo siga vivo. El diferenciador vs Lovable es
+entregar algo que el cliente **POSEE**. Hostear rompería el "cero COGS" que hace rentable el modelo de agencia.
+
+## ✅ D8 · **Capabilities como data + diseño capability-aware** (2026-07-20)
+**Decidido:** las integraciones externas (Firebase, Vercel, Railway, Supabase, Gemini, Test Lab…) son **capabilities
+declaradas en `registry/` (data)** — cada una: pasos de provisioning humano one-time, el/los secret(s) BYO, un probe
+🟢, y qué habilita al agente. El stack declara qué capabilities necesita. El diseño es **capability-aware**: lo que
+está en `docs/provisioning.yaml` (el "declared boundary contract" que el architect ya emite) es la **frontera humana**
+y **NUNCA** se re-escribe como AC de build. Un **gate determinista** (estilo P8-B) falla el backlog si un AC re-enuncia
+un item de provisioning. El onboarding self-serve resuelve las capabilities (checklist + semáforos 🟢 + siembra el
+Actions secret, canal BYO como el token de Claude). Un **readiness gate** en el dispatch: una story no se despacha
+hasta que su capability esté 🟢.
+- ⚠️ **NO parchear a mano** (editar ACs / sembrar keys por sesión). El producto es self-serve; todo gap se cierra como
+  capacidad del sistema, no con un fix por-sesión que me necesita a mí.
+**Rationale:** el E2E (2026-07-20) probó que el scrum-master emitió un AC no-despachable ("crear el proyecto Firebase +
+billing") — un bug de diseño que rompe el self-serve para todo stack con provisioning. La cura es método+data, no un
+parche. Detalle y secuencia de construcción en `docs/11` (P6-2b).
+
 ---
 *Cuando una decisión se resuelve, moverla a ✅ con fecha y una línea de por qué, y desbloquear su tarea en el roadmap.*
