@@ -1,0 +1,440 @@
+<!doctype html>
+<html lang="es" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Fluxo · Mission Control</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+/* ═══════════════════════════════════════════════════════════════════════════
+   FLUXO · MISSION CONTROL — dark-first control room para una fábrica de agentes.
+   Near-black + un acento ámbar que brilla · pipeline vivo · glass-box en tiempo real.
+   Linaje Linear × Temporal × Raycast. Mockup — no toca la app.
+   ═══════════════════════════════════════════════════════════════════════════ */
+:root[data-theme="dark"]{
+  --bg:#09090c; --bg-2:#0c0b10;
+  --panel:#141219; --panel-2:#1a1822; --panel-3:#211f2b;
+  --line:rgba(255,255,255,.07); --line-2:rgba(255,255,255,.13);
+  --txt:#f5f4f8; --txt-2:#a6a3b2; --txt-3:#6d6a7a;
+  --accent:#ff5e2c; --accent-2:#ff8154; --accent-ink:#1c0d05;
+  --glow:rgba(255,94,44,.28); --glow-strong:rgba(255,94,44,.5);
+  --s-backlog:#8c8996; --s-ready:#49c1ff; --s-run:#ff5e2c; --s-review:#f5b13f; --s-done:#33d69f; --s-fail:#ff5d78;
+  --card-grad:linear-gradient(168deg,#17151d 0%,#131118 100%);
+  --top-hi:inset 0 1px 0 rgba(255,255,255,.06);
+  --sh:0 12px 40px -12px rgba(0,0,0,.7);
+}
+:root[data-theme="light"]{
+  --bg:#f4f3f6; --bg-2:#eeedf2;
+  --panel:#ffffff; --panel-2:#f7f6fa; --panel-3:#eeecf2;
+  --line:rgba(15,12,20,.1); --line-2:rgba(15,12,20,.2);
+  --txt:#151219; --txt-2:#57545f; --txt-3:#8a8794;
+  --accent:#ec4a12; --accent-2:#ff6a34; --accent-ink:#fff;
+  --glow:rgba(236,74,18,.16); --glow-strong:rgba(236,74,18,.28);
+  --s-backlog:#8a8794; --s-ready:#1e93d6; --s-run:#ec4a12; --s-review:#b07a12; --s-done:#0f9d6e; --s-fail:#d63a5a;
+  --card-grad:linear-gradient(168deg,#ffffff,#f8f7fb);
+  --top-hi:inset 0 1px 0 rgba(255,255,255,.8);
+  --sh:0 12px 32px -14px rgba(20,16,30,.22);
+}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%}
+body{
+  background:var(--bg); color:var(--txt);
+  font-family:"Inter",system-ui,sans-serif; font-size:14px; line-height:1.45; -webkit-font-smoothing:antialiased;
+  transition:background .35s ease,color .35s ease;
+}
+/* dot-grid + glow atmósfera de sala de control */
+body::before{content:"";position:fixed;inset:0;z-index:0;pointer-events:none;
+  background-image:radial-gradient(circle,var(--line) 1px,transparent 1.4px);
+  background-size:26px 26px;-webkit-mask-image:radial-gradient(circle at 50% 30%,#000 0%,transparent 78%);mask-image:radial-gradient(circle at 50% 30%,#000 0%,transparent 78%);opacity:.55}
+body::after{content:"";position:fixed;top:-260px;right:-160px;width:720px;height:720px;z-index:0;pointer-events:none;
+  background:radial-gradient(circle,var(--glow) 0%,transparent 62%);filter:blur(20px);opacity:.7}
+button{font-family:inherit;cursor:pointer;color:inherit;border:0;background:none}
+a{color:inherit;text-decoration:none}
+.disp{font-family:"Space Grotesk",sans-serif}
+.mono{font-family:"JetBrains Mono",monospace}
+.eyebrow{font-family:"JetBrains Mono",monospace;font-size:10.5px;font-weight:500;letter-spacing:.18em;text-transform:uppercase;color:var(--txt-3)}
+:where(a,button,input,select,textarea,[tabindex]):focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:6px}
+@media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+
+/* ═══ LAYOUT ═══ */
+.app{position:relative;z-index:1;display:grid;grid-template-columns:236px 1fr;min-height:100vh}
+/* sidebar */
+.side{border-right:1px solid var(--line);padding:18px 14px;display:flex;flex-direction:column;gap:3px;position:sticky;top:0;height:100vh;background:linear-gradient(180deg,var(--bg-2),transparent 40%)}
+.brand{display:flex;align-items:center;gap:11px;padding:8px 10px 22px}
+.brand .mark{width:32px;height:32px;border-radius:9px;background:linear-gradient(140deg,var(--accent),var(--accent-2));display:grid;place-items:center;
+  font-family:"Space Grotesk";font-weight:700;color:var(--accent-ink);box-shadow:0 0 22px -4px var(--glow-strong)}
+.brand .nm{font-family:"Space Grotesk";font-weight:600;font-size:17px;letter-spacing:-.01em}
+.side .lbl{padding:14px 12px 6px}
+.nav{display:flex;align-items:center;gap:11px;height:38px;padding:0 12px;border-radius:9px;color:var(--txt-2);font-weight:500;font-size:13.5px;position:relative;width:100%;text-align:left;transition:background .16s,color .16s}
+.nav svg{width:17px;height:17px;stroke:currentColor;fill:none;stroke-width:1.8;flex:0 0 auto}
+.nav:hover{background:var(--panel);color:var(--txt)}
+.nav.on{background:var(--panel-2);color:var(--txt);box-shadow:var(--top-hi)}
+.nav.on::before{content:"";position:absolute;left:-14px;top:9px;bottom:9px;width:3px;border-radius:0 3px 3px 0;background:var(--accent);box-shadow:0 0 12px var(--glow-strong)}
+.nav .badge{margin-left:auto;font-family:"JetBrains Mono";font-size:11px;color:var(--txt-3)}
+.side-foot{margin-top:auto;padding:12px;border-top:1px solid var(--line)}
+.kbd{font-family:"JetBrains Mono";font-size:10px;border:1px solid var(--line-2);border-radius:5px;padding:2px 6px;color:var(--txt-3)}
+
+/* body */
+.bodycol{display:flex;flex-direction:column;min-width:0}
+.topbar{height:60px;display:flex;align-items:center;gap:12px;padding:0 26px;border-bottom:1px solid var(--line);position:sticky;top:0;z-index:20;background:color-mix(in srgb,var(--bg) 78%,transparent);backdrop-filter:blur(14px)}
+.switch{display:flex;align-items:center;gap:9px;height:34px;padding:0 12px;border-radius:8px;border:1px solid var(--line);background:var(--panel);font-weight:500;font-size:13px}
+.switch .dot{width:7px;height:7px;border-radius:50%;background:var(--s-done);box-shadow:0 0 8px var(--s-done)}
+.cmdk{display:flex;align-items:center;gap:10px;height:34px;padding:0 12px;border-radius:8px;border:1px solid var(--line);background:var(--panel);color:var(--txt-3);font-size:13px;min-width:200px}
+.cmdk svg{width:15px;height:15px;stroke:currentColor;fill:none;stroke-width:2}
+.spacer{flex:1}
+.hd-live{display:flex;align-items:center;gap:8px;height:30px;padding:0 12px;border-radius:999px;border:1px solid var(--line);background:var(--panel);font-family:"JetBrains Mono";font-size:11.5px;color:var(--txt-2)}
+.hd-live .pip{width:7px;height:7px;border-radius:50%;background:var(--s-run);box-shadow:0 0 9px var(--s-run);animation:pulse 1.6s ease-in-out infinite}
+@keyframes pulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.4;transform:scale(.8)}}
+.iconbtn{width:36px;height:36px;border-radius:8px;display:grid;place-items:center;color:var(--txt-2);border:1px solid transparent}
+.iconbtn:hover{background:var(--panel);color:var(--txt)}
+.iconbtn svg{width:18px;height:18px;stroke:currentColor;fill:none;stroke-width:1.8}
+.avatar{width:34px;height:34px;border-radius:9px;background:linear-gradient(140deg,#2a2833,#211f2b);border:1px solid var(--line-2);display:grid;place-items:center;font-weight:600;font-size:12.5px;font-family:"JetBrains Mono"}
+
+.content{padding:28px 34px 110px;max-width:1720px;width:100%}
+.screen{display:none}.screen.on{display:block;animation:rise .4s cubic-bezier(.16,1,.3,1)}
+@keyframes rise{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}
+.stagger>*{animation:rise .5s cubic-bezier(.16,1,.3,1) backwards}
+.stagger>*:nth-child(2){animation-delay:.05s}.stagger>*:nth-child(3){animation-delay:.1s}.stagger>*:nth-child(4){animation-delay:.15s}
+
+/* crafted dark card */
+.card{background:var(--card-grad);border:1px solid var(--line);border-radius:16px;box-shadow:var(--top-hi),var(--sh)}
+.pagehead{display:flex;align-items:flex-end;justify-content:space-between;gap:18px;margin-bottom:26px;flex-wrap:wrap}
+.pagehead h2{margin:0;font-family:"Space Grotesk";font-size:27px;font-weight:600;letter-spacing:-.02em}
+.pagehead .sub{color:var(--txt-2);margin-top:5px;font-size:13.5px}
+
+/* buttons */
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;height:38px;padding:0 18px;border-radius:9px;font-weight:600;font-size:13px;letter-spacing:.01em;transition:transform .12s,box-shadow .2s,background .16s,border-color .16s}
+.btn svg{width:16px;height:16px;stroke:currentColor;fill:none;stroke-width:2}
+.btn:active{transform:translateY(1px)}
+.btn.primary{background:linear-gradient(180deg,var(--accent-2),var(--accent));color:var(--accent-ink);box-shadow:0 0 0 1px rgba(255,255,255,.06),0 8px 24px -8px var(--glow-strong)}
+.btn.primary:hover{box-shadow:0 0 0 1px rgba(255,255,255,.1),0 10px 30px -6px var(--glow-strong)}
+.btn.ghost{border:1px solid var(--line-2);color:var(--txt);background:var(--panel)}
+.btn.ghost:hover{border-color:var(--txt-3);background:var(--panel-2)}
+.btn.sm{height:32px;padding:0 13px;font-size:12.5px;border-radius:8px}
+/* segmented */
+.seg{display:inline-flex;background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:3px;gap:2px}
+.seg button{padding:0 15px;height:32px;border-radius:7px;font-weight:500;font-size:13px;color:var(--txt-2);display:flex;align-items:center;gap:7px}
+.seg button svg{width:15px;height:15px;stroke:currentColor;fill:none;stroke-width:1.8}
+.seg button.on{background:var(--panel-3);color:var(--txt);box-shadow:var(--top-hi)}
+/* field */
+.field{display:inline-flex;align-items:center;gap:10px;height:38px;padding:0 13px;border:1px solid var(--line);border-radius:9px;background:var(--panel);min-width:230px}
+.field svg{width:15px;height:15px;stroke:var(--txt-3);fill:none;stroke-width:2}
+.field input{border:0;background:none;outline:none;color:var(--txt);font-family:inherit;font-size:13.5px;width:100%}
+.field input::placeholder{color:var(--txt-3)}
+.selpill{display:inline-flex;align-items:center;gap:8px;height:38px;padding:0 13px;border:1px solid var(--line);border-radius:9px;background:var(--panel);color:var(--txt-2);font-size:13px}
+.selpill svg{width:14px;height:14px;stroke:currentColor;fill:none;stroke-width:2}
+
+/* status */
+.tag{display:inline-flex;align-items:center;gap:7px;font-family:"JetBrains Mono";font-size:10.5px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:var(--txt-2)}
+.tag .d{width:8px;height:8px;border-radius:50%;background:currentColor;box-shadow:0 0 8px currentColor}
+.tag.backlog{color:var(--s-backlog)}.tag.ready{color:var(--s-ready)}.tag.run{color:var(--s-run)}
+.tag.review{color:var(--s-review)}.tag.done{color:var(--s-done)}.tag.fail{color:var(--s-fail)}
+.tag.run .d{animation:pulse 1.6s ease-in-out infinite}
+.chip{display:inline-flex;align-items:center;gap:5px;height:24px;padding:0 10px;border-radius:7px;background:var(--panel-2);border:1px solid var(--line);font-family:"JetBrains Mono";font-size:11px;color:var(--txt-2)}
+.chip.acc{color:var(--s-done);border-color:color-mix(in srgb,var(--s-done) 30%,transparent)}
+
+/* ═══ OVERVIEW · mission control ═══ */
+.mc{display:grid;grid-template-columns:1.5fr 1fr;gap:18px;margin-bottom:18px}
+.hero{position:relative;overflow:hidden;padding:30px 32px}
+.hero .eyebrow{margin-bottom:14px;display:block}
+.hero h1{font-family:"Space Grotesk";font-size:34px;font-weight:600;letter-spacing:-.02em;margin:0 0 8px}
+.hero p{color:var(--txt-2);max-width:44ch;margin:0 0 26px;font-size:14px}
+.hero .big{display:flex;align-items:baseline;gap:14px}
+.hero .big .pct{font-family:"Space Grotesk";font-size:72px;font-weight:600;line-height:.9;letter-spacing:-.03em;
+  background:linear-gradient(120deg,var(--accent-2),var(--accent));-webkit-background-clip:text;background-clip:text;color:transparent}
+.hero .big .meta{font-family:"JetBrains Mono";font-size:13px;color:var(--txt-2)}
+.hero .track{margin-top:18px;height:8px;border-radius:999px;background:var(--panel-3);overflow:hidden}
+.hero .track>i{display:block;height:100%;border-radius:999px;background:linear-gradient(90deg,var(--accent),var(--accent-2));box-shadow:0 0 16px var(--glow-strong)}
+.feed{padding:22px 24px;display:flex;flex-direction:column}
+.feed h3{margin:0 0 4px;font-family:"Space Grotesk";font-size:15px;font-weight:600}
+.feed .sub{color:var(--txt-3);font-size:12px;margin-bottom:14px}
+.ev{display:flex;gap:12px;padding:9px 0;border-top:1px solid var(--line)}
+.ev .d{width:7px;height:7px;border-radius:50%;margin-top:6px;flex:0 0 auto}
+.ev .tx{flex:1;font-size:13px}.ev .tx b{font-weight:600}
+.ev .tx .t{font-family:"JetBrains Mono";font-size:11px;color:var(--txt-3);margin-top:2px}
+.kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:18px}
+.kpi{padding:20px 22px;position:relative;overflow:hidden}
+.kpi .eyebrow{display:block;margin-bottom:12px}
+.kpi .n{font-family:"Space Grotesk";font-size:38px;font-weight:600;letter-spacing:-.02em;line-height:1}
+.kpi .s{color:var(--txt-3);font-size:12px;margin-top:8px}
+.kpi.accent .n{color:var(--accent)}
+
+/* ═══ BOARD · live pipeline ═══ */
+.toolbar{display:flex;align-items:center;gap:11px;margin-bottom:22px;flex-wrap:wrap}
+.toolbar .count{margin-left:auto;font-family:"JetBrains Mono";font-size:13px;color:var(--txt-3)}
+.pipe{display:flex;gap:16px;overflow-x:auto;padding-bottom:14px;align-items:flex-start}
+.lane{flex:1 1 296px;min-width:296px;display:flex;flex-direction:column;gap:12px}
+.lane-h{display:flex;align-items:center;gap:10px;padding:0 4px 4px}
+.lane-h .ct{margin-left:auto;font-family:"JetBrains Mono";font-size:12px;color:var(--txt-3)}
+.lane-h .rail{height:2px;border-radius:2px;background:currentColor;opacity:.35;flex:1;max-width:none}
+.tk{background:var(--card-grad);border:1px solid var(--line);border-radius:14px;padding:15px 16px;box-shadow:var(--top-hi);position:relative;transition:border-color .18s,transform .18s,box-shadow .2s}
+.tk:hover{border-color:var(--line-2);transform:translateY(-2px);box-shadow:var(--top-hi),0 14px 34px -16px rgba(0,0,0,.8)}
+.tk.live{border-color:color-mix(in srgb,var(--accent) 34%,transparent);border-left:2px solid var(--accent);padding-left:15px;box-shadow:var(--top-hi),0 0 30px -10px var(--glow-strong)}
+.tk.gated{opacity:.6}
+.tk-top{display:flex;align-items:center;gap:9px;margin-bottom:9px}
+.tk-id{font-family:"JetBrains Mono";font-size:12px;color:var(--txt-3)}
+.tk-sp{font-family:"JetBrains Mono";font-size:11px;color:var(--txt-3);background:var(--panel-2);border:1px solid var(--line);padding:2px 7px;border-radius:6px;margin-left:auto}
+.tk-ttl{font-family:"Space Grotesk";font-size:15.5px;font-weight:500;line-height:1.32;letter-spacing:-.01em}
+.tk-body{color:var(--txt-2);font-size:13px;line-height:1.5;margin-top:7px;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
+.tk-meta{display:flex;align-items:center;gap:9px;flex-wrap:wrap;margin-top:14px}
+.tk-gate{display:flex;align-items:center;gap:8px;margin-top:12px;padding:8px 11px;border-radius:9px;background:color-mix(in srgb,var(--s-review) 12%,transparent);
+  border:1px solid color-mix(in srgb,var(--s-review) 26%,transparent);color:var(--s-review);font-family:"JetBrains Mono";font-size:11px}
+.tk-dep{font-family:"JetBrains Mono";font-size:11px;color:var(--txt-3);margin-top:9px}
+.lnk{color:var(--s-ready);font-family:"JetBrains Mono";font-size:12px;font-weight:500}
+.lane.folded{flex:0 0 52px;min-width:52px;align-self:stretch}
+.lane.folded .fold{height:100%;min-height:180px;border:1px dashed var(--line);border-radius:14px;display:grid;place-items:center}
+.lane.folded span{writing-mode:vertical-rl;transform:rotate(180deg);font-family:"JetBrains Mono";font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--txt-3)}
+
+/* ═══ AGENTS ═══ */
+.astack{display:flex;flex-direction:column;gap:18px}
+.apanel{padding:20px 22px}
+.apanel-h{display:flex;align-items:center;gap:12px;margin-bottom:15px}
+.apanel-h h3{margin:0;font-family:"Space Grotesk";font-size:16px;font-weight:600}
+.apanel-h .c{font-family:"JetBrains Mono";font-size:12px;color:var(--txt-3)}
+.arow{display:flex;align-items:center;gap:15px;padding:14px 16px;border-radius:11px;background:var(--panel-2);border:1px solid var(--line)}
+.arow+.arow{margin-top:10px}
+.arow.live{border-color:color-mix(in srgb,var(--accent) 30%,transparent);box-shadow:0 0 26px -12px var(--glow-strong)}
+.arow .ttl{flex:1;font-weight:500;font-size:14px}
+
+/* ═══ STUDIO ═══ */
+.st-top{display:flex;align-items:center;gap:11px;margin-bottom:20px;flex-wrap:wrap}
+.banner{display:flex;align-items:center;gap:15px;padding:16px 20px;border-radius:14px;margin-bottom:24px;position:relative;overflow:hidden;
+  background:linear-gradient(100deg,color-mix(in srgb,var(--accent) 15%,var(--panel)),var(--panel));border:1px solid color-mix(in srgb,var(--accent) 26%,transparent)}
+.banner .ic{width:34px;height:34px;border-radius:9px;background:color-mix(in srgb,var(--accent) 22%,transparent);display:grid;place-items:center;flex:0 0 auto}
+.banner .ic svg{width:18px;height:18px;stroke:var(--accent);fill:none;stroke-width:2}
+.banner .tx{flex:1;font-size:14px}.banner .tx b{font-weight:600}
+.st-body{display:grid;grid-template-columns:280px 1fr;gap:22px}
+.st-side .eyebrow{display:block;padding:0 6px 10px}.st-side .eyebrow.two{margin-top:22px}
+.vp{display:flex;align-items:center;gap:13px;height:42px;padding:0 11px;border-radius:9px}
+.vp:hover{background:var(--panel)}
+.vp .g{width:24px;height:24px;border-radius:50%;display:grid;place-items:center;flex:0 0 auto;border:1.5px solid var(--line-2);color:var(--txt-3);font-size:11px}
+.vp .g svg{width:13px;height:13px;stroke:currentColor;fill:none;stroke-width:2.4}
+.vp.done .g{background:color-mix(in srgb,var(--s-done) 18%,transparent);border-color:var(--s-done);color:var(--s-done)}
+.vp.run .g{background:color-mix(in srgb,var(--s-run) 18%,transparent);border-color:var(--s-run);color:var(--s-run)}
+.vp.wait .g{background:color-mix(in srgb,var(--accent) 16%,transparent);border-color:var(--accent);color:var(--accent)}
+.vp .nm{font-size:14px}
+.vp.on{background:var(--panel-2);box-shadow:var(--top-hi)}
+.vp.on .nm{color:var(--txt);font-weight:600}
+.rd{display:flex;align-items:center;gap:12px;height:40px;padding:0 11px;border-radius:9px;font-size:13.5px}
+.rd:hover{background:var(--panel)}
+.rd svg{width:16px;height:16px;stroke:var(--txt-3);fill:none;stroke-width:1.8}
+.rd .nm{flex:1}.rd .ok{color:var(--s-done)}
+.dv-head{display:flex;align-items:center;gap:12px;padding:20px 24px;border-bottom:1px solid var(--line)}
+.okchip{display:inline-flex;align-items:center;gap:5px;height:24px;padding:0 11px;border-radius:7px;background:color-mix(in srgb,var(--s-done) 14%,transparent);color:var(--s-done);font-family:"JetBrains Mono";font-size:11px;font-weight:600}
+.vchips{margin-left:auto;display:flex;gap:6px}
+.vchip{font-family:"JetBrains Mono";font-size:11px;height:24px;display:grid;place-items:center;padding:0 9px;border-radius:6px;color:var(--txt-3);border:1px solid var(--line)}
+.vchip.on{background:var(--panel-3);color:var(--txt);border-color:var(--line-2)}
+.dv-body{padding:26px 32px;font-size:14.5px;line-height:1.7;color:var(--txt)}
+.dv-body h1{font-family:"Space Grotesk";font-size:25px;font-weight:600;margin:0 0 6px;letter-spacing:-.02em}
+.dv-body .lead{color:var(--txt-2);margin:0 0 24px;font-size:15px}
+.dv-body h2{font-family:"JetBrains Mono";font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.14em;color:var(--accent);margin:24px 0 9px}
+.dv-body p{margin:0 0 12px;color:var(--txt-2)}
+.dv-body code{font-family:"JetBrains Mono";font-size:12.5px;background:var(--panel-2);border:1px solid var(--line);padding:1px 6px;border-radius:5px;color:var(--txt)}
+.dv-body ul{margin:0 0 12px;padding-left:20px;color:var(--txt-2)}.dv-body li{margin:5px 0}
+
+.placeholder{padding:70px;text-align:center;color:var(--txt-3)}
+/* FAB */
+.fab{position:fixed;right:28px;bottom:28px;height:52px;padding:0 20px;border-radius:13px;display:flex;align-items:center;gap:10px;z-index:40;font-weight:600;font-size:13.5px;
+  background:linear-gradient(180deg,var(--accent-2),var(--accent));color:var(--accent-ink);box-shadow:0 10px 34px -8px var(--glow-strong)}
+.fab svg{width:19px;height:19px;stroke:currentColor;fill:none;stroke-width:2}
+.snack{position:fixed;left:50%;bottom:30px;transform:translate(-50%,150%);display:flex;align-items:center;gap:16px;padding:13px 15px 13px 18px;
+  background:var(--panel-3);border:1px solid var(--line-2);color:var(--txt);border-radius:11px;box-shadow:var(--sh);font-size:13.5px;z-index:60;transition:transform .35s cubic-bezier(.16,1,.3,1);max-width:min(560px,90vw)}
+.snack.show{transform:translate(-50%,0)}.snack .k{width:8px;height:8px;border-radius:50%;background:var(--s-done);box-shadow:0 0 8px var(--s-done)}
+.pv{position:fixed;left:18px;bottom:20px;z-index:70;display:flex;align-items:center;gap:9px;padding:7px 13px;border-radius:999px;background:var(--panel-3);border:1px solid var(--line);font-family:"JetBrains Mono";font-size:11px;color:var(--txt-2)}
+.pv b{color:var(--accent)}
+
+@media (max-width:1180px){.app{grid-template-columns:64px 1fr}.brand .nm,.side .lbl,.nav span,.nav .badge,.side-foot{display:none}
+  .brand{justify-content:center;padding:8px 0 20px}.nav{justify-content:center;padding:0}.mc,.kpis{grid-template-columns:1fr 1fr}}
+@media (max-width:820px){.app{grid-template-columns:1fr}.side{display:none}.content{padding:20px 16px 110px}
+  .mc,.kpis,.st-body{grid-template-columns:1fr}.lane{min-width:84vw}.cmdk{display:none}}
+</style>
+</head>
+<body>
+<div class="app">
+
+  <!-- SIDEBAR -->
+  <aside class="side">
+    <div class="brand"><div class="mark">F</div><div class="nm">Fluxo</div></div>
+    <div class="lbl eyebrow">MiSalon</div>
+    <button class="nav" data-go="overview"><svg viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="9" rx="1"/><rect x="14" y="3" width="7" height="5" rx="1"/><rect x="14" y="12" width="7" height="9" rx="1"/><rect x="3" y="16" width="7" height="5" rx="1"/></svg><span>Overview</span></button>
+    <button class="nav" data-go="studio"><svg viewBox="0 0 24 24"><path d="M12 19l7-7 3 3-7 7-3-3z"/><path d="M18 13l-1.5-7.5L2 2l3.5 14.5L13 18l5-5z"/><path d="M2 2l7.6 7.6"/></svg><span>Studio</span></button>
+    <button class="nav on" data-go="board"><svg viewBox="0 0 24 24"><rect x="3" y="3" width="6" height="18" rx="1"/><rect x="10" y="3" width="6" height="12" rx="1"/><rect x="17" y="3" width="4" height="8" rx="1"/></svg><span>Board</span><span class="badge">12</span></button>
+    <button class="nav" data-go="agents"><svg viewBox="0 0 24 24"><rect x="4" y="8" width="16" height="12" rx="2"/><path d="M12 8V4M9 2h6"/><circle cx="9" cy="14" r="1.2"/><circle cx="15" cy="14" r="1.2"/></svg><span>Agentes</span></button>
+    <button class="nav" data-go="flow"><svg viewBox="0 0 24 24"><circle cx="6" cy="6" r="2.5"/><circle cx="18" cy="18" r="2.5"/><path d="M6 8.5v4a4 4 0 004 4h5.5"/></svg><span>Flow</span></button>
+    <button class="nav" data-go="brain"><svg viewBox="0 0 24 24"><path d="M3 12h4l2 6 4-14 2 8h6"/></svg><span>Observabilidad</span></button>
+    <button class="nav" data-go="assistant"><svg viewBox="0 0 24 24"><path d="M12 3l1.8 4.5L18 9l-4.2 1.5L12 15l-1.8-4.5L6 9l4.2-1.5z"/><path d="M18 15l.9 2.2L21 18l-2.1.8L18 21l-.9-2.2L15 18l2.1-.8z"/></svg><span>AI Assistant</span></button>
+    <button class="nav" data-go="registry"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="6" rx="1"/><rect x="3" y="14" width="18" height="6" rx="1"/></svg><span>Registry</span></button>
+    <button class="nav" data-go="settings"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3.2"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M5 5l2 2M17 17l2 2M19 5l-2 2M7 17l-2 2"/></svg><span>Settings</span></button>
+    <div class="side-foot"><div class="mono" style="font-size:11px;color:var(--txt-3)">nmlemus/idearium</div></div>
+  </aside>
+
+  <!-- BODY -->
+  <div class="bodycol">
+    <header class="topbar">
+      <button class="switch"><span class="dot"></span>MiSalon<svg width="13" height="13" viewBox="0 0 24 24" style="stroke:var(--txt-3);fill:none;stroke-width:2"><path d="M6 9l6 6 6-6"/></svg></button>
+      <div class="cmdk"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4-4"/></svg>Buscar…<span class="spacer"></span><span class="kbd">⌘K</span></div>
+      <div class="spacer"></div>
+      <div class="hd-live"><span class="pip"></span>1 agente activo</div>
+      <div class="hd-live">◷ Hoy $0.00</div>
+      <button class="iconbtn" id="themeBtn" aria-label="Tema"><svg viewBox="0 0 24 24"><path d="M21 12.8A9 9 0 1111.2 3 7 7 0 0021 12.8z"/></svg></button>
+      <div class="avatar">NM</div>
+    </header>
+
+    <main class="content">
+
+      <!-- OVERVIEW -->
+      <section class="screen" data-screen="overview">
+        <div class="mc stagger">
+          <div class="hero card">
+            <span class="eyebrow">Estado de la fábrica</span>
+            <h1>MiSalon</h1>
+            <p>App de reservas para peluquerías — la fábrica convirtió el brief en 19 stories gateadas y está construyéndolas.</p>
+            <div class="big"><span class="pct">42%</span><span class="meta">8 / 19 stories entregadas<br>1 agente construyendo ahora</span></div>
+            <div class="track"><i style="width:42%"></i></div>
+          </div>
+          <div class="feed card">
+            <h3>Actividad en vivo</h3>
+            <div class="sub mono">event stream · tiempo real</div>
+            <div class="ev"><span class="d" style="background:var(--s-run);box-shadow:0 0 8px var(--s-run)"></span><div class="tx"><b>S2-01</b> Pantalla de reservas — agente abriendo PR<div class="t">hace 2 min · sesión activa</div></div></div>
+            <div class="ev"><span class="d" style="background:var(--s-done);box-shadow:0 0 8px var(--s-done)"></span><div class="tx"><b>S1-02</b> Registro de usuario — merge a main<div class="t">hace 14 min</div></div></div>
+            <div class="ev"><span class="d" style="background:var(--s-review);box-shadow:0 0 8px var(--s-review)"></span><div class="tx"><b>S2-02</b> Calendario del estilista — PR en revisión<div class="t">hace 31 min</div></div></div>
+            <div class="ev"><span class="d" style="background:var(--s-ready);box-shadow:0 0 8px var(--s-ready)"></span><div class="tx"><b>S1-03</b> Login con Google — listo para despachar<div class="t">hace 44 min</div></div></div>
+          </div>
+        </div>
+        <div class="kpis stagger">
+          <div class="kpi card"><span class="eyebrow">Sprints</span><div class="n">1<span style="color:var(--txt-3)">/2</span></div><div class="s">completos</div></div>
+          <div class="kpi card"><span class="eyebrow">En vuelo</span><div class="n" style="color:var(--s-run)">1</div><div class="s">agentes construyendo</div></div>
+          <div class="kpi card"><span class="eyebrow">En revisión</span><div class="n" style="color:var(--s-review)">3</div><div class="s">PRs esperando merge</div></div>
+          <div class="kpi card accent"><span class="eyebrow">Gasto BYO</span><div class="n">$0.00</div><div class="s">0 llamadas · cero COGS</div></div>
+        </div>
+      </section>
+
+      <!-- BOARD -->
+      <section class="screen on" data-screen="board">
+        <div class="pagehead">
+          <div><h2>Pipeline</h2><div class="sub">12 stories · agrupadas por estado · <span style="color:var(--s-run)">1 en vivo</span></div></div>
+          <div class="seg">
+            <button class="on"><svg viewBox="0 0 24 24"><rect x="3" y="3" width="6" height="18" rx="1"/><rect x="10" y="3" width="6" height="12" rx="1"/><rect x="17" y="3" width="4" height="8" rx="1"/></svg>Pipeline</button>
+            <button>Tabla</button><button>Sprints</button><button>Grafo</button>
+          </div>
+        </div>
+        <div class="toolbar">
+          <div class="field"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4-4"/></svg><input placeholder="Buscar story…"></div>
+          <span class="selpill">Estado · todos <svg viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg></span>
+          <span class="selpill">Sprint · todos <svg viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg></span>
+          <span class="selpill">Lane · todos <svg viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg></span>
+          <span class="count">12 stories</span>
+        </div>
+        <div class="pipe">
+          <!-- Backlog -->
+          <div class="lane">
+            <div class="lane-h"><span class="tag backlog"><span class="d"></span>Backlog</span><span class="rail backlog" style="color:var(--s-backlog)"></span><span class="ct">3</span></div>
+            <div class="tk"><div class="tk-top"><span class="tk-id">S2-03</span><span class="tk-sp">SP2</span></div><div class="tk-ttl">Notificaciones push</div><div class="tk-body">Avisar al cliente y al estilista cuando una reserva se crea, cambia o se cancela. Incluye recordatorio 24 h antes.</div><div class="tk-meta"><span class="chip">backend</span></div><div class="tk-dep">dep · S2-01</div></div>
+            <div class="tk"><div class="tk-top"><span class="tk-id">S2-04</span><span class="tk-sp">SP2</span></div><div class="tk-ttl">Reprogramar reserva</div><div class="tk-body">El cliente mueve su turno a otro horario disponible sin cancelar y volver a reservar.</div><div class="tk-meta"><span class="chip">ui</span><span class="chip acc">✓ 3 AC</span></div></div>
+            <div class="tk"><div class="tk-top"><span class="tk-id">S3-01</span><span class="tk-sp">SP3</span></div><div class="tk-ttl">Pago con tarjeta</div><div class="tk-body">Cobro del anticipo al reservar con Stripe. Requiere la cuenta del salón conectada.</div><div class="tk-meta"><span class="chip">backend</span></div><div class="tk-gate">⧗ esperando capacidad · STRIPE_SECRET_KEY</div></div>
+          </div>
+          <!-- Listo -->
+          <div class="lane">
+            <div class="lane-h"><span class="tag ready"><span class="d"></span>Listo</span><span class="rail" style="color:var(--s-ready)"></span><span class="ct">1</span></div>
+            <div class="tk"><div class="tk-top"><span class="tk-id">S1-03</span><span class="tk-sp">SP1</span></div><div class="tk-ttl">Login con Google</div><div class="tk-body">Autenticación OAuth con Google para clientes y estilistas. Sesión persistente y logout desde el perfil.</div><div class="tk-meta"><button class="btn primary sm" onclick="dispatch('S1-03')"><svg viewBox="0 0 24 24" fill="currentColor" stroke="none"><path d="M8 5v14l11-7z"/></svg>Despachar</button><span class="chip">backend</span><span class="chip acc">✓ 4</span></div></div>
+          </div>
+          <!-- Running -->
+          <div class="lane">
+            <div class="lane-h"><span class="tag run"><span class="d"></span>En vivo</span><span class="rail" style="color:var(--s-run)"></span><span class="ct">1</span></div>
+            <div class="tk live"><div class="tk-top"><span class="tk-id">S2-01</span><span class="tk-sp">SP2</span></div><div class="tk-ttl">Pantalla de reservas</div><div class="tk-body">Grilla de horarios disponibles del salón; el cliente elige servicio, estilista y hora, y confirma en un paso.</div><div class="tk-meta"><span class="chip">ui</span><a class="lnk">↗ sesión en vivo</a></div></div>
+          </div>
+          <!-- Revisión -->
+          <div class="lane">
+            <div class="lane-h"><span class="tag review"><span class="d"></span>Revisión</span><span class="rail" style="color:var(--s-review)"></span><span class="ct">3</span></div>
+            <div class="tk"><div class="tk-top"><span class="tk-id">S2-02</span><span class="tk-sp">SP2</span></div><div class="tk-ttl">Calendario del estilista</div><div class="tk-body">Vista de día/semana del estilista con sus turnos, bloqueos de agenda y descansos.</div><div class="tk-meta"><span class="chip">ui</span><span class="chip acc">✓ 5</span><a class="lnk">↗ PR</a></div></div>
+            <div class="tk"><div class="tk-top"><span class="tk-id">S1-04</span><span class="tk-sp">SP1</span></div><div class="tk-ttl">Recuperar contraseña</div><div class="tk-body">Flujo de reset por email con link de un solo uso y expiración.</div><div class="tk-meta"><span class="chip">backend</span><a class="lnk">↗ PR</a></div></div>
+            <div class="tk"><div class="tk-top"><span class="tk-id">S2-05</span><span class="tk-sp">SP2</span></div><div class="tk-ttl">Perfil del salón</div><div class="tk-body">Datos del salón, servicios, precios y horarios de atención editables por el dueño.</div><div class="tk-meta"><span class="chip">ui</span><a class="lnk">↗ PR</a></div></div>
+          </div>
+          <!-- Done -->
+          <div class="lane">
+            <div class="lane-h"><span class="tag done"><span class="d"></span>Entregado</span><span class="rail" style="color:var(--s-done)"></span><span class="ct">8</span></div>
+            <div class="tk"><div class="tk-top"><span class="tk-id">S1-01</span><span class="tk-sp">SP1</span></div><div class="tk-ttl">Esquema de base de datos</div><div class="tk-body">Tablas de usuarios, salones, servicios, estilistas y reservas con relaciones y RLS.</div><div class="tk-meta"><span class="chip">backend</span><span class="chip acc">✓ 6</span></div></div>
+            <div class="tk"><div class="tk-top"><span class="tk-id">S1-02</span><span class="tk-sp">SP1</span></div><div class="tk-ttl">Registro de usuario</div><div class="tk-body">Alta con email y contraseña, verificación por correo y perfil inicial.</div><div class="tk-meta"><span class="chip">backend</span><span class="chip acc">✓ 4</span></div></div>
+            <div class="tk"><div class="tk-top"><span class="tk-id">S1-05</span><span class="tk-sp">SP1</span></div><div class="tk-ttl">Cerrar sesión</div><div class="tk-body">Logout desde el menú de perfil, invalidando la sesión en el cliente.</div><div class="tk-meta"><span class="chip">ui</span></div></div>
+          </div>
+          <div class="lane folded"><div class="fold"><span>Fallido · 0</span></div></div>
+        </div>
+      </section>
+
+      <!-- AGENTES -->
+      <section class="screen" data-screen="agents">
+        <div class="pagehead"><div><h2>Agentes</h2><div class="sub">Sesiones en vivo · cola de PRs · glass box</div></div><button class="btn ghost"><svg viewBox="0 0 24 24"><path d="M21 12a9 9 0 11-3-6.7L21 8M21 3v5h-5"/></svg>Actualizar</button></div>
+        <div class="astack stagger">
+          <div class="apanel card"><div class="apanel-h"><span class="tag run"><span class="d"></span></span><h3>Sesiones activas</h3><span class="c">1 trabajando</span></div>
+            <div class="arow live"><span class="tag run"><span class="d"></span>S2-01</span><span class="ttl">Pantalla de reservas</span><a class="lnk">↗ sesión</a></div></div>
+          <div class="apanel card"><div class="apanel-h"><span class="tag review"><span class="d"></span></span><h3>Cola de PRs</h3><span class="c">3 abiertos</span></div>
+            <div class="arow"><span class="tag review"><span class="d"></span>S2-02</span><span class="ttl">Calendario del estilista</span><a class="lnk">↗ PR</a></div>
+            <div class="arow"><span class="tag review"><span class="d"></span>S1-04</span><span class="ttl">Recuperar contraseña</span><a class="lnk">↗ PR</a></div>
+            <div class="arow"><span class="tag review"><span class="d"></span>S2-05</span><span class="ttl">Perfil del salón</span><a class="lnk">↗ PR</a></div></div>
+          <div class="apanel card"><div class="apanel-h"><span class="tag backlog"><span class="d"></span></span><h3>Aprobar workflow</h3><span class="c">1 pendiente</span></div>
+            <div class="arow"><span class="chip">agent/S2-02</span><span class="ttl">claude-review · Agent review</span><a class="lnk">↗ run</a><button class="btn ghost sm">✓ Aprobar</button></div></div>
+        </div>
+      </section>
+
+      <!-- STUDIO -->
+      <section class="screen" data-screen="studio">
+        <div class="st-top"><span class="eyebrow">Diseño</span><span class="chip">◇ rama design</span><span class="chip" style="color:var(--accent);border-color:color-mix(in srgb,var(--accent) 30%,transparent)">◈ 2 aprobación pendiente</span></div>
+        <div class="banner"><div class="ic"><svg viewBox="0 0 24 24"><rect x="6" y="4" width="4" height="16" rx="1"/><rect x="14" y="4" width="4" height="16" rx="1"/></svg></div>
+          <div class="tx"><b>Te toca:</b> hay preguntas para vos en <b>Arquitectura</b>. Respondelas para que el diseño continúe.</div>
+          <button class="btn primary">Ir a responder →</button></div>
+        <div class="st-body">
+          <aside class="st-side">
+            <span class="eyebrow">Fases del diseño</span>
+            <div class="vp done"><span class="g"><svg viewBox="0 0 24 24"><path d="M5 12l5 5 9-11"/></svg></span><span class="nm">Descubrimiento</span></div>
+            <div class="vp done"><span class="g"><svg viewBox="0 0 24 24"><path d="M5 12l5 5 9-11"/></svg></span><span class="nm">PRD</span></div>
+            <div class="vp done"><span class="g"><svg viewBox="0 0 24 24"><path d="M5 12l5 5 9-11"/></svg></span><span class="nm">Modelo de datos</span></div>
+            <div class="vp wait on"><span class="g">‖</span><span class="nm">Arquitectura</span></div>
+            <div class="vp"><span class="g"></span><span class="nm">UI / Pantallas</span></div>
+            <div class="vp"><span class="g"></span><span class="nm">Backlog</span></div>
+            <span class="eyebrow two">Documentos</span>
+            <div class="rd"><svg viewBox="0 0 24 24"><path d="M14 3v5h5M6 3h9l5 5v13H6z"/></svg><span class="nm">BRIEF.md</span><span class="ok mono">✓</span></div>
+            <div class="rd"><svg viewBox="0 0 24 24"><path d="M14 3v5h5M6 3h9l5 5v13H6z"/></svg><span class="nm">PRD.md</span><span class="ok mono">✓</span></div>
+            <div class="rd"><svg viewBox="0 0 24 24"><path d="M14 3v5h5M6 3h9l5 5v13H6z"/></svg><span class="nm">DATA_MODEL.md</span><span class="ok mono">✓</span></div>
+            <div class="rd"><svg viewBox="0 0 24 24"><path d="M14 3v5h5M6 3h9l5 5v13H6z"/></svg><span class="nm">ARCHITECTURE.md</span></div>
+          </aside>
+          <div class="card" style="overflow:hidden">
+            <div class="dv-head"><span class="eyebrow">PRD · Requisitos</span><span class="okchip">✓ Aprobado</span><div class="vchips"><span class="vchip on">v3</span><span class="vchip">v2</span><span class="vchip">v1</span></div></div>
+            <div class="dv-body">
+              <h1>MiSalon — Requisitos del producto</h1>
+              <p class="lead">App de reservas para peluquerías boutique en LATAM. El cliente reserva turno en segundos; el salón gestiona su agenda, su equipo y sus cobros.</p>
+              <h2>Usuarios</h2><p>Dos roles: <code>cliente</code> (reserva y paga) y <code>estilista/dueño</code> (gestiona agenda, servicios y disponibilidad). El admin del salón invita a su equipo.</p>
+              <h2>Flujo feliz</h2><ul><li>El cliente elige salón → servicio → estilista → horario disponible.</li><li>Confirma la reserva; recibe recordatorio push 24 h antes.</li><li>El estilista ve su calendario del día y marca la reserva como atendida.</li></ul>
+              <h2>Fuera de alcance · v1</h2><p>Pagos divididos, programa de fidelidad y multi-sucursal quedan diferidos a v1.1.</p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="screen" data-screen="placeholder">
+        <div class="pagehead"><div><h2 id="ph-t">Flow</h2><div class="sub">Esta sección no está en el preview.</div></div></div>
+        <div class="placeholder card">El preview cubre <b style="color:var(--txt)">Overview · Pipeline · Agentes · Studio</b>.<br>El resto reusa el mismo sistema.</div>
+      </section>
+
+    </main>
+  </div>
+</div>
+
+<button class="fab"><svg viewBox="0 0 24 24"><path d="M12 3l1.8 4.5L18 9l-4.2 1.5L12 15l-1.8-4.5L6 9z"/></svg>Assistant</button>
+<div class="snack" id="snack"><span class="k"></span><span id="snack-tx"></span></div>
+<div class="pv">Mission Control · seed <b>#FF5E2C</b> · <button id="pvTheme" style="color:var(--accent);font-weight:600;font-family:inherit">light / dark</button></div>
+
+<script>
+  const root=document.documentElement, screens=[...document.querySelectorAll('.screen')], built=new Set(['overview','board','agents','studio']);
+  function go(name){const t=built.has(name)?name:'placeholder';
+    if(t==='placeholder')document.getElementById('ph-t').textContent=({flow:'Flow',brain:'Observabilidad',assistant:'AI Assistant',registry:'Registry',settings:'Settings'})[name]||'Sección';
+    screens.forEach(s=>s.classList.toggle('on',s.dataset.screen===t));
+    document.querySelectorAll('.nav').forEach(n=>n.classList.toggle('on',n.dataset.go===name));window.scrollTo({top:0});}
+  document.querySelectorAll('[data-go]').forEach(n=>n.addEventListener('click',e=>{e.preventDefault();go(n.dataset.go);}));
+  function theme(){const d=root.getAttribute('data-theme')==='dark';root.setAttribute('data-theme',d?'light':'dark');}
+  document.getElementById('themeBtn').addEventListener('click',theme);document.getElementById('pvTheme').addEventListener('click',theme);
+  let tt;function dispatch(id){const s=document.getElementById('snack');document.getElementById('snack-tx').innerHTML='Story '+id+' despachada — un agente arranca en tu GitHub y abrirá un PR.';s.classList.add('show');clearTimeout(tt);tt=setTimeout(()=>s.classList.remove('show'),3800);}
+</script>
+</body>
+</html>
