@@ -142,6 +142,27 @@ function stepIndex(steps: Step[], id: string): number {
   return i;
 }
 
+// resumeStartIndex: el step donde un run caído debe reanudar = el primero NO satisfecho, dados el
+// set de fases `done` y el de gates `approved` (leídos del store durable). Función PURA para poder
+// testearla sin DB; `buildResumeState` (main.ts) la usa con los sets que arma de Postgres.
+//
+// Regla clave (crash-safety de skip_if_empty): un paso `design` con `skipIfEmpty` (reject-loop-body,
+// p.ej. `corrections`) NUNCA es punto de reanudación. Solo hace trabajo cuando un gate lo alimenta
+// con feedback/answers, y ese `pending` es EFÍMERO (no se persiste). Si reanudáramos AHÍ, el paso se
+// saltearía en silencio y perderíamos la corrección en curso — cerrando el sprint en verde como si
+// el reject nunca hubiera pasado. Lo saltamos para que la reanudación caiga en su GATE, que
+// re-pregunta al humano y re-conduce el loop. (Un skip_if_empty ya `done` entra por `doneP` igual.)
+export function resumeStartIndex(steps: Step[], doneP: Set<string>, approvedGates: Set<string>): number {
+  for (let i = 0; i < steps.length; i++) {
+    const s = steps[i];
+    if (s.kind === "design") { if (doneP.has(s.id) || s.skipIfEmpty) continue; return i; }
+    if (s.kind === "gate") { if (approvedGates.has(s.id)) continue; return i; }
+    if (s.kind === "validate") continue;
+    return i; // handoff → reanudar aquí (re-publica; es idempotente)
+  }
+  return steps.length;
+}
+
 // runDesign executes the workflow. `trigger` seeds $trigger.* (instructions, repo, …).
 export async function runDesign(
   wf: Workflow,
@@ -163,6 +184,18 @@ export async function runDesign(
     const step = steps[i];
 
     if (step.kind === "design") {
+      // skip_if_empty: un paso reject-loop-body (p.ej. `corrections`) NO corre en el pase lineal
+      // feliz — solo cuando un gate previo dejó feedback/answers encolados. Sin ninguno presente,
+      // se saltea entero: no cuenta como corrida, no llama al agente, no registra output. Los
+      // consumidores del doc ausente lo toleran (publish optional → no-op; close → "accepted").
+      if (step.skipIfEmpty?.length) {
+        const q = pending[step.id] as Record<string, unknown> | undefined;
+        const present = step.skipIfEmpty.some((k) => {
+          const v = q?.[k];
+          return Array.isArray(v) ? v.length > 0 : typeof v === "string" ? v.trim() !== "" : v != null;
+        });
+        if (!present) { i++; continue; }
+      }
       const attempt = (phaseRuns[step.id] ?? 0) + 1;
       phaseRuns[step.id] = attempt;
       await sink?.onPhaseStart?.(step.id, attempt);

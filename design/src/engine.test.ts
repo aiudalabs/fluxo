@@ -5,6 +5,7 @@ import { dirname, resolve } from "node:path";
 import { parseWorkflow, loadWorkflow } from "./workflow.ts";
 import {
   runDesign,
+  resumeStartIndex,
   GateExhaustedError,
   type AgentRunner,
   type PhaseRun,
@@ -149,6 +150,115 @@ test("real design.yaml: auto-approving every gate walks all phases to the handof
   // docs_pr is the first handoff (type: pr) → the design halts there awaiting F5-03.
   assert.equal(res.status, "awaiting_handoff");
   assert.deepEqual(phaseOrder, ["discovery", "constitution", "prd", "data_model", "architecture", "ui", "mockups", "backlog"]);
+});
+
+// ── Efectos de ceremonia + skip_if_empty ─────────────────────────────────────────
+// Un executor de efecto que registra los stepType que recibió (release/plan_apply/…).
+function recordingExec(): HandoffExecutor & { seen: string[] } {
+  const seen: string[] = [];
+  return { seen, run: async (step) => { seen.push(step.stepType); } };
+}
+
+test("efecto de ceremonia: un paso plan_apply se despacha al executor por stepType", async () => {
+  const wf = parseWorkflow({
+    id: "sp",
+    steps: [
+      { id: "plan", type: "design", label: "Plan", agent: "planner", inputs: {} },
+      { id: "plan_gate", type: "human_gate", inputs: { reason: "?" }, on_fail: { goto: "plan", max: 5 } },
+      { id: "apply", type: "plan_apply", label: "Aplicar", inputs: { sprint_id: "$trigger.sprint_id" } },
+    ],
+  });
+  const exec = recordingExec();
+  const res = await runDesign(
+    wf, { sprint_id: "S3" },
+    { runner: fakeRunner(), resolver: scriptedResolver({ plan_gate: [{ outcome: "approve" }] }), handoff: exec },
+  );
+  assert.equal(res.status, "done");
+  assert.deepEqual(exec.seen, ["plan_apply"]); // el motor no ramifica; el executor recibe el stepType
+});
+
+test("skip_if_empty: el paso corrections NO corre en el pase feliz; tras un reject SÍ", async () => {
+  const wf = parseWorkflow({
+    id: "sr",
+    steps: [
+      { id: "report", type: "design", label: "Report", agent: "demo-reporter", inputs: {} },
+      { id: "corrections", type: "design", label: "Corr", agent: "scrum-master", skip_if_empty: ["feedback", "answers"], inputs: {} },
+      { id: "review_gate", type: "human_gate", inputs: { reason: "?" }, on_fail: { goto: "corrections", max: 20, feedback: "$review_gate.detail" } },
+      { id: "close", type: "review_close", label: "Close", inputs: {} },
+    ],
+  });
+  // Pase feliz: aprueba a la primera → corrections se saltea, close (efecto) corre.
+  {
+    const runner = fakeRunner();
+    const exec = recordingExec();
+    const res = await runDesign(wf, {}, { runner, resolver: scriptedResolver({ review_gate: [{ outcome: "approve" }] }), handoff: exec });
+    assert.equal(res.status, "done");
+    assert.deepEqual(runner.calls.map((c) => c.phaseId), ["report"]); // corrections NO corrió
+    assert.deepEqual(exec.seen, ["review_close"]);
+    assert.equal(res.phaseRuns.corrections, undefined); // nunca contó como corrida
+  }
+  // Reject: un rechazo con feedback → loop a corrections, que ahora SÍ corre, luego aprueba.
+  {
+    const runner = fakeRunner();
+    const exec = recordingExec();
+    const resolver = scriptedResolver({ review_gate: [{ outcome: "revise", feedback: "falta doble reserva" }, { outcome: "approve" }] });
+    const res = await runDesign(wf, {}, { runner, resolver, handoff: exec });
+    assert.equal(res.status, "done");
+    assert.deepEqual(runner.calls.map((c) => c.phaseId), ["report", "corrections"]); // corrections corrió tras el reject
+    assert.equal(runner.calls[1].feedback, "falta doble reserva");
+    assert.equal(res.phaseRuns.corrections, 1);
+  }
+});
+
+test("skip_if_empty se activa por `answers` (no solo feedback) y corre en CADA reject", async () => {
+  const wf = parseWorkflow({
+    id: "sr2",
+    steps: [
+      { id: "report", type: "design", label: "R", agent: "demo-reporter", inputs: {} },
+      { id: "corrections", type: "design", label: "C", agent: "scrum-master", skip_if_empty: ["feedback", "answers"], inputs: {} },
+      { id: "review_gate", type: "human_gate", inputs: { reason: "?" }, on_fail: { goto: "corrections", max: 20, feedback: "$review_gate.detail" } },
+      { id: "close", type: "review_close", label: "Close", inputs: {} },
+    ],
+  });
+  const runner = fakeRunner();
+  const exec = recordingExec();
+  const answers = [{ q: "¿alcance?", a: "solo APIs" }];
+  // primer reject por ANSWERS (sin feedback), segundo por feedback, luego approve.
+  const resolver = scriptedResolver({
+    review_gate: [{ outcome: "revise", answers }, { outcome: "revise", feedback: "y validá doble reserva" }, { outcome: "approve" }],
+  });
+  const res = await runDesign(wf, {}, { runner, resolver, handoff: exec });
+  assert.equal(res.status, "done");
+  assert.deepEqual(runner.calls.map((c) => c.phaseId), ["report", "corrections", "corrections"]); // corrió 2 veces
+  assert.deepEqual(runner.calls[1].answers, answers);      // 1ª corrección: gatillada por answers
+  assert.ok(!runner.calls[1].feedback);                    // sin feedback real (vacío/ausente)
+  assert.equal(runner.calls[2].feedback, "y validá doble reserva"); // 2ª: por feedback
+  assert.equal(res.phaseRuns.corrections, 2);
+});
+
+// Crash-safety del skip_if_empty (hallazgo del review): un paso skip_if_empty NUNCA es punto de
+// reanudación — si un reject lo dejó corriendo y el proceso muere, reanudar AHÍ lo saltearía en
+// silencio (pending es efímero). Debe reanudar en su GATE, que re-pregunta.
+test("resumeStartIndex: un paso skip_if_empty en curso NO es el punto de reanudación (cae en su gate)", () => {
+  const wf = parseWorkflow({
+    id: "sr3",
+    steps: [
+      { id: "report", type: "design", label: "R", agent: "demo-reporter", inputs: {} },
+      { id: "corrections", type: "design", label: "C", agent: "scrum-master", skip_if_empty: ["feedback", "answers"], inputs: {} },
+      { id: "review_gate", type: "human_gate", inputs: { reason: "?" }, on_fail: { goto: "corrections", max: 20 } },
+      { id: "close", type: "review_close", label: "Close", inputs: {} },
+    ],
+  });
+  // report done, corrections estaba corriendo (reject+crash) → NO reanuda en corrections(1); salta a review_gate(2).
+  assert.equal(resumeStartIndex(wf.steps, new Set(["report"]), new Set()), 2);
+  // gate ya aprobado → sigue al efecto de cierre (3).
+  assert.equal(resumeStartIndex(wf.steps, new Set(["report"]), new Set(["review_gate"])), 3);
+  // sanity: un paso design normal (sin skip_if_empty) SÍ es punto de reanudación.
+  const norm = parseWorkflow({ id: "n", steps: [
+    { id: "p1", type: "design", label: "P1", agent: "a", inputs: {} },
+    { id: "g1", type: "human_gate", inputs: { reason: "?" }, on_fail: { goto: "p1", max: 5 } },
+  ]});
+  assert.equal(resumeStartIndex(norm.steps, new Set(), new Set()), 0); // p1 no-done → reanuda ahí
 });
 
 // ── Crash-resume (Opción B) ──────────────────────────────────────────────────────

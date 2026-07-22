@@ -14,7 +14,7 @@ import { dirname, resolve, join } from "node:path";
 import { mkdtempSync, existsSync, readFileSync, mkdirSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { loadWorkflow, designPhases, declaredOutputs, type Workflow } from "./workflow.ts";
-import { runDesign, type ResumeState } from "./engine.ts";
+import { runDesign, resumeStartIndex, type ResumeState } from "./engine.ts";
 import { recordOutput, type StepContext } from "./resolve.ts";
 import { makeSdkRunner } from "./sdkRunner.ts";
 import { SupabaseDesignStore } from "./supabase.ts";
@@ -203,13 +203,6 @@ async function buildResumeState(
     recordOutput(ctx, p.phase_id, p.artifacts[0]?.content ?? "");
   }
 
-  let startIndex = wf.steps.length;
-  for (let i = 0; i < wf.steps.length; i++) {
-    const s = wf.steps[i];
-    if (s.kind === "design") { if (doneP.has(s.id)) continue; startIndex = i; break; }
-    if (s.kind === "gate") { if (approvedGates.has(s.id)) continue; startIndex = i; break; }
-    if (s.kind === "validate") continue;
-    startIndex = i; break; // handoff → reanudar aquí (re-publica; es idempotente)
-  }
+  const startIndex = resumeStartIndex(wf.steps, doneP, approvedGates);
   return { ctx, phaseRuns, startIndex };
 }

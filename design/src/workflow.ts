@@ -28,9 +28,18 @@ export type Step =
       agent: string;
       inputs: Record<string, unknown>;
       onFail?: OnFail;
+      // skip_if_empty: nombres de campos de contexto (feedback/answers) que, si NINGUNO está
+      // presente en la corrida encolada, saltean esta fase por completo (no llama al agente). El
+      // caso: un paso reject-loop-body (p.ej. `corrections` de sprint-review) que en el pase lineal
+      // feliz no debe hacer nada, y solo se activa cuando el gate rechaza/responde.
+      skipIfEmpty?: string[];
     }
   | { kind: "validate"; id: string; label: string; inputs: Record<string, unknown>; onFail?: OnFail }
   | { kind: "gate"; id: string; reason: string; onFail: OnFail }
+  // handoff = el paso-EFECTO genérico: el motor no sabe QUÉ hace, solo llama al executor inyectado
+  // por `stepType`. Cubre pr/ticket_publish (handoff al repo) Y los efectos de ceremonia
+  // (release/plan_apply/review_close/registry_apply). Sumar un efecto = un stepType nuevo acá + su
+  // handler en la capa de ports (main.ts) — cero branching de método en el motor (golden rule #1).
   | { kind: "handoff"; id: string; stepType: string; label: string; inputs: Record<string, unknown> };
 
 export interface Workflow {
@@ -46,6 +55,7 @@ interface RawStep {
   agent?: string;
   inputs?: Record<string, unknown>;
   on_fail?: { goto?: string; max?: number; feedback?: string };
+  skip_if_empty?: string[];
 }
 
 interface RawWorkflow {
@@ -70,7 +80,11 @@ function mapStep(raw: RawStep): Step {
   switch (type) {
     case "design": {
       if (!raw.agent) throw new Error(`workflow: design step ${id} has no agent`);
-      return { kind: "design", id, label: raw.label ?? id, agent: raw.agent, inputs, onFail: parseOnFail(raw.on_fail, id) };
+      return {
+        kind: "design", id, label: raw.label ?? id, agent: raw.agent, inputs,
+        onFail: parseOnFail(raw.on_fail, id),
+        ...(Array.isArray(raw.skip_if_empty) && raw.skip_if_empty.length ? { skipIfEmpty: raw.skip_if_empty } : {}),
+      };
     }
     case "validate":
       return { kind: "validate", id, label: raw.label ?? id, inputs, onFail: parseOnFail(raw.on_fail, id) };
@@ -80,8 +94,14 @@ function mapStep(raw: RawStep): Step {
       const reason = typeof inputs.reason === "string" ? inputs.reason : "";
       return { kind: "gate", id, reason, onFail };
     }
+    // Efectos: handoff al repo (pr/ticket_publish) + efectos de ceremonia. Todos van al mismo
+    // executor inyectado, que despacha por stepType. El motor no ramifica por cuál sea.
     case "pr":
     case "ticket_publish":
+    case "release":
+    case "plan_apply":
+    case "review_close":
+    case "registry_apply":
       return { kind: "handoff", id, stepType: type, label: raw.label ?? id, inputs };
     default:
       throw new Error(`workflow: step ${id} has unknown type ${String(type)}`);
