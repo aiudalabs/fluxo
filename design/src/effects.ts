@@ -2,7 +2,7 @@
 // handler correcto: el motor NO ramifica por método (golden rule #1) — ramifica ACÁ, en la capa de
 // ports. Cubre el handoff al repo (pr/ticket_publish, vía makeHandoff) y los efectos de ceremonia.
 // Sumar un efecto = un case acá + su método en el store; cero cambios en el kernel.
-import { readFileSync } from "node:fs";
+import { readFileSync, writeFileSync, existsSync } from "node:fs";
 import { join } from "node:path";
 import type { HandoffExecutor } from "./engine.ts";
 import { resolveInputs, type StepContext } from "./resolve.ts";
@@ -11,6 +11,7 @@ import type { SupabaseDesignStore } from "./supabase.ts";
 import { makeHandoff, parseBacklog, type GithubTarget } from "./handoff.ts";
 import { parseActions } from "./plan.ts";
 import { computePlan } from "./planApply.ts";
+import { parseProposals, registryPath } from "./proposals.ts";
 
 type EffectStep = Extract<Step, { kind: "handoff" }>;
 
@@ -78,9 +79,40 @@ async function publishCorrectionsStep(store: SupabaseDesignStore, workdir: strin
   console.log(`  ↪ publish: ${stories.length} corrección(es) appendadas al backlog`);
 }
 
+// registryApplyStep: la retro aprobada → EDITA el método de la fábrica (agents/skills/workflows).
+// Lo más sensible del sistema: parseProposals ya validó forma + guardrails (kind, path-safe, nunca
+// el método propio de la retro). Acá el candado extra: el archivo a reemplazar DEBE existir (solo
+// mejora, no crea) y todo-o-nada (validar-todo antes de escribir-nada). Estampa retro_at al cerrar.
+async function registryApplyStep(store: SupabaseDesignStore, workdir: string, registryDir: string, step: EffectStep, ctx: StepContext): Promise<void> {
+  const inputs = resolveInputs(step.inputs, ctx);
+  const sprintKey = String(inputs.sprint_id ?? "");
+  const retroPath = String(inputs.retro ?? "");
+  if (!sprintKey || !retroPath) throw new Error(`registry_apply: faltan inputs (sprint_id='${sprintKey}' retro='${retroPath}')`);
+  const proposals = parseProposals(readFileSync(join(workdir, retroPath), "utf8"));
+  // Validar TODO antes de escribir NADA (atómico): cada archivo a reemplazar debe existir.
+  const targets = proposals.map((p) => {
+    const rel = registryPath(p);
+    const abs = join(registryDir, rel);
+    if (!existsSync(abs)) throw new Error(`registry_apply: ${p.kind} '${p.id}' no existe (${rel}) — la retro solo MEJORA método existente, no crea archivos nuevos`);
+    return { p, abs, rel };
+  });
+  // Escribir TODO primero (los targets ya están validados), LUEGO auditar, LUEGO estampar. Si un
+  // brainAppend falla, retro_at queda sin estampar → el próximo tick re-corre fresco (writes whole-file
+  // idempotentes) — evita el estado parcial de intercalar write y audit.
+  for (const { p, abs, rel } of targets) {
+    writeFileSync(abs, p.content, "utf8");
+    console.log(`  ↪ registry_apply: método editado → ${rel}`);
+  }
+  for (const { p, rel } of targets) {
+    await store.brainAppend("method_edited", { kind: p.kind, id: p.id, path: rel, rationale: p.rationale ?? null }, "engine:registry_apply");
+  }
+  await store.stampSprintRetro(sprintKey);
+  console.log(`  ↪ retro cerrada: sprint ${sprintKey}, ${proposals.length} edición(es) al método, retro_at estampado`);
+}
+
 // makeEffectExecutor: el executor único que se inyecta a runDesign. Despacha por stepType. Un design/
 // iterate run usa pr/ticket_publish; una ceremonia usa sus efectos. Todos por el mismo executor.
-export function makeEffectExecutor(store: SupabaseDesignStore, workdir: string, opts?: { github?: GithubTarget; full?: boolean; repo?: string }): HandoffExecutor {
+export function makeEffectExecutor(store: SupabaseDesignStore, workdir: string, opts?: { github?: GithubTarget; full?: boolean; repo?: string; registryDir?: string }): HandoffExecutor {
   const publish = makeHandoff(store, workdir, opts?.github, { full: opts?.full });
   return {
     async run(step: EffectStep, ctx: StepContext): Promise<void> {
@@ -98,6 +130,9 @@ export function makeEffectExecutor(store: SupabaseDesignStore, workdir: string, 
           return reviewCloseStep(store, workdir, step, ctx);
         case "release":
           return releaseStep(opts?.repo, step, ctx);
+        case "registry_apply":
+          if (!opts?.registryDir) throw new Error("registry_apply: falta registryDir en el executor");
+          return registryApplyStep(store, workdir, opts.registryDir, step, ctx);
         default:
           throw new Error(`effect: stepType no soportado '${step.stepType}' (¿falta cablear su handler en effects.ts?)`);
       }

@@ -417,6 +417,16 @@ export class SupabaseDesignStore {
     });
   }
 
+  // ── Retro (registry_apply) ────────────────────────────────────────────────────────
+  // stampSprintRetro: cierra la retro de un sprint — estampa retro_at + retro_run_id. Es el último
+  // eslabón del ciclo (review→retro→planning del siguiente). Una retro sin cambios igual estampa.
+  async stampSprintRetro(sprintKey: string): Promise<void> {
+    await this.rest(`/sprints?project_id=eq.${this.cfg.project}&key=eq.${encodeURIComponent(sprintKey)}`, {
+      method: "PATCH",
+      body: JSON.stringify({ retro_at: new Date().toISOString(), retro_run_id: this.runId || null }),
+    });
+  }
+
   // sink wires phase lifecycle to design_phases and the handoff to the run status.
   get sink(): EngineSink {
     return {

@@ -95,10 +95,10 @@ let trigger: Record<string, unknown>;
 if (sprintArg) {
   const [sres, stres] = await Promise.all([
     fetch(`${base}/sprints?project_id=eq.${projectId}&select=id,key,goal,position&order=position`, { headers: svcHeaders }),
-    fetch(`${base}/stories?project_id=eq.${projectId}&select=id,key,title,status,sprint_id,lane,kind,screen_key,blocked_by`, { headers: svcHeaders }),
+    fetch(`${base}/stories?project_id=eq.${projectId}&select=id,key,title,status,sprint_id,lane,kind,screen_key,blocked_by,pr_url,agent_lost`, { headers: svcHeaders }),
   ]);
   const sprintRows = (await sres.json()) as Array<{ id: string; key: string; goal: string | null; position: number | null }>;
-  const storyRows = (await stres.json()) as Array<{ id: string; key: string; title: string | null; status: string; sprint_id: string | null; lane: string | null; kind: string | null; screen_key: string | null; blocked_by: string[] | null }>;
+  const storyRows = (await stres.json()) as Array<{ id: string; key: string; title: string | null; status: string; sprint_id: string | null; lane: string | null; kind: string | null; screen_key: string | null; blocked_by: string[] | null; pr_url: string | null; agent_lost: string | null }>;
   const sprintIdToKey = new Map(sprintRows.map((r) => [r.id, r.key]));
   const storyIdToKey = new Map(storyRows.map((r) => [r.id, r.key]));
   const snapshot = storyRows.map((r) => ({
@@ -108,6 +108,12 @@ if (sprintArg) {
     deps: (r.blocked_by ?? []).map((id) => storyIdToKey.get(id)).filter((k): k is string => !!k),
   }));
   const goal = sprintRows.find((r) => r.key === sprintArg)?.goal ?? "";
+  // telemetry (para la retro): el desenlace de las stories DE ESTE sprint — qué falló/reintentó, por
+  // lane — señal para que el retro-analyst encuentre causas-en-el-método. v1 a nivel story.
+  const curSprintId = sprintRows.find((r) => r.key === sprintArg)?.id;
+  const telemetry = storyRows
+    .filter((r) => r.sprint_id === curSprintId)
+    .map((r) => ({ key: r.key, status: r.status, lane: r.lane ?? null, kind: r.kind ?? null, agent_lost: r.agent_lost ?? null, pr_url: r.pr_url ?? null }));
   // next_sprint: a dónde el reject-path de review appendea las correcciones. El sprint siguiente por
   // posición; si el revisado es el último, incrementá el número de su key (el corrections agent lo
   // crea vía su bloque sprints: si no existe). sprintRows ya viene ordenado por position.
@@ -118,6 +124,7 @@ if (sprintArg) {
     project_id: projectId, sprint_id: sprintArg, sprint_goal: goal, next_sprint: nextSprint,
     repo: project.repo ?? "",
     backlog_snapshot: JSON.stringify(snapshot),
+    telemetry: JSON.stringify(telemetry),
     plan: `docs/PLAN-${sprintArg}.md`,
     review: `docs/REVIEW-${sprintArg}.md`, corrections: `docs/CORRECTIONS-${sprintArg}.md`,
     retro: `docs/RETRO-${sprintArg}.md`,
@@ -192,7 +199,7 @@ if (ghAppId && (ghKeyPath || ghKey) && project.org) {
 }
 // full=true salvo iterate: solo un re-handoff completo (design) puede ENCOGER el backlog y dejar
 // huérfanos; el iterate publica un DELTA aditivo (marcarlo full archivaría todo lo no-delta).
-const handoff = makeEffectExecutor(store, workdir, { github, full: workflowId !== "iterate", repo: project.repo ?? undefined });
+const handoff = makeEffectExecutor(store, workdir, { github, full: workflowId !== "iterate", repo: project.repo ?? undefined, registryDir });
 try {
   const res = await runDesign(
     wf,

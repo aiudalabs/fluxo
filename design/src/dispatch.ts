@@ -89,6 +89,18 @@ export function sprintToReview(
   return null;
 }
 
+// sprintToRetro: el sprint para la RETRO = el de menor posición ya REVISADO (reviewed_at) que aún NO
+// tiene retro (retro_at null). null = nada. Orden Scrum: review(N) → retro(N) → planning(N+1); la
+// retro va DESPUÉS de review y ANTES del planning del siguiente. Pura → testeable.
+export function sprintToRetro(sprints: Array<{ id: string; key: string; reviewed_at: string | null; retro_at: string | null }>): string | null {
+  for (const sp of sprints) {
+    if (!sp.reviewed_at) continue; // aún no revisado → no hay retro
+    if (sp.retro_at) continue;     // ya tiene retro
+    return sp.key;                 // revisado sin retro → retro
+  }
+  return null;
+}
+
 // sprintNum: extrae el número de una key de sprint ("SP2","S1"→ dígitos) para ordenar; sin dígitos
 // va al final (v1 sprintNum).
 function sprintNum(key: string): number {

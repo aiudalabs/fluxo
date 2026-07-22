@@ -19,7 +19,7 @@ import { dirname, resolve } from "node:path";
 import { runAssistant, type ChatMsg } from "./assistant.ts";
 import { GithubApp, GithubRepo } from "./github.ts";
 import { Projector, type MirroredStory } from "./projection.ts";
-import { candidates, storyPrompt, sprintPrompt, docsGuardOk, sprintToPlan, sprintToReview, type Policy, type DStory, type DSprint } from "./dispatch.ts";
+import { candidates, storyPrompt, sprintPrompt, docsGuardOk, sprintToPlan, sprintToReview, sprintToRetro, type Policy, type DStory, type DSprint } from "./dispatch.ts";
 import { AutoMerger, prNumFromUrl } from "./automerge.ts";
 import { Approver } from "./approve.ts";
 import { resolveProjectCapabilities, computeCapabilityGate } from "./capabilities.ts";
@@ -183,6 +183,7 @@ interface Settings {
   workflow_approval?: "off" | "auto_if_safe";
   planning_mode?: "ceremony" | "off";     // ceremony = un sprint no despacha hasta planearse
   review_mode?: "ceremony" | "off";        // ceremony = un sprint terminado se revisa antes de avanzar
+  retro_mode?: "ceremony" | "off";         // ceremony = tras revisar, la retro puede editar el método
   lanes?: Record<string, { channel?: string; model?: string }>;
 }
 function policyFrom(settings: Settings): Policy {
@@ -207,7 +208,7 @@ function policyFrom(settings: Settings): Policy {
 // just-in-time — el candado (dispatch.planningRequired) frena el build hasta que planned_at se estampa.
 async function reconcileCeremonies() {
   const projects = await rest<Array<{ id: string; name: string; settings: Settings | null }>>(`/projects?select=id,name,settings`);
-  const ceremony = projects.filter((p) => p.settings?.review_mode === "ceremony" || p.settings?.planning_mode === "ceremony");
+  const ceremony = projects.filter((p) => p.settings?.review_mode === "ceremony" || p.settings?.retro_mode === "ceremony" || p.settings?.planning_mode === "ceremony");
   for (const p of ceremony) {
     if (designing.has(p.id)) continue;
     // Reservar SINCRÓNICO (antes del await) — igual que los otros reconcilers — o dos ticks solapados
@@ -217,7 +218,7 @@ async function reconcileCeremonies() {
     let spawned = false;
     try {
       const [sprints, stories] = await Promise.all([
-        rest<Array<{ id: string; key: string; position: number | null; planned_at: string | null; reviewed_at: string | null }>>(`/sprints?project_id=eq.${p.id}&select=id,key,position,planned_at,reviewed_at&order=position`),
+        rest<Array<{ id: string; key: string; position: number | null; planned_at: string | null; reviewed_at: string | null; retro_at: string | null }>>(`/sprints?project_id=eq.${p.id}&select=id,key,position,planned_at,reviewed_at,retro_at&order=position`),
         rest<Array<{ sprint_id: string | null; status: string }>>(`/stories?project_id=eq.${p.id}&select=sprint_id,status`),
       ]);
       const total = new Map<string, number>();   // sprint_id → # stories
@@ -227,10 +228,12 @@ async function reconcileCeremonies() {
         total.set(s.sprint_id, (total.get(s.sprint_id) ?? 0) + 1);
         if (s.status !== "done") unbuilt.set(s.sprint_id, (unbuilt.get(s.sprint_id) ?? 0) + 1);
       }
-      // Orden Scrum: REVIEW (sprint terminado sin revisar) tiene prioridad sobre PLANNING (frontier).
+      // Orden Scrum: REVIEW(N) → RETRO(N) → PLANNING(N+1). El primero pendiente gana (uno por tick).
       const reviewTarget = p.settings?.review_mode === "ceremony" ? sprintToReview(sprints, total, unbuilt) : null;
-      const planTarget = !reviewTarget && p.settings?.planning_mode === "ceremony" ? sprintToPlan(sprints, unbuilt) : null;
+      const retroTarget = !reviewTarget && p.settings?.retro_mode === "ceremony" ? sprintToRetro(sprints) : null;
+      const planTarget = !reviewTarget && !retroTarget && p.settings?.planning_mode === "ceremony" ? sprintToPlan(sprints, unbuilt) : null;
       if (reviewTarget) { spawnCeremony(p.id, p.name, reviewTarget, "sprint-review"); spawned = true; }
+      else if (retroTarget) { spawnCeremony(p.id, p.name, retroTarget, "retro"); spawned = true; }
       else if (planTarget) { spawnCeremony(p.id, p.name, planTarget, "sprint-planning"); spawned = true; }
     } finally {
       if (!spawned) designing.delete(p.id);

@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
-  candidates, storyPrompt, sprintPrompt, screenPointer, channelFor, modelFor, docsGuardOk, sprintToPlan, sprintToReview,
+  candidates, storyPrompt, sprintPrompt, screenPointer, channelFor, modelFor, docsGuardOk, sprintToPlan, sprintToReview, sprintToRetro,
   type Policy, type DStory, type DSprint,
 } from "./dispatch.ts";
 
@@ -293,4 +293,16 @@ test("sprintToReview: sprint ya revisado se saltea → revisa el siguiente termi
 });
 test("sprintToReview: sprint vacío (sin stories) se saltea", () => {
   assert.equal(sprintToReview([spR("s1", "SP1")], new Map(), new Map()), null);
+});
+
+// ── sprintToRetro: sprint revisado sin retro (review→retro→planning) ───────────────
+const spT = (id: string, key: string, reviewed_at: string | null, retro_at: string | null = null) => ({ id, key, reviewed_at, retro_at });
+test("sprintToRetro: sprint revisado sin retro → target", () => {
+  assert.equal(sprintToRetro([spT("s1", "SP1", "2026-07-01")]), "SP1");
+});
+test("sprintToRetro: sprint no revisado → null (la retro va después de review)", () => {
+  assert.equal(sprintToRetro([spT("s1", "SP1", null)]), null);
+});
+test("sprintToRetro: sprint ya con retro se saltea → el siguiente revisado", () => {
+  assert.equal(sprintToRetro([spT("s1", "SP1", "2026-07-01", "2026-07-02"), spT("s2", "SP2", "2026-07-03")]), "SP2");
 });
