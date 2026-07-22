@@ -19,7 +19,8 @@ interface ProjSettings {
   dispatch_mode?: "auto" | "manual";
   execution_unit?: "sprint" | "story";
   max_concurrency?: number;
-  workflow_approval?: "manual" | "auto_if_safe";
+  workflow_approval?: "manual" | "auto_if_safe";  // autonomía del BUILD/CI (worker.reconcileApprovals)
+  gate_autonomy?: "manual" | "auto_if_safe";      // autonomía de los GATES de DISEÑO/ceremonias (Fase 4)
   workflow?: "design" | "demo-design";  // P5-3: workflow de diseño (fresh only; el worker lo lee de acá)
   lanes?: Record<string, LaneCfg>;
 }
@@ -28,7 +29,7 @@ interface ProjSettings {
 // proyecto sin setting NO auto-despacha agentes pagos), max_concurrency → 3 (MAX). Si la UI muestra un
 // default distinto al que el motor asume ante el campo ausente, MIENTE (bug: mostraba "Sprint" mientras
 // el motor corría "story"). dispatch_mode se incluye acá para que Guardar lo PERSISTA (no lo borre).
-const DEFAULTS: ProjSettings = { channel: "claude_action", merge_mode: "manual", dispatch_mode: "manual", execution_unit: "story", max_concurrency: 3, workflow_approval: "manual", workflow: "design", lanes: {} };
+const DEFAULTS: ProjSettings = { channel: "claude_action", merge_mode: "manual", dispatch_mode: "manual", execution_unit: "story", max_concurrency: 3, workflow_approval: "manual", gate_autonomy: "manual", workflow: "design", lanes: {} };
 const MODELS = ["auto", "claude-opus-4-8", "claude-sonnet-5", "claude-haiku-4-5-20251001"];
 
 interface ChannelInfo { id: string; available: boolean; reason: string; secretsPermMissing: boolean }
@@ -37,14 +38,16 @@ interface ChannelInfo { id: string; available: boolean; reason: string; secretsP
 interface CapabilityInfo { id: string; name: string; secret: string | null; guide: string | null; summary: string | null; status: "ready" | "missing" | "n/a"; secretsPermMissing: boolean }
 interface Probe { channels: ChannelInfo[]; capabilities?: CapabilityInfo[]; defaultChannel: string; permissionsUrl: string | null }
 
-// Presets = azúcar sobre merge_mode + workflow_approval (como v1). No hay concepto de preset abajo.
-const PRESETS: Record<string, Pick<ProjSettings, "merge_mode" | "workflow_approval">> = {
-  manual: { merge_mode: "manual", workflow_approval: "manual" },
-  asistido: { merge_mode: "manual", workflow_approval: "auto_if_safe" },
-  autonomo: { merge_mode: "auto", workflow_approval: "auto_if_safe" },
+// Presets = azúcar sobre merge_mode + workflow_approval + gate_autonomy. "Asistido" auto-aprueba SOLO
+// el CI seguro (build); "Autónomo" suma la autonomía de los GATES DE DISEÑO (auto-aprueba PRD/arq/
+// planning sin preguntas abiertas; review y retro SIEMPRE quedan al humano). Desacoplados a propósito.
+const PRESETS: Record<string, Pick<ProjSettings, "merge_mode" | "workflow_approval" | "gate_autonomy">> = {
+  manual: { merge_mode: "manual", workflow_approval: "manual", gate_autonomy: "manual" },
+  asistido: { merge_mode: "manual", workflow_approval: "auto_if_safe", gate_autonomy: "manual" },
+  autonomo: { merge_mode: "auto", workflow_approval: "auto_if_safe", gate_autonomy: "auto_if_safe" },
 };
 function presetOf(s: ProjSettings): string {
-  for (const [k, v] of Object.entries(PRESETS)) if (s.merge_mode === v.merge_mode && s.workflow_approval === v.workflow_approval) return k;
+  for (const [k, v] of Object.entries(PRESETS)) if (s.merge_mode === v.merge_mode && s.workflow_approval === v.workflow_approval && (s.gate_autonomy ?? "manual") === v.gate_autonomy) return k;
   return "custom";
 }
 

@@ -15,6 +15,7 @@ import { mkdtempSync, existsSync, readFileSync, mkdirSync, writeFileSync } from 
 import { tmpdir } from "node:os";
 import { loadWorkflow, designPhases, declaredOutputs, type Workflow } from "./workflow.ts";
 import { runDesign, resumeStartIndex, type ResumeState } from "./engine.ts";
+import { autoResolver } from "./autonomy.ts";
 import { recordOutput, type StepContext } from "./resolve.ts";
 import { makeSdkRunner } from "./sdkRunner.ts";
 import { SupabaseDesignStore } from "./supabase.ts";
@@ -57,14 +58,14 @@ if (!projectId) {
 // 1) Leer el proyecto con service_role (el worker es backend/confiable) → tenant + idea.
 const base = url.replace(/\/$/, "") + "/rest/v1";
 const svcHeaders = { apikey: serviceKey, Authorization: `Bearer ${serviceKey}` };
-const pres = await fetch(`${base}/projects?id=eq.${projectId}&select=tenant_id,name,description,org,owner_id,repo`, {
+const pres = await fetch(`${base}/projects?id=eq.${projectId}&select=tenant_id,name,description,org,owner_id,repo,settings`, {
   headers: svcHeaders,
 });
 if (!pres.ok) {
   console.error(`no pude leer el proyecto: ${pres.status} ${await pres.text()}`);
   process.exit(1);
 }
-const [project] = (await pres.json()) as Array<{ tenant_id: string; name: string; description: string | null; org: string | null; owner_id: string | null; repo: string | null }>;
+const [project] = (await pres.json()) as Array<{ tenant_id: string; name: string; description: string | null; org: string | null; owner_id: string | null; repo: string | null; settings: { gate_autonomy?: "manual" | "auto_if_safe" } | null }>;
 
 // Token OAuth del dueño (para crear el repo COMO él — cuenta personal u org). Lo lee por
 // owner_id de github_tokens (service_role). Sin él, el handoff cae al installation token.
@@ -200,11 +201,25 @@ if (ghAppId && (ghKeyPath || ghKey) && project.org) {
 // full=true salvo iterate: solo un re-handoff completo (design) puede ENCOGER el backlog y dejar
 // huérfanos; el iterate publica un DELTA aditivo (marcarlo full archivaría todo lo no-delta).
 const handoff = makeEffectExecutor(store, workdir, { github, full: workflowId !== "iterate", repo: project.repo ?? undefined, registryDir });
+// Fase 4 · autonomía: en modo auto_if_safe, los gates seguros (sin preguntas abiertas, y que no sean
+// review/retro) se auto-aprueban → el ciclo corre sin humano donde el riesgo es bajo. Campo DEDICADO
+// `gate_autonomy` (NO se reusa workflow_approval, que es la autonomía del build/CI — son decisiones
+// distintas y no deben acoplarse). El resolver humano queda intacto para todo lo demás.
+const gateMode = project.settings?.gate_autonomy === "auto_if_safe" ? "auto_if_safe" : "off";
+const resolver = autoResolver(store.resolver, {
+  mode: gateMode, workflowId,
+  // El registro es SECUNDARIO: un blip de Supabase no debe abortar el run autónomo (best-effort).
+  onAuto: async (req) => {
+    try { await store.recordAutoGate(req); }
+    catch (e) { console.error(`gate auto-aprobado pero el registro falló (secundario, se ignora): ${e instanceof Error ? e.message : e}`); }
+  },
+});
+if (gateMode === "auto_if_safe") console.log(`⚡ autonomía ON: los gates seguros de ${workflowId} se auto-aprueban (review y retro siempre humanas)`);
 try {
   const res = await runDesign(
     wf,
     trigger,
-    { runner, resolver: store.resolver, sink: store.sink, handoff },
+    { runner, resolver, sink: store.sink, handoff },
     resumeState,
   );
   clearInterval(heartbeat);

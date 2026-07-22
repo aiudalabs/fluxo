@@ -463,6 +463,34 @@ export class SupabaseDesignStore {
   }
 
   // resolver inserts a gate row and polls until Studio resolves it (the F5-04 loop).
+  // recordAutoGate: registra un gate AUTO-APROBADO (Fase 4, autonomía) como una fila design_gates ya
+  // resuelta (status=resolved, outcome=approve) — para que el Flow/Studio lo muestre DONE y quede
+  // auditable en la UI (no solo en el brain). El engine NO consultó al humano; esto deja el rastro.
+  async recordAutoGate(req: GateRequest): Promise<void> {
+    // Find-or-update (como el resolver humano): si ya hay una fila PENDING de este gate (un run que
+    // parkeó en manual y se resume con el modo ya en auto), resolvela — NO insertes una segunda que
+    // dejaría la pending colgada ("dos gates" en Studio). Fresh → insert resuelto.
+    const existing = await this.rest(
+      `/design_gates?run_id=eq.${this.runId}&gate_id=eq.${req.gateId}&status=eq.pending&select=id&order=created_at.desc&limit=1`,
+      { method: "GET", prefer: "count=none" },
+    );
+    const pendingId = ((await existing.json()) as Array<{ id: string }>)[0]?.id;
+    if (pendingId) {
+      await this.rest(`/design_gates?id=eq.${pendingId}`, { method: "PATCH", body: JSON.stringify({ status: "resolved", outcome: "approve" }) });
+    } else {
+      await this.rest("/design_gates", {
+        method: "POST",
+        body: JSON.stringify({
+          ...this.scope(), run_id: this.runId,
+          phase_id: req.phaseId, gate_id: req.gateId, reason: req.reason,
+          open_questions: req.openQuestions, attempt: req.attempt,
+          status: "resolved", outcome: "approve",
+        }),
+      });
+    }
+    await this.brainAppend("gate_auto_approved", { gate: req.gateId, phase: req.phaseId }, "engine:autonomy");
+  }
+
   get resolver(): GateResolver {
     return {
       resolve: async (req: GateRequest): Promise<GateDecision> => {
