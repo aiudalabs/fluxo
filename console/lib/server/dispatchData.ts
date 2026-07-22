@@ -27,6 +27,7 @@ export interface Settings {
   execution_unit?: "sprint" | "story";
   max_concurrency?: number;
   merge_mode?: "manual" | "auto";
+  planning_mode?: "ceremony" | "off";   // ceremony = un sprint no despacha hasta planearse
   lanes?: Record<string, { channel?: string; model?: string }>;
 }
 
@@ -51,6 +52,7 @@ export function policyFrom(settings: Settings): Policy {
     executionUnit: settings.execution_unit === "sprint" ? "sprint" : "story",
     channel: settings.channel || "claude_action",
     maxConcurrency: settings.max_concurrency != null ? settings.max_concurrency : 0,
+    planningRequired: settings.planning_mode === "ceremony",
     modelByLane, channelByLane,
   };
 }
@@ -61,7 +63,7 @@ interface StoryRow {
   sprint_id: string | null; blocked_by: string[] | null; external_ref: string | null;
   body: string | null; acceptance: string | null; screen_key: string | null;
 }
-interface SprintRow { id: string; key: string; title: string | null }
+interface SprintRow { id: string; key: string; title: string | null; planned_at?: string | null }
 
 function toDStory(r: StoryRow): DStory {
   return {
@@ -102,7 +104,7 @@ export function computeCandidates(
   if (gate) for (const s of dstories) { const needs = gate.needsByStoryId.get(s.id); if (needs) s.needsCapabilities = needs; }
   const byId = new Map(dstories.map((s) => [s.id, s]));
   const keyByStoryId = new Map(dstories.map((s) => [s.id, s.key]));
-  const sprintsById = new Map<string, DSprint>(sprintRows.map((s) => [s.id, { id: s.id, key: s.key, title: s.title ?? "" }]));
+  const sprintsById = new Map<string, DSprint>(sprintRows.map((s) => [s.id, { id: s.id, key: s.key, title: s.title ?? "", plannedAt: s.planned_at ?? null }]));
 
   return candidates(dstories, sprintsById, pol, gate?.green ?? new Set())
     .map((c): UICandidate => {
@@ -134,7 +136,7 @@ export async function loadDispatchContext(db: SupabaseClient, tenant: string, pr
 
   const [{ data: stories }, { data: sprints }] = await Promise.all([
     db.from("stories").select("id,key,title,lane,status,sprint_id,blocked_by,external_ref,body,acceptance,screen_key").eq("project_id", projectId),
-    db.from("sprints").select("id,key,title").eq("project_id", projectId),
+    db.from("sprints").select("id,key,title,planned_at").eq("project_id", projectId),
   ]);
 
   return {

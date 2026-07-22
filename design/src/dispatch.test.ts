@@ -228,3 +228,30 @@ test("docsGuardOk: sin PRD en main NO despacha; con PRD sí; chequeo fallado = f
   assert.equal(docsGuardOk(true), true);   // PRD presente → despacha
   assert.equal(docsGuardOk(null), true);   // chequeo a GitHub falló → fail-open, despacha
 });
+
+// ── Candado de sprint-planning (planned_at) ────────────────────────────────────────
+test("planning gate (sprint-mode): sin planear NO despacha; planeado SÍ", () => {
+  const a = st({ id: "a", key: "S1-01", sprintId: "sp1", issue: 1 });
+  const sm = (plannedAt: string | null) => sprints({ id: "sp1", key: "SP1", title: "Sprint 1", plannedAt });
+  const p = pol({ executionUnit: "sprint", planningRequired: true });
+  assert.deepEqual(candidates([a], sm(null), p), []);                        // no planeado → gated
+  assert.equal(candidates([a], sm("2026-07-21T00:00:00Z"), p).length, 1);    // planeado → despacha
+});
+
+test("planning gate (story-mode): story en un sprint sin planear NO está lista", () => {
+  const a = st({ id: "a", key: "S1-01", sprintId: "sp1", issue: 1 });
+  const p = pol({ planningRequired: true }); // story-mode (default)
+  assert.deepEqual(candidates([a], sprints({ id: "sp1", key: "SP1", title: "", plannedAt: null }), p), []);
+  assert.equal(candidates([a], sprints({ id: "sp1", key: "SP1", title: "", plannedAt: "2026-07-21" }), p).length, 1);
+});
+
+test("planning gate OFF (default): despacha aunque no haya planned_at (backward-compat)", () => {
+  const a = st({ id: "a", key: "S1-01", sprintId: "sp1", issue: 1 });
+  assert.equal(candidates([a], sprints({ id: "sp1", key: "SP1", title: "", plannedAt: null }), pol({ executionUnit: "sprint" })).length, 1);
+  assert.equal(candidates([st({ id: "b", key: "S-9", issue: 2 })], sprints(), pol()).length, 1);
+});
+
+test("planning gate: una story SIN sprint no gatea aunque planning esté ON", () => {
+  const a = st({ id: "a", key: "S-9", sprintId: null, issue: 1 });
+  assert.equal(candidates([a], sprints(), pol({ planningRequired: true })).length, 1);
+});

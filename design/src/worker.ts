@@ -161,6 +161,7 @@ interface Settings {
   merge_mode?: "manual" | "auto";
   dispatch_mode?: "auto" | "manual";
   workflow_approval?: "off" | "auto_if_safe";
+  planning_mode?: "ceremony" | "off";     // ceremony = un sprint no despacha hasta planearse
   lanes?: Record<string, { channel?: string; model?: string }>;
 }
 function policyFrom(settings: Settings): Policy {
@@ -174,6 +175,7 @@ function policyFrom(settings: Settings): Policy {
     executionUnit: settings.execution_unit === "sprint" ? "sprint" : "story",
     channel: settings.channel || "claude_action",
     maxConcurrency: settings.max_concurrency != null ? settings.max_concurrency : MAX,
+    planningRequired: settings.planning_mode === "ceremony",
     modelByLane, channelByLane,
   };
 }
@@ -347,8 +349,8 @@ async function reconcileBuild() {
       sprintId: r.sprint_id, deps: r.blocked_by ?? [], issue: issueNumOf(r.external_ref),
       body: r.body, acceptance: r.acceptance, screenKey: r.screen_key,
     }));
-    const sprintRows = await rest<Array<{ id: string; key: string; title: string | null }>>(`/sprints?project_id=eq.${p.id}&select=id,key,title`);
-    const sprintsById = new Map<string, DSprint>(sprintRows.map((s) => [s.id, { id: s.id, key: s.key, title: s.title ?? "" }]));
+    const sprintRows = await rest<Array<{ id: string; key: string; title: string | null; planned_at: string | null }>>(`/sprints?project_id=eq.${p.id}&select=id,key,title,planned_at`);
+    const sprintsById = new Map<string, DSprint>(sprintRows.map((s) => [s.id, { id: s.id, key: s.key, title: s.title ?? "", plannedAt: s.planned_at }]));
 
     // Pre-check barato: sin candidatos siquiera SIN el gate por capability, no hay nada que gatear →
     // evitá el I/O del gate (brain read + probe de secrets) en los proyectos ociosos de este tick. El

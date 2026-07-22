@@ -15,6 +15,9 @@ export interface Policy {
   maxConcurrency: number;                 // stories running a la vez; 0 = sin límite
   modelByLane: Map<string, string>;       // lane → modelo ("" / ausente = auto)
   channelByLane: Map<string, string>;     // lane → canal; ausente = channel del proyecto
+  // Candado de sprint-planning: con planning_mode=ceremony, un sprint NO se despacha hasta que la
+  // ceremonia lo planeó (planned_at estampado). Ausente/false = sin gate (backward-compatible).
+  planningRequired?: boolean;
 }
 
 // channelFor / modelFor: resuelven el canal/modelo de una lane bajo la política (v1 executorFor).
@@ -42,7 +45,7 @@ export interface DStory {
                                   // el caller lo computa data-driven (capabilities.ts). Vacío/ausente
                                   // = no gatea. El kernel solo chequea `needs ⊆ greenCapabilities`.
 }
-export interface DSprint { id: string; key: string; title: string }
+export interface DSprint { id: string; key: string; title: string; plannedAt?: string | null }
 
 // Candidate: una unidad despachable bajo la política actual.
 export interface Candidate {
@@ -102,7 +105,10 @@ export function candidates(
   const depsDone = (s: DStory) => s.deps.every(done);
   // needsMet: todas las capabilities que la story referencia están 🟢. Sin needs → true (no gatea).
   const needsMet = (s: DStory) => (s.needsCapabilities ?? []).every((c) => greenCapabilities.has(c));
-  const storyReady = (s: DStory) => s.status === "backlog" && mirrored(s) && depsDone(s) && needsMet(s);
+  // Candado de planning: si el modo lo exige y la story está en un sprint, ese sprint debe estar
+  // planeado (planned_at). Una story sin sprint no tiene qué planear → no gatea.
+  const sprintPlanned = (s: DStory) => !pol.planningRequired || !s.sprintId || sprintsById.get(s.sprintId)?.plannedAt != null;
+  const storyReady = (s: DStory) => s.status === "backlog" && mirrored(s) && depsDone(s) && needsMet(s) && sprintPlanned(s);
   const byKey = (a: DStory, b: DStory) => (a.key < b.key ? -1 : a.key > b.key ? 1 : 0);
 
   // ── STORY mode ────────────────────────────────────────────────────────────────
@@ -147,7 +153,9 @@ export function candidates(
         if (depSt && depSt.sprintId !== sid && !done(dep)) gated = true;
       }
     }
-    if (pending === 0 || flight > 0 || gated || capGated) continue;
+    // Candado de planning (sprint-mode): sin planear (planned_at), el sprint no despacha.
+    const notPlanned = !!pol.planningRequired && !sprintsById.get(sid)?.plannedAt;
+    if (pending === 0 || flight > 0 || gated || capGated || notPlanned) continue;
     const ordered = [...members].sort(byKey);
     const backlog = ordered.filter((st) => st.status === "backlog"); // orden de deps por convención (key)
     const lane = dominantLane(members);
