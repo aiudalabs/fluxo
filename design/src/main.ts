@@ -18,7 +18,8 @@ import { runDesign, resumeStartIndex, type ResumeState } from "./engine.ts";
 import { recordOutput, type StepContext } from "./resolve.ts";
 import { makeSdkRunner } from "./sdkRunner.ts";
 import { SupabaseDesignStore } from "./supabase.ts";
-import { makeHandoff, type GithubTarget } from "./handoff.ts";
+import { type GithubTarget } from "./handoff.ts";
+import { makeEffectExecutor } from "./effects.ts";
 import { GithubApp } from "./github.ts";
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -151,7 +152,7 @@ if (ghAppId && (ghKeyPath || ghKey) && project.org) {
 }
 // full=true salvo iterate: solo un re-handoff completo (design) puede ENCOGER el backlog y dejar
 // huérfanos; el iterate publica un DELTA aditivo (marcarlo full archivaría todo lo no-delta).
-const handoff = makeHandoff(store, workdir, github, { full: workflowId !== "iterate" });
+const handoff = makeEffectExecutor(store, workdir, { github, full: workflowId !== "iterate" });
 try {
   const res = await runDesign(
     wf,
