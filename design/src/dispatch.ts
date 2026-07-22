@@ -72,6 +72,23 @@ export function sprintToPlan(sprints: Array<{ id: string; key: string; planned_a
   return null;
 }
 
+// sprintToReview: el sprint a REVISAR = el de menor posición TERMINADO (tiene stories y todas done)
+// que aún NO está revisado (reviewed_at null). null = nada que revisar. `total`/`unbuilt` = sprint id
+// → # de stories (todas / sin terminar). Pura → testeable. Prioridad sobre planning (orden Scrum).
+export function sprintToReview(
+  sprints: Array<{ id: string; key: string; reviewed_at: string | null }>,
+  total: Map<string, number>,
+  unbuilt: Map<string, number>,
+): string | null {
+  for (const sp of sprints) {
+    if ((total.get(sp.id) ?? 0) === 0) continue;      // sprint vacío → nada que revisar
+    if ((unbuilt.get(sp.id) ?? 0) > 0) continue;      // aún tiene trabajo → no terminado
+    if (sp.reviewed_at) continue;                     // ya revisado
+    return sp.key;                                    // terminado + sin revisar → revisalo
+  }
+  return null;
+}
+
 // sprintNum: extrae el número de una key de sprint ("SP2","S1"→ dígitos) para ordenar; sin dígitos
 // va al final (v1 sprintNum).
 function sprintNum(key: string): number {

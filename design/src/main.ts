@@ -57,14 +57,14 @@ if (!projectId) {
 // 1) Leer el proyecto con service_role (el worker es backend/confiable) → tenant + idea.
 const base = url.replace(/\/$/, "") + "/rest/v1";
 const svcHeaders = { apikey: serviceKey, Authorization: `Bearer ${serviceKey}` };
-const pres = await fetch(`${base}/projects?id=eq.${projectId}&select=tenant_id,name,description,org,owner_id`, {
+const pres = await fetch(`${base}/projects?id=eq.${projectId}&select=tenant_id,name,description,org,owner_id,repo`, {
   headers: svcHeaders,
 });
 if (!pres.ok) {
   console.error(`no pude leer el proyecto: ${pres.status} ${await pres.text()}`);
   process.exit(1);
 }
-const [project] = (await pres.json()) as Array<{ tenant_id: string; name: string; description: string | null; org: string | null; owner_id: string | null }>;
+const [project] = (await pres.json()) as Array<{ tenant_id: string; name: string; description: string | null; org: string | null; owner_id: string | null; repo: string | null }>;
 
 // Token OAuth del dueño (para crear el repo COMO él — cuenta personal u org). Lo lee por
 // owner_id de github_tokens (service_role). Sin él, el handoff cae al installation token.
@@ -94,10 +94,10 @@ if (resumeRunId) {
 let trigger: Record<string, unknown>;
 if (sprintArg) {
   const [sres, stres] = await Promise.all([
-    fetch(`${base}/sprints?project_id=eq.${projectId}&select=id,key,goal`, { headers: svcHeaders }),
+    fetch(`${base}/sprints?project_id=eq.${projectId}&select=id,key,goal,position&order=position`, { headers: svcHeaders }),
     fetch(`${base}/stories?project_id=eq.${projectId}&select=id,key,title,status,sprint_id,lane,kind,screen_key,blocked_by`, { headers: svcHeaders }),
   ]);
-  const sprintRows = (await sres.json()) as Array<{ id: string; key: string; goal: string | null }>;
+  const sprintRows = (await sres.json()) as Array<{ id: string; key: string; goal: string | null; position: number | null }>;
   const storyRows = (await stres.json()) as Array<{ id: string; key: string; title: string | null; status: string; sprint_id: string | null; lane: string | null; kind: string | null; screen_key: string | null; blocked_by: string[] | null }>;
   const sprintIdToKey = new Map(sprintRows.map((r) => [r.id, r.key]));
   const storyIdToKey = new Map(storyRows.map((r) => [r.id, r.key]));
@@ -108,8 +108,15 @@ if (sprintArg) {
     deps: (r.blocked_by ?? []).map((id) => storyIdToKey.get(id)).filter((k): k is string => !!k),
   }));
   const goal = sprintRows.find((r) => r.key === sprintArg)?.goal ?? "";
+  // next_sprint: a dónde el reject-path de review appendea las correcciones. El sprint siguiente por
+  // posición; si el revisado es el último, incrementá el número de su key (el corrections agent lo
+  // crea vía su bloque sprints: si no existe). sprintRows ya viene ordenado por position.
+  const curIdx = sprintRows.findIndex((r) => r.key === sprintArg);
+  const bumpKey = (k: string) => { const m = k.match(/^(.*?)(\d+)$/); return m ? `${m[1]}${Number(m[2]) + 1}` : `${k}-2`; };
+  const nextSprint = curIdx >= 0 && sprintRows[curIdx + 1] ? sprintRows[curIdx + 1].key : bumpKey(sprintArg);
   trigger = {
-    project_id: projectId, sprint_id: sprintArg, sprint_goal: goal,
+    project_id: projectId, sprint_id: sprintArg, sprint_goal: goal, next_sprint: nextSprint,
+    repo: project.repo ?? "",
     backlog_snapshot: JSON.stringify(snapshot),
     plan: `docs/PLAN-${sprintArg}.md`,
     review: `docs/REVIEW-${sprintArg}.md`, corrections: `docs/CORRECTIONS-${sprintArg}.md`,
@@ -185,7 +192,7 @@ if (ghAppId && (ghKeyPath || ghKey) && project.org) {
 }
 // full=true salvo iterate: solo un re-handoff completo (design) puede ENCOGER el backlog y dejar
 // huérfanos; el iterate publica un DELTA aditivo (marcarlo full archivaría todo lo no-delta).
-const handoff = makeEffectExecutor(store, workdir, { github, full: workflowId !== "iterate" });
+const handoff = makeEffectExecutor(store, workdir, { github, full: workflowId !== "iterate", repo: project.repo ?? undefined });
 try {
   const res = await runDesign(
     wf,

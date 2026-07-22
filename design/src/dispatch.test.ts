@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
-  candidates, storyPrompt, sprintPrompt, screenPointer, channelFor, modelFor, docsGuardOk, sprintToPlan,
+  candidates, storyPrompt, sprintPrompt, screenPointer, channelFor, modelFor, docsGuardOk, sprintToPlan, sprintToReview,
   type Policy, type DStory, type DSprint,
 } from "./dispatch.ts";
 
@@ -276,4 +276,21 @@ test("sprintToPlan: todo terminado → null", () => {
 test("sprintToPlan: un sprint SIN stories (ausente del Map) se trata como asentado → salta al siguiente", () => {
   const sprintsL = [sp("s1", "SP1"), sp("s2", "SP2")]; // s1 no está en unbuilt → 0 → saltea; s2 tiene trabajo
   assert.equal(sprintToPlan(sprintsL, new Map([["s2", 3]])), "SP2");
+});
+
+// ── sprintToReview: el sprint terminado sin revisar (prioridad sobre planning) ─────
+const spR = (id: string, key: string, reviewed_at: string | null = null) => ({ id, key, reviewed_at });
+test("sprintToReview: sprint terminado (todas done) sin revisar → target", () => {
+  const sprintsL = [spR("s1", "SP1")];
+  assert.equal(sprintToReview(sprintsL, new Map([["s1", 3]]), new Map()), "SP1"); // 3 stories, 0 sin terminar
+});
+test("sprintToReview: sprint con trabajo aún NO se revisa (no terminado)", () => {
+  assert.equal(sprintToReview([spR("s1", "SP1")], new Map([["s1", 3]]), new Map([["s1", 1]])), null); // 1 sin terminar
+});
+test("sprintToReview: sprint ya revisado se saltea → revisa el siguiente terminado", () => {
+  const sprintsL = [spR("s1", "SP1", "2026-07-01"), spR("s2", "SP2")];
+  assert.equal(sprintToReview(sprintsL, new Map([["s1", 2], ["s2", 2]]), new Map()), "SP2");
+});
+test("sprintToReview: sprint vacío (sin stories) se saltea", () => {
+  assert.equal(sprintToReview([spR("s1", "SP1")], new Map(), new Map()), null);
 });

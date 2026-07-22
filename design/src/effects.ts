@@ -8,7 +8,7 @@ import type { HandoffExecutor } from "./engine.ts";
 import { resolveInputs, type StepContext } from "./resolve.ts";
 import type { Step } from "./workflow.ts";
 import type { SupabaseDesignStore } from "./supabase.ts";
-import { makeHandoff, type GithubTarget } from "./handoff.ts";
+import { makeHandoff, parseBacklog, type GithubTarget } from "./handoff.ts";
 import { parseActions } from "./plan.ts";
 import { computePlan } from "./planApply.ts";
 
@@ -51,20 +51,53 @@ async function reviewCloseStep(store: SupabaseDesignStore, workdir: string, step
   console.log(`  ↪ review_close: sprint ${sprintKey} ${decision}${corrections ? ` (${corrections} corrección/es)` : ""}, reviewed_at estampado`);
 }
 
+// releaseStep: la "preview" del sprint-review. v1 LIVIANA: la preview es el código INTEGRADO en la
+// rama dev (vista de GitHub), no una app corriendo — honesto y sin infra. Se sube a una preview
+// navegable (Vercel/CF) en un incremento posterior. Escribe preview_url en el ctx para que el paso
+// `report` lo referencie ($release.output.preview_url) — el motor no persiste output de efectos, pero
+// una ceremonia caída se re-corre fresca (no se reanuda), así que alcanza con el ctx en vuelo.
+function releaseStep(repo: string | undefined, step: EffectStep, ctx: StepContext): void {
+  const previewUrl = repo ? `https://github.com/${repo}/tree/dev` : "";
+  ctx[step.id] = { output: { preview_url: previewUrl } };
+  console.log(`  ↪ release: preview v1 (código integrado en dev) → ${previewUrl || "(sin repo)"}`);
+}
+
+// publishCorrectionsStep: un ticket_publish con `optional:true` (sprint-review) — appendea las stories
+// de corrección del doc `backlog:` al backlog (idempotente, delta aditivo como iterate). Optional: si
+// el doc no existe (skip_if_empty saltó corrections) o no trae stories, es un no-op limpio, no un error.
+async function publishCorrectionsStep(store: SupabaseDesignStore, workdir: string, step: EffectStep, ctx: StepContext): Promise<void> {
+  const inputs = resolveInputs(step.inputs, ctx);
+  const path = String(inputs.backlog ?? "");
+  let text: string;
+  try { text = readFileSync(join(workdir, path), "utf8"); }
+  catch { console.log(`  ↪ publish (opcional): sin doc ${path} → no-op`); return; }
+  const { sprints, stories } = parseBacklog(text);
+  if (!stories.length) { console.log(`  ↪ publish (opcional): ${path} sin stories → no-op`); return; }
+  const r = await store.publishBacklog(sprints, stories, { full: false }); // APPEND (nunca encoge)
+  await store.brainAppend("corrections_published", { stories: r.stories }, "engine:publish_corrections");
+  console.log(`  ↪ publish: ${stories.length} corrección(es) appendadas al backlog`);
+}
+
 // makeEffectExecutor: el executor único que se inyecta a runDesign. Despacha por stepType. Un design/
 // iterate run usa pr/ticket_publish; una ceremonia usa sus efectos. Todos por el mismo executor.
-export function makeEffectExecutor(store: SupabaseDesignStore, workdir: string, opts?: { github?: GithubTarget; full?: boolean }): HandoffExecutor {
+export function makeEffectExecutor(store: SupabaseDesignStore, workdir: string, opts?: { github?: GithubTarget; full?: boolean; repo?: string }): HandoffExecutor {
   const publish = makeHandoff(store, workdir, opts?.github, { full: opts?.full });
   return {
     async run(step: EffectStep, ctx: StepContext): Promise<void> {
       switch (step.stepType) {
         case "pr":
         case "ticket_publish":
-          return publish.run(step, ctx);
+          // `optional:true` distingue el publish de CORRECCIONES (sprint-review, append de un delta)
+          // del handoff de diseño/iterate (docs/backlog.yaml completo). Data-driven, no por step id.
+          return step.inputs.optional === true
+            ? publishCorrectionsStep(store, workdir, step, ctx)
+            : publish.run(step, ctx);
         case "plan_apply":
           return applyPlanStep(store, workdir, step, ctx);
         case "review_close":
           return reviewCloseStep(store, workdir, step, ctx);
+        case "release":
+          return releaseStep(opts?.repo, step, ctx);
         default:
           throw new Error(`effect: stepType no soportado '${step.stepType}' (¿falta cablear su handler en effects.ts?)`);
       }
