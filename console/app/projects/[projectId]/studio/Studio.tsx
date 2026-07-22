@@ -37,7 +37,14 @@ const DOC_META: Record<string, { titleKey: string | null; icon: string; order: n
   "SESSION.md": { titleKey: "studio.docs.title.session", icon: "◷", order: 7 },
 };
 function meta(name: string) {
-  return DOC_META[name] ?? { titleKey: null, icon: "·", order: 99 };
+  if (DOC_META[name]) return DOC_META[name];
+  // Docs de ceremonia (nombre variable por sprint: PLAN-SP1.md…) — reconocidos por prefijo para que
+  // el Studio los muestre lindos cuando la corrida es una ceremonia (planning/review/retro).
+  if (/^PLAN-/i.test(name)) return { titleKey: null, icon: "◷", order: 10 };
+  if (/^REVIEW-/i.test(name)) return { titleKey: null, icon: "✦", order: 11 };
+  if (/^CORRECTIONS-/i.test(name)) return { titleKey: null, icon: "✎", order: 11.5 };
+  if (/^RETRO-/i.test(name)) return { titleKey: null, icon: "↻", order: 12 };
+  return { titleKey: null, icon: "·", order: 99 };
 }
 function baseName(path: string) {
   return path.replace(/^.*\//, "");

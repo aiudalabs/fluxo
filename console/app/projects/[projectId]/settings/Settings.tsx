@@ -21,6 +21,9 @@ interface ProjSettings {
   max_concurrency?: number;
   workflow_approval?: "manual" | "auto_if_safe";  // autonomía del BUILD/CI (worker.reconcileApprovals)
   gate_autonomy?: "manual" | "auto_if_safe";      // autonomía de los GATES de DISEÑO/ceremonias (Fase 4)
+  planning_mode?: "off" | "ceremony";  // ceremony = un sprint no despacha hasta planearse
+  review_mode?: "off" | "ceremony";    // ceremony = un sprint terminado se revisa antes de avanzar
+  retro_mode?: "off" | "ceremony";     // ceremony = tras revisar, la retro puede editar el método
   workflow?: "design" | "demo-design";  // P5-3: workflow de diseño (fresh only; el worker lo lee de acá)
   lanes?: Record<string, LaneCfg>;
 }
@@ -29,7 +32,7 @@ interface ProjSettings {
 // proyecto sin setting NO auto-despacha agentes pagos), max_concurrency → 3 (MAX). Si la UI muestra un
 // default distinto al que el motor asume ante el campo ausente, MIENTE (bug: mostraba "Sprint" mientras
 // el motor corría "story"). dispatch_mode se incluye acá para que Guardar lo PERSISTA (no lo borre).
-const DEFAULTS: ProjSettings = { channel: "claude_action", merge_mode: "manual", dispatch_mode: "manual", execution_unit: "story", max_concurrency: 3, workflow_approval: "manual", gate_autonomy: "manual", workflow: "design", lanes: {} };
+const DEFAULTS: ProjSettings = { channel: "claude_action", merge_mode: "manual", dispatch_mode: "manual", execution_unit: "story", max_concurrency: 3, workflow_approval: "manual", gate_autonomy: "manual", planning_mode: "off", review_mode: "off", retro_mode: "off", workflow: "design", lanes: {} };
 const MODELS = ["auto", "claude-opus-4-8", "claude-sonnet-5", "claude-haiku-4-5-20251001"];
 
 interface ChannelInfo { id: string; available: boolean; reason: string; secretsPermMissing: boolean }
@@ -285,6 +288,35 @@ export default function Settings() {
               onChange={(e) => patch({ max_concurrency: Math.max(0, Number(e.target.value) || 0) })} />
           </div>
         </div>
+      </section>
+
+      {/* 2b · Ceremonias Scrum */}
+      <section className="stg-card">
+        <div className="stg-card-h"><h2>🔄 Ceremonias Scrum</h2><span>Qué ceremonias corre Fluxo por sprint. Orden del ciclo: planificar → construir → review → retro → planificar el siguiente.</span></div>
+        <div className="stg-grid">
+          <div className="stg-field">
+            <label>Planificación</label>
+            <select value={settings.planning_mode ?? "off"} onChange={(e) => patch({ planning_mode: e.target.value as ProjSettings["planning_mode"] })}>
+              <option value="off">Desactivada</option>
+              <option value="ceremony">Activada — un sprint no arranca a construirse hasta planearse</option>
+            </select>
+          </div>
+          <div className="stg-field">
+            <label>Review del sprint</label>
+            <select value={settings.review_mode ?? "off"} onChange={(e) => patch({ review_mode: e.target.value as ProjSettings["review_mode"] })}>
+              <option value="off">Desactivada</option>
+              <option value="ceremony">Activada — al terminar un sprint: preview + reporte + aceptar</option>
+            </select>
+          </div>
+          <div className="stg-field">
+            <label>Retrospectiva</label>
+            <select value={settings.retro_mode ?? "off"} onChange={(e) => patch({ retro_mode: e.target.value as ProjSettings["retro_mode"] })}>
+              <option value="off">Desactivada</option>
+              <option value="ceremony">Activada — tras revisar, propone mejoras al método (las aprobás vos)</option>
+            </select>
+          </div>
+        </div>
+        <p className="stg-fine">La retro necesita que el sprint esté revisado primero. Con el preset <b>Autónomo</b> (arriba), los gates de rutina (diseño/planificación) se auto-aprueban solos; <b>review y retro siempre las aprobás vos</b>.</p>
       </section>
 
       {/* 3 · GitHub del proyecto */}
