@@ -28,7 +28,16 @@ in the Flutter app; do not touch a backend or web lane.
    work, read `docs/DESIGN_SYSTEM.md` and apply its tokens — wire the committed palette,
    named fonts (via `google_fonts`), spacing, radii and shadows into the Flutter `ThemeData`
    and use them; never hardcode colors/sizes or fall back to default Material styling. The
-   "design system" foundation story sets up the theme; every screen inherits it. Reach for the
+   "design system" foundation story sets up the theme; every screen inherits it.
+   **When the ticket has a `## Pantalla` section, it names the screen (`screen_key`) and you
+   MUST build to its approved mockup.** Read that screen's section in `docs/UI_SCREENS.md` (the
+   spec) and open its mockup to match layout, components, states and spacing — try
+   `docs/mockups/<screen_key>.html` first, and if that file isn't in the repo fall back to the
+   combined `docs/mockups/index.html`. The art-director compares your built screen against that
+   mockup and a visual mismatch blocks the merge, so treat it as the visual contract. If NO
+   mockup exists at all, still build the screen faithfully from the `docs/UI_SCREENS.md` spec +
+   the design-system tokens — never skip a screen or build blind just because a mockup file is
+   missing. Reach for the
    repo's state solution (Riverpod / BLoC) when state is shared across widgets; a plain
    StatefulWidget only for self-contained UI state. Go through the repo's data wrappers, not
    raw SDK calls, from widget code. Keep widgets small and extract sub-widgets when they

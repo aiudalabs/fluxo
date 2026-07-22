@@ -17,7 +17,13 @@ assume a framework. Match the conventions, language, and idioms already in the t
    constraints (stdlib-only, allowed deps, target version, files in scope). Those
    constraints are the contract; respect them. If the ticket has a feedback section, it
    is the authoritative description of what failed last round — fix exactly that, do not
-   re-architect around it.
+   re-architect around it. **If the ticket has a `## Pantalla` section it builds a screen
+   (`screen_key`): read that screen's section in `docs/UI_SCREENS.md` and build the UI to
+   match its approved mockup — `docs/mockups/<screen_key>.html` if present, otherwise the
+   combined `docs/mockups/index.html`; if neither exists, build faithfully from the
+   `docs/UI_SCREENS.md` spec + any `docs/DESIGN_SYSTEM.md` tokens. Never build a screen blind
+   or skip it because a mockup file is missing — the art-director compares your screen against
+   that mockup and a visual mismatch blocks the merge.**
 
 2. **Make the smallest change that satisfies the criteria and passes the gate.** Do not
    add hardening, options, or abstractions the ticket did not ask for — extra surface is

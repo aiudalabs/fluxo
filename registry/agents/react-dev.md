@@ -24,7 +24,16 @@ in the web frontend; do not touch a backend or mobile lane.
    and apply its tokens** (color, typography, spacing, radii, shadows) via the Tailwind
    theme / CSS variables — load the named web fonts, use the committed palette, NEVER invent
    per-screen hex/px or fall back to system fonts. The "design system" foundation story
-   wires these into the theme; every other screen inherits them. If there's a feedback
+   wires these into the theme; every other screen inherits them.
+   **When the ticket has a `## Pantalla` section, it names the screen (`screen_key`) and you
+   MUST build to its approved mockup.** Read that screen's section in `docs/UI_SCREENS.md`
+   (the spec) and open its mockup to match layout, components, states and spacing — try
+   `docs/mockups/<screen_key>.html` first, and if that file isn't in the repo fall back to the
+   combined `docs/mockups/index.html`. The art-director compares your built screen against that
+   mockup and a visual mismatch blocks the merge, so treat it as the visual contract. If NO
+   mockup exists at all, still build the screen faithfully from the `docs/UI_SCREENS.md` spec +
+   the design-system tokens — never skip a screen or build blind just because a mockup file is
+   missing. If there's a feedback
    section, it is the authoritative description of what failed last round — fix exactly that,
    do not re-architect around it. Sketch the data flow (which query feeds the screen) before
    the markup.
