@@ -10,6 +10,7 @@
 //     gate freezes the run until Studio flips the row to 'resolved'.
 
 import { createHmac } from "node:crypto";
+import type { LiveStory, LiveSprint, StoreMutation } from "./planApply.ts";
 import type {
   Artifact,
   EngineSink,
@@ -343,6 +344,66 @@ export class SupabaseDesignStore {
       screen_key: r.screen_key ?? undefined,
     }));
     return { sprints, stories };
+  }
+
+  // ── Sprint-planning (plan_apply) ──────────────────────────────────────────────────
+  // loadLiveBacklog: el snapshot que computePlan valida contra la data VIVA (no docs/backlog.yaml).
+  // Devuelve stories (key/status/sprintKey/deps-como-keys) y sprints (key/position).
+  async loadLiveBacklog(): Promise<{ stories: LiveStory[]; sprints: LiveSprint[] }> {
+    const proj = this.cfg.project;
+    const [sres, stres] = await Promise.all([
+      this.rest(`/sprints?project_id=eq.${proj}&select=id,key,position&order=position`, { method: "GET", prefer: "count=none" }),
+      this.rest(`/stories?project_id=eq.${proj}&select=id,key,status,sprint_id,blocked_by`, { method: "GET", prefer: "count=none" }),
+    ]);
+    const sprintRows = (await sres.json()) as Array<{ id: string; key: string; position: number | null }>;
+    const storyRows = (await stres.json()) as Array<{ id: string; key: string; status: string; sprint_id: string | null; blocked_by: string[] | null }>;
+    const sprintIdToKey = new Map(sprintRows.map((r) => [r.id, r.key]));
+    const storyIdToKey = new Map(storyRows.map((r) => [r.id, r.key]));
+    const sprints: LiveSprint[] = sprintRows.map((r, i) => ({ key: r.key, position: r.position ?? i }));
+    const stories: LiveStory[] = storyRows.map((r) => ({
+      key: r.key,
+      status: r.status,
+      sprintKey: r.sprint_id ? sprintIdToKey.get(r.sprint_id) ?? null : null,
+      deps: (r.blocked_by ?? []).map((id) => storyIdToKey.get(id)).filter((k): k is string => !!k),
+    }));
+    return { stories, sprints };
+  }
+
+  // applySprintPlan: aplica las mutaciones de un plan aprobado (ya validadas por computePlan) al
+  // store y estampa planned_at + planning_run_id en el sprint (lo que DESTRABA el dispatch). Cambiar
+  // sprint_id/campos/blocked_by NO toca status → la máquina de estados lo deja pasar (no-op status).
+  // owner del DSL → columna `lane`. Los keys se resuelven a uuids con el keyMap.
+  async applySprintPlan(muts: StoreMutation[], sprintKey: string): Promise<void> {
+    const proj = this.cfg.project;
+    const [storyKeyToId, sprintKeyToId] = await Promise.all([this.keyMap("stories"), this.keyMap("sprints")]);
+    const patchStory = (key: string, patch: Record<string, unknown>) =>
+      this.rest(`/stories?project_id=eq.${proj}&key=eq.${encodeURIComponent(key)}`, { method: "PATCH", body: JSON.stringify(patch) });
+
+    for (const m of muts) {
+      if (m.kind === "setSprint") {
+        const sid = sprintKeyToId.get(m.sprintKey);
+        if (!sid) throw new Error(`applySprintPlan: sprint destino '${m.sprintKey}' no existe`);
+        await patchStory(m.storyKey, { sprint_id: sid });
+      } else if (m.kind === "patchFields") {
+        const f = m.fields;
+        const patch: Record<string, unknown> = {};
+        if (f.title !== undefined) patch.title = f.title;
+        if (f.body !== undefined) patch.body = f.body;
+        if (f.acceptance !== undefined) patch.acceptance = f.acceptance;
+        if (f.owner !== undefined) patch.lane = f.owner; // owner (DSL) → lane (columna)
+        if (f.screen_key !== undefined) patch.screen_key = f.screen_key;
+        if (Object.keys(patch).length) await patchStory(m.storyKey, patch);
+      } else {
+        // setDeps: reemplaza blocked_by (uuids). Keys que no resuelven a una story se descartan.
+        const ids = m.depKeys.map((k) => storyKeyToId.get(k)).filter((x): x is string => !!x);
+        await patchStory(m.storyKey, { blocked_by: ids });
+      }
+    }
+    // Estampar planned_at → destraba el dispatch del sprint. planning_run_id = el run de esta ceremonia.
+    await this.rest(`/sprints?project_id=eq.${proj}&key=eq.${encodeURIComponent(sprintKey)}`, {
+      method: "PATCH",
+      body: JSON.stringify({ planned_at: new Date().toISOString(), planning_run_id: this.runId || null }),
+    });
   }
 
   // sink wires phase lifecycle to design_phases and the handoff to the run status.
