@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
-  candidates, storyPrompt, sprintPrompt, screenPointer, channelFor, modelFor, docsGuardOk,
+  candidates, storyPrompt, sprintPrompt, screenPointer, channelFor, modelFor, docsGuardOk, sprintToPlan,
   type Policy, type DStory, type DSprint,
 } from "./dispatch.ts";
 
@@ -254,4 +254,26 @@ test("planning gate OFF (default): despacha aunque no haya planned_at (backward-
 test("planning gate: una story SIN sprint no gatea aunque planning esté ON", () => {
   const a = st({ id: "a", key: "S-9", sprintId: null, issue: 1 });
   assert.equal(candidates([a], sprints(), pol({ planningRequired: true })).length, 1);
+});
+
+// ── sprintToPlan: el frontier just-in-time del reloj (reconcileCeremonies) ─────────
+const sp = (id: string, key: string, planned_at: string | null = null) => ({ id, key, planned_at });
+test("sprintToPlan: el 1er sprint con trabajo sin planear es el target", () => {
+  const sprintsL = [sp("s1", "SP1"), sp("s2", "SP2")];
+  assert.equal(sprintToPlan(sprintsL, new Map([["s1", 3], ["s2", 5]])), "SP1");
+});
+test("sprintToPlan: sprint asentado (0 sin terminar) se saltea → planea el siguiente", () => {
+  const sprintsL = [sp("s1", "SP1", "2026-07-01"), sp("s2", "SP2")];
+  assert.equal(sprintToPlan(sprintsL, new Map([["s1", 0], ["s2", 4]])), "SP2"); // s1 done → s2
+});
+test("sprintToPlan: si el frontier YA está planeado, no adelanta el siguiente (null)", () => {
+  const sprintsL = [sp("s1", "SP1", "2026-07-01"), sp("s2", "SP2")];
+  assert.equal(sprintToPlan(sprintsL, new Map([["s1", 2], ["s2", 4]])), null); // s1 con trabajo y planeado → nada
+});
+test("sprintToPlan: todo terminado → null", () => {
+  assert.equal(sprintToPlan([sp("s1", "SP1", "x"), sp("s2", "SP2", "y")], new Map()), null);
+});
+test("sprintToPlan: un sprint SIN stories (ausente del Map) se trata como asentado → salta al siguiente", () => {
+  const sprintsL = [sp("s1", "SP1"), sp("s2", "SP2")]; // s1 no está en unbuilt → 0 → saltea; s2 tiene trabajo
+  assert.equal(sprintToPlan(sprintsL, new Map([["s2", 3]])), "SP2");
 });

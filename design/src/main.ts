@@ -37,6 +37,9 @@ const ideaOverride = args.find((a) => !a.startsWith("--"));
 // --resume=<runId>: re-adopt un run CAÍDO (crash-resume, Opción B) en vez de crear uno nuevo.
 // El worker lo pasa cuando detecta un run huérfano (status no terminal, sin proceso vivo).
 const resumeRunId = args.find((a) => a.startsWith("--resume="))?.split("=")[1];
+// --sprint=<key>: corre una ceremonia (sprint-planning/review/retro) sobre ESE sprint. Cambia el
+// trigger (sprint_id/goal/backlog_snapshot/plan) en vez del de diseño (instructions).
+const sprintArg = args.find((a) => a.startsWith("--sprint="))?.split("=")[1];
 
 if (!url || !anonKey || !jwtSecret || !serviceKey) {
   console.error("need SUPABASE_URL, SUPABASE_ANON_KEY, SUPABASE_JWT_SECRET, SUPABASE_SERVICE_ROLE_KEY (source .env)");
@@ -86,6 +89,36 @@ if (resumeRunId) {
   workflowId = run.workflow;
 }
 
+// 2b) El TRIGGER del run. Ceremonia (--sprint): sprint_id(key)/goal/backlog_snapshot/plan doc —
+//     lo que los pasos de sprint-planning/review/retro referencian. Diseño/iterate: instructions.
+let trigger: Record<string, unknown>;
+if (sprintArg) {
+  const [sres, stres] = await Promise.all([
+    fetch(`${base}/sprints?project_id=eq.${projectId}&select=id,key,goal`, { headers: svcHeaders }),
+    fetch(`${base}/stories?project_id=eq.${projectId}&select=id,key,title,status,sprint_id,lane,kind,screen_key,blocked_by`, { headers: svcHeaders }),
+  ]);
+  const sprintRows = (await sres.json()) as Array<{ id: string; key: string; goal: string | null }>;
+  const storyRows = (await stres.json()) as Array<{ id: string; key: string; title: string | null; status: string; sprint_id: string | null; lane: string | null; kind: string | null; screen_key: string | null; blocked_by: string[] | null }>;
+  const sprintIdToKey = new Map(sprintRows.map((r) => [r.id, r.key]));
+  const storyIdToKey = new Map(storyRows.map((r) => [r.id, r.key]));
+  const snapshot = storyRows.map((r) => ({
+    id: r.key, title: r.title ?? r.key, status: r.status,
+    sprint: r.sprint_id ? sprintIdToKey.get(r.sprint_id) ?? null : null,
+    owner: r.lane ?? null, kind: r.kind ?? null, screen_key: r.screen_key ?? null,
+    deps: (r.blocked_by ?? []).map((id) => storyIdToKey.get(id)).filter((k): k is string => !!k),
+  }));
+  const goal = sprintRows.find((r) => r.key === sprintArg)?.goal ?? "";
+  trigger = {
+    project_id: projectId, sprint_id: sprintArg, sprint_goal: goal,
+    backlog_snapshot: JSON.stringify(snapshot),
+    plan: `docs/PLAN-${sprintArg}.md`,
+    review: `docs/REVIEW-${sprintArg}.md`, corrections: `docs/CORRECTIONS-${sprintArg}.md`,
+    retro: `docs/RETRO-${sprintArg}.md`,
+  };
+} else {
+  trigger = { instructions: idea, project_id: projectId, repo: "" };
+}
+
 // 3) Cargar el workflow + sembrar las fases (todas las de tipo design, en orden).
 const wf = loadWorkflow(registryDir, workflowId);
 const phaseSeeds = designPhases(wf).map((p, i) => ({ phase_id: p.id, label: p.label, ord: i }));
@@ -99,7 +132,7 @@ let resumeState: ResumeState | undefined;
 if (resumeRunId) {
   store.adoptRun(resumeRunId);
   runId = resumeRunId;
-  resumeState = await buildResumeState(store, wf, workdir, { instructions: idea, project_id: projectId, repo: "" });
+  resumeState = await buildResumeState(store, wf, workdir, trigger);
   console.log(`↻ resume run ${runId}: ${Object.keys(resumeState.phaseRuns).length} fase(s) done, reanudo en step #${resumeState.startIndex}`);
 } else {
   runId = await store.createRun(workflowId, phaseSeeds);
@@ -156,7 +189,7 @@ const handoff = makeEffectExecutor(store, workdir, { github, full: workflowId !=
 try {
   const res = await runDesign(
     wf,
-    { instructions: idea, project_id: projectId, repo: "" },
+    trigger,
     { runner, resolver: store.resolver, sink: store.sink, handoff },
     resumeState,
   );

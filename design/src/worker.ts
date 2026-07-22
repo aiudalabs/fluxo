@@ -19,7 +19,7 @@ import { dirname, resolve } from "node:path";
 import { runAssistant, type ChatMsg } from "./assistant.ts";
 import { GithubApp, GithubRepo } from "./github.ts";
 import { Projector, type MirroredStory } from "./projection.ts";
-import { candidates, storyPrompt, sprintPrompt, docsGuardOk, type Policy, type DStory, type DSprint } from "./dispatch.ts";
+import { candidates, storyPrompt, sprintPrompt, docsGuardOk, sprintToPlan, type Policy, type DStory, type DSprint } from "./dispatch.ts";
 import { AutoMerger, prNumFromUrl } from "./automerge.ts";
 import { Approver } from "./approve.ts";
 import { resolveProjectCapabilities, computeCapabilityGate } from "./capabilities.ts";
@@ -54,6 +54,10 @@ const app = ghAppId && (ghKeyPath || ghKey) ? new GithubApp({ appId: ghAppId, pr
 
 const designing = new Set<string>(); // proyectos con un main.ts que lanzamos y sigue vivo
 const STALE_MS = 90_000; // heartbeat vencido → el run está huérfano (proceso muerto)
+// Ceremonias: corren por-sprint (--sprint). Su resume NO va por reconcileDesign (que reanudaría con
+// el trigger de diseño, sin sprint) — un run de ceremonia huérfano se marca failed y el reloj
+// (reconcileCeremonies) lo re-planea fresco sobre el sprint aún sin planear.
+const CEREMONY_WORKFLOWS = new Set(["sprint-planning", "sprint-review", "retro"]);
 
 // spawnDesign lanza main.ts para un proyecto: diseño FRESCO (sin resumeRunId) o RESUME de un
 // run caído (con --resume=<runId>, Opción B). Al salir, quita el proyecto de `designing` para
@@ -84,6 +88,16 @@ function spawnIterate(reqId: string, projectId: string, name: string, instructio
   });
 }
 
+// spawnCeremony lanza main.ts para una ceremonia sobre UN sprint (--sprint=<key>). main.ts arma el
+// trigger de ceremonia (goal + backlog_snapshot + doc paths). Al salir, libera `designing`.
+function spawnCeremony(projectId: string, name: string, sprintKey: string, wf: string) {
+  if (dryRun) { console.log(`[dry] ◆ ${wf}: "${name}" (${projectId}) sprint ${sprintKey}`); return; }
+  console.log(`◆ ${wf}: "${name}" (${projectId}) sprint ${sprintKey}`);
+  const argv = ["--experimental-strip-types", mainScript, projectId, `--workflow=${wf}`, `--sprint=${sprintKey}`];
+  const child = spawn("node", argv, { stdio: "inherit", env: process.env });
+  child.on("exit", (code) => { console.log(`  ${wf} de ${projectId} sprint ${sprintKey} terminó (code ${code})`); designing.delete(projectId); });
+}
+
 // ── 1b) Reconcile CHANGE-REQUESTS (P5-2) ─────────────────────────────────────────
 // Un pedido de incremento pending → spawn iterate. Guard `designing`: no correr diseño e iterate a
 // la vez en el mismo proyecto. Marca running ANTES de spawnear (evita doble-levantar en el próximo tick).
@@ -103,7 +117,7 @@ async function reconcileIncrements() {
 async function reconcileDesign() {
   const [projects, runs, stories] = await Promise.all([
     rest<Array<{ id: string; name: string; settings: { workflow?: string } | null }>>(`/projects?select=id,name,settings`),
-    rest<Array<{ id: string; project_id: string; status: string; heartbeat_at: string | null }>>(`/design_runs?select=id,project_id,status,heartbeat_at`),
+    rest<Array<{ id: string; project_id: string; status: string; heartbeat_at: string | null; workflow: string }>>(`/design_runs?select=id,project_id,status,heartbeat_at,workflow`),
     rest<Array<{ project_id: string }>>(`/stories?select=project_id`),
   ]);
   const nameById = new Map(projects.map((p) => [p.id, p.name]));
@@ -128,6 +142,12 @@ async function reconcileDesign() {
     if (designing.has(r.project_id)) continue;
     const beat = r.heartbeat_at ? new Date(r.heartbeat_at).getTime() : 0;
     if (now - beat < STALE_MS) continue; // heartbeat fresco → el proceso sigue vivo
+    // Ceremonia huérfana: NO reanudar por acá (correría sin --sprint). Marcala failed → el reloj la
+    // re-planea fresco sobre el sprint que quedó sin planear.
+    if (CEREMONY_WORKFLOWS.has(r.workflow)) {
+      await rest(`/design_runs?id=eq.${r.id}`, { method: "PATCH", body: JSON.stringify({ status: "failed" }) }).catch(() => {});
+      continue;
+    }
     designing.add(r.project_id);
     spawnDesign(r.project_id, nameById.get(r.project_id) ?? r.project_id, r.id);
   }
@@ -178,6 +198,35 @@ function policyFrom(settings: Settings): Policy {
     planningRequired: settings.planning_mode === "ceremony",
     modelByLane, channelByLane,
   };
+}
+
+// ── 1c) Reconcile CEREMONIAS (el "reloj") ────────────────────────────────────────
+// Con planning_mode=ceremony, dispara sprint-planning para el sprint FRONTIER: el de menor posición
+// con trabajo sin terminar que aún NO está planeado (y cuyos anteriores ya están asentados). Es
+// just-in-time — el candado (dispatch.planningRequired) frena el build hasta que planned_at se estampa.
+async function reconcileCeremonies() {
+  const projects = await rest<Array<{ id: string; name: string; settings: Settings | null }>>(`/projects?select=id,name,settings`);
+  const ceremony = projects.filter((p) => p.settings?.planning_mode === "ceremony");
+  for (const p of ceremony) {
+    if (designing.has(p.id)) continue;
+    // Reservar SINCRÓNICO (antes del await) — igual que los otros reconcilers — o dos ticks solapados
+    // pasan ambos el check y doble-spawnean (2× costo LLM + applies en conflicto). Se libera en el
+    // finally salvo que hayamos spawneado (ahí lo libera el exit handler del hijo).
+    designing.add(p.id);
+    let spawned = false;
+    try {
+      const [sprints, stories] = await Promise.all([
+        rest<Array<{ id: string; key: string; position: number | null; planned_at: string | null }>>(`/sprints?project_id=eq.${p.id}&select=id,key,position,planned_at&order=position`),
+        rest<Array<{ sprint_id: string | null; status: string }>>(`/stories?project_id=eq.${p.id}&select=sprint_id,status`),
+      ]);
+      const unbuilt = new Map<string, number>(); // sprint_id → stories sin terminar (status != done)
+      for (const s of stories) if (s.sprint_id && s.status !== "done") unbuilt.set(s.sprint_id, (unbuilt.get(s.sprint_id) ?? 0) + 1);
+      const target = sprintToPlan(sprints, unbuilt); // el frontier just-in-time (kernel puro)
+      if (target) { spawnCeremony(p.id, p.name, target, "sprint-planning"); spawned = true; }
+    } finally {
+      if (!spawned) designing.delete(p.id);
+    }
+  }
 }
 
 // ── 2a) Reconcile PROYECCIÓN (GitHub = verdad; corre ANTES del despacho) ──────────
@@ -422,6 +471,7 @@ async function reconcileBuild() {
 async function tick() {
   try { await reconcileDesign(); } catch (e) { console.error("reconcileDesign:", e instanceof Error ? e.message : e); }
   try { await reconcileIncrements(); } catch (e) { console.error("reconcileIncrements:", e instanceof Error ? e.message : e); }
+  try { await reconcileCeremonies(); } catch (e) { console.error("reconcileCeremonies:", e instanceof Error ? e.message : e); }
   if (!noBuild) {
     // Orden del conductor de v1: PROYECTAR (GitHub = verdad) → APROBAR (auto_if_safe) → AUTO-MERGE
     // (gated) → DESPACHAR. Aprobar antes de mergear: destraba el CI para que los checks corran y el

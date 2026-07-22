@@ -59,6 +59,19 @@ export interface Candidate {
   channel: string;
 }
 
+// sprintToPlan: el sprint FRONTIER que la ceremonia sprint-planning debe planear = el de MENOR
+// posición con trabajo sin terminar que aún NO está planeado (y cuyos anteriores están asentados).
+// null = nada que planear. Just-in-time: si el frontier ya está planeado, NO se adelanta el siguiente
+// (el candado del dispatch lo dejará buildear). `unbuilt` = sprint id → # de stories status != done.
+// `sprints` en orden de posición. Pura → testeable sin DB (la usa reconcileCeremonies del worker).
+export function sprintToPlan(sprints: Array<{ id: string; key: string; planned_at: string | null }>, unbuilt: Map<string, number>): string | null {
+  for (const sp of sprints) {
+    if ((unbuilt.get(sp.id) ?? 0) === 0) continue; // sprint asentado → seguir
+    return sp.planned_at ? null : sp.key;          // primer sprint con trabajo: planeado → nada; si no → planealo
+  }
+  return null;
+}
+
 // sprintNum: extrae el número de una key de sprint ("SP2","S1"→ dígitos) para ordenar; sin dígitos
 // va al final (v1 sprintNum).
 function sprintNum(key: string): number {
