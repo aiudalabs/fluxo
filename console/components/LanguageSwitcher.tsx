@@ -44,9 +44,9 @@ export function LanguageSwitcher() {
           gap: 5px;
           height: 32px;
           padding: 0 8px;
-          border: 1px solid var(--line, #e6e2da);
+          border: 1px solid var(--stroke-strong);
           border-radius: 9px;
-          background: var(--card, #fff);
+          background: var(--panel-2);
         }
         .flag {
           font-size: 15px;
@@ -56,11 +56,11 @@ export function LanguageSwitcher() {
           font-size: 12px;
           font-weight: 700;
           letter-spacing: 0.03em;
-          color: var(--ink, #222);
+          color: var(--ink2);
         }
         .caret {
           font-size: 10px;
-          color: var(--ink4, #999);
+          color: var(--ink4);
         }
         select {
           position: absolute;

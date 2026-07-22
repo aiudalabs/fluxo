@@ -35,6 +35,7 @@ export interface FlowCycleProps {
   onOpenSettings: (focus: SettingsFocus) => void; // estación "no activada" → configurar
   onAddBacklog: () => void; // ＋ añadir al Product Backlog (modal de solicitud de cambio)
   onOpenAbout: () => void; // ⓘ — qué es cada estación (página /flow/about)
+  onOpenStudio: () => void; // STUDIO / DISEÑO → el Studio y sus documentos
   previewPending?: boolean;
 }
 
@@ -144,6 +145,7 @@ export function FlowCycle(props: FlowCycleProps) {
     onOpenSettings,
     onAddBacklog,
     onOpenAbout,
+    onOpenStudio,
   } = props;
   const { t, lang } = useI18n();
   const v = useMemo(() => buildCycleView(model, modes), [model, modes]);
@@ -185,9 +187,10 @@ export function FlowCycle(props: FlowCycleProps) {
     c.control === "awaiting" ? "var(--cyc-amber)" : "var(--cyc-blue)";
 
   // Handlers de estación.
-  const openStage = (k: StageKey) => {
-    const s = stage(k);
-    if (s.target) onSelect(s.target);
+  const openStage = (_k: StageKey) => {
+    // Las etapas del pipeline de diseño (idea→brief, constitución, PRD, arquitectura, UI, backlog)
+    // llevan al Studio y sus documentos.
+    onOpenStudio();
   };
   const openGate = () => {
     if (v.awaitingGate) onSelect(v.awaitingGate);
@@ -295,9 +298,13 @@ export function FlowCycle(props: FlowCycleProps) {
             </marker>
           </defs>
 
-          {/* ============ IZQUIERDA: pipeline de diseño (STUDIO) ============ */}
-          <rect x="18" y="118" width="150" height="300" rx="14" {...shapeProps(v.bandState, { soft: true })} />
-          <text x="93" y="143" textAnchor="middle" fontSize="13" fontWeight="800" className="f-orange">
+          {/* ============ IZQUIERDA: pipeline de diseño (STUDIO) — click → el Studio ============ */}
+          <rect x="18" y="118" width="150" height="300" rx="14" {...shapeProps(v.bandState, { soft: true })}
+            style={{ cursor: "pointer" }} onClick={onOpenStudio}>
+            <title>{t("flow.cycle.studioTitle")} → abrir el Studio</title>
+          </rect>
+          <text x="93" y="143" textAnchor="middle" fontSize="13" fontWeight="800" className="f-orange"
+            style={{ cursor: "pointer" }} onClick={onOpenStudio}>
             {t("flow.cycle.studioTitle")}
           </text>
           <FitText x="93" y="158" maxWidth={140} textAnchor="middle" fontSize="9" className="f-ink2">

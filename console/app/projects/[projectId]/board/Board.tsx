@@ -15,6 +15,7 @@ import { KanbanBoard } from "@/components/tickets/KanbanBoard";
 import { LaneChip } from "@/components/tickets/LaneChip";
 import { TicketDetail } from "@/components/tickets/TicketDetail";
 import { DepGraph } from "@/components/tickets/DepGraph";
+import { IncrementRequest } from "@/components/IncrementRequest";
 import { statusToken } from "@/lib/statusToken";
 import type { DispatchCandidate, OrchestratorTicket, TicketStatus } from "@/lib/types";
 
@@ -217,6 +218,9 @@ export default function Board() {
           ))}
         </div>
       </div>
+
+      {/* Pedir incremento también desde el board (además del Overview y el AI Assistant). */}
+      <IncrementRequest />
 
       <div className="tickets-toolbar">
         <input className="inp" style={{ width: 220 }} placeholder={t("tickets.toolbar.search")} value={q} onChange={(e) => setQ(e.target.value)} />

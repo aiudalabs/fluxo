@@ -19,6 +19,7 @@ export function TopBar({ currentProjectId }: { currentProjectId?: string }) {
   const [login, setLogin] = useState<string | null>(null);
   const [installUrl, setInstallUrl] = useState<string>("");
   const [open, setOpen] = useState<"sw" | "user" | null>(null);
+  const [spend, setSpend] = useState<number | null>(null);
 
   useEffect(() => {
     const supa = browserClient();
@@ -29,6 +30,29 @@ export function TopBar({ currentProjectId }: { currentProjectId?: string }) {
       .then((r) => r.json()).then((d) => { setLogin(d.login ?? null); setInstallUrl(d.installUrl ?? ""); })
       .catch(() => {});
   }, []);
+
+  // Gasto de HOY del proyecto activo: build (run_costs) + diseño (design_phases). Día local.
+  useEffect(() => {
+    if (!currentProjectId) { setSpend(null); return; }
+    const supa = browserClient();
+    const start = new Date(); start.setHours(0, 0, 0, 0);
+    const iso = start.toISOString();
+    let alive = true;
+    const load = async () => {
+      const [{ data: rc }, { data: dp }] = await Promise.all([
+        supa.from("run_costs").select("usd").eq("project_id", currentProjectId).gte("created_at", iso),
+        supa.from("design_phases").select("usd").eq("project_id", currentProjectId).gte("updated_at", iso),
+      ]);
+      if (!alive) return;
+      const sum = (rows: { usd: number | null }[] | null) => (rows ?? []).reduce((a, r) => a + (r.usd ?? 0), 0);
+      setSpend(sum(rc as { usd: number | null }[]) + sum(dp as { usd: number | null }[]));
+    };
+    void load().catch(() => setSpend(null));
+    const ch = supa.channel(`spend:${currentProjectId}`)
+      .on("postgres_changes", { event: "*", schema: "public", table: "run_costs", filter: `project_id=eq.${currentProjectId}` }, () => void load())
+      .subscribe();
+    return () => { alive = false; void supa.removeChannel(ch); };
+  }, [currentProjectId]);
 
   const current = useMemo(() => projects.find((p) => p.id === currentProjectId) ?? null, [projects, currentProjectId]);
   const initials = (login ?? "·").slice(0, 2).toUpperCase();
@@ -63,7 +87,7 @@ export function TopBar({ currentProjectId }: { currentProjectId?: string }) {
       </div>
 
       <div className="sh-sp" />
-      <div className="sh-spend" title="Gasto de hoy (próximamente)">◷ Hoy <b>$0.00</b></div>
+      <div className="sh-spend" title="Gasto de hoy (build + diseño) del proyecto activo">◷ Hoy <b>${(spend ?? 0).toFixed(2)}</b></div>
       <ThemeToggle />
       <LanguageSwitcher />
 

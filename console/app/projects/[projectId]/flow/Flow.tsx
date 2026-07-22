@@ -169,6 +169,7 @@ export default function Flow() {
               onOpenSettings={() => {}}
               onAddBacklog={goBoard}
               onOpenAbout={() => {}}
+              onOpenStudio={() => router.push(`/projects/${projectId}/studio`)}
             />
           </div>
         ) : (
