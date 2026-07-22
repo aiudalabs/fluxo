@@ -13,6 +13,12 @@ import path from "path";
 const ROOT = process.env.REGISTRY_DIR ?? path.resolve(process.cwd(), "..", "registry");
 const KINDS = ["agents", "skills", "workflows", "providers"] as const;
 
+// Honestidad UI (H1): qué workflows tienen HOY un disparador vivo en v2 vs los que están como
+// método-en-data pero aún sin cablear. La fuente de verdad son los reconcilers del worker
+// (design/src/worker.ts): reconcileDesign → design/demo-design, reconcileIncrements → iterate.
+// MANTENER en sync con el worker: al cablear una ceremonia (reconcileCeremonies), sumarla acá.
+const WIRED_WORKFLOWS = new Set(["design", "demo-design", "iterate"]);
+
 async function readOr(p: string): Promise<string | null> {
   try { return await fs.readFile(p, "utf8"); } catch { return null; }
 }
@@ -56,16 +62,18 @@ export async function GET(req: NextRequest) {
   }
 
   // Catálogo: por cada kind, la lista de items con un resumen (role/primera línea) + modelo.
-  const catalog: Record<string, Array<{ id: string; summary: string | null; model: string | null }>> = {};
+  const catalog: Record<string, Array<{ id: string; summary: string | null; model: string | null; wired?: boolean }>> = {};
   for (const k of KINDS) {
     const files = await listDir(path.join(ROOT, k));
     const ids = [...new Set(files.filter((f) => /\.(ya?ml|md)$/.test(f)).map((f) => f.replace(/\.(ya?ml|md)$/, "")))].sort();
-    const items: Array<{ id: string; summary: string | null; model: string | null }> = [];
+    const items: Array<{ id: string; summary: string | null; model: string | null; wired?: boolean }> = [];
     for (const iid of ids) {
       const y = (await readOr(path.join(ROOT, k, `${iid}.yaml`))) ?? (await readOr(path.join(ROOT, k, `${iid}.yml`)));
       const md = await readOr(path.join(ROOT, k, `${iid}.md`));
       const summary = line(y, /^role:\s*(.+)$/m) ?? line(md, /^#\s*(.+)$/m) ?? line(y, /^description:\s*(.+)$/m) ?? line(y, /^#\s*(.+)$/m);
-      items.push({ id: iid, summary, model: line(y, /^model:\s*(.+)$/m) });
+      // Solo los workflows llevan estado de cableado (H1); el resto no aplica.
+      const wired = k === "workflows" ? WIRED_WORKFLOWS.has(iid) : undefined;
+      items.push({ id: iid, summary, model: line(y, /^model:\s*(.+)$/m), ...(wired !== undefined ? { wired } : {}) });
     }
     catalog[k] = items;
   }

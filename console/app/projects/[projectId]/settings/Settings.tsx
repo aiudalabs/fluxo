@@ -60,6 +60,19 @@ export default function Settings() {
   const [msg, setMsg] = useState<{ kind: "ok" | "err"; text: string } | null>(null);
   const [installedOrgs, setInstalledOrgs] = useState<string[] | null>(null);
   const [installUrl, setInstallUrl] = useState("");
+  // Workflows de diseño elegibles + sus fases DERIVADAS del YAML (no hardcodeadas). Fallback estático
+  // con los ids/nombres (config de UI, estable); las fases se enriquecen al cargar /api/workflows.
+  const [wfOpts, setWfOpts] = useState<Array<{ id: string; name: string; phases: string[] }>>([
+    { id: "design", name: "Completo", phases: [] },
+    { id: "demo-design", name: "Lean (demos)", phases: [] },
+  ]);
+  useEffect(() => {
+    let dead = false;
+    void fetch("/api/workflows").then((r) => r.json()).then((d) => {
+      if (!dead && Array.isArray(d.workflows) && d.workflows.length) setWfOpts(d.workflows);
+    }).catch(() => {});
+    return () => { dead = true; };
+  }, []);
 
   // Cargar settings + lanes (de las stories) + probe del canal + instalaciones.
   useEffect(() => {
@@ -258,8 +271,9 @@ export default function Settings() {
           <div className="stg-field">
             <label>Workflow de diseño</label>
             <select value={settings.workflow} onChange={(e) => patch({ workflow: e.target.value as ProjSettings["workflow"] })}>
-              <option value="design">Completo — discovery → constitución → PRD → data model → arquitectura → UI → mockups → backlog</option>
-              <option value="demo-design">Lean — brief → PRD → backlog (3 fases, para demos)</option>
+              {wfOpts.map((w) => (
+                <option key={w.id} value={w.id}>{w.name}{w.phases.length ? ` — ${w.phases.join(" → ")}` : ""}</option>
+              ))}
             </select>
           </div>
           <div className="stg-field">

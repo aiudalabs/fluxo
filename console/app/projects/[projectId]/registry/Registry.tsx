@@ -12,7 +12,7 @@ import { useProject } from "@/lib/project";
 import { activeToken } from "@/lib/supabaseClient";
 import { useT } from "@/lib/i18n";
 
-type CatalogItem = { id: string; summary: string | null; model: string | null };
+type CatalogItem = { id: string; summary: string | null; model: string | null; wired?: boolean };
 type Catalog = Record<string, CatalogItem[]>;
 type Detail = { yaml: string | null; md: string | null };
 type PromptSprint = { key: string; title: string; storyKeys: string[]; prompt: string };
@@ -116,7 +116,14 @@ export default function Registry() {
             <div className="reg-grid">
               {items.map((it) => (
                 <button key={it.id} className="reg-item" onClick={() => openItem(tab, it.id)}>
-                  <div className="rid">{tab}/{it.id}{it.model && <span className="tag">{it.model}</span>}</div>
+                  <div className="rid">{tab}/{it.id}{it.model && <span className="tag">{it.model}</span>}
+                    {it.wired !== undefined && (
+                      <span className="tag" title={it.wired ? "Tiene un disparador vivo en v2" : "Método en data — todavía sin cablear a un disparador"}
+                        style={{ color: it.wired ? "var(--emerald)" : "var(--ink4)", borderColor: it.wired ? "var(--emerald)" : "var(--stroke)" }}>
+                        {it.wired ? "● cableado" : "○ solo-data"}
+                      </span>
+                    )}
+                  </div>
                   <div className="rnm">{it.id.replace(/[-_]/g, " ").replace(/\b\w/g, (c) => c.toUpperCase())}</div>
                   {it.summary && <div className="rds" title={it.summary}>{it.summary}</div>}
                 </button>

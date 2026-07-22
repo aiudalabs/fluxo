@@ -41,6 +41,20 @@ light is what lets the planning phase finish fast.
      multi-sprint delta MUST carry the real ordering (e.g. shared design-system stories
      before the surfaces that use them).
    - `owner`: the lane/specialist (python-dev, react-dev, flutter-dev, firebase-dev, dev).
+   - `screen_key` (frontend lanes only — **MANDATORY**, same discipline as the initial
+     backlog's scrum-master): every story owned by `react-dev`/`flutter-dev` MUST carry a
+     `screen_key`, or the increment loses the screen↔mockup↔story binding that the ui-verify
+     **art-director** needs to judge the built UI (and the build agent's pointer to the mockup
+     never fires). Two legal values:
+       * the screen's stable `role.screen` key (`owner.calendar`, `client.booking`) — **reuse
+         the EXISTING key** when the story improves/extends a screen already in the shipped
+         product (find it in the existing `docs/UI_SCREENS.md` or the existing backlog's
+         `screen_key`s); assign a NEW stable dotted key (lowercase, dotted) when the increment
+         introduces a brand-new screen — the mockups step then generates `docs/mockups/<key>.html`.
+       * the literal `none` when the frontend story builds NO screen of its own (a shared
+         primitive/component, a setup/router story). `none` is the EXPLICIT opt-out so the
+         visual QA skips it cleanly — never a silent omission.
+     Backend / non-frontend stories OMIT `screen_key` entirely.
    - `sprint_id`: group the new stories into one or a few NEW sprints — each a coherent,
      demoable increment that becomes a single PR. Backward-only cross-sprint deps: a
      later sprint may depend on an earlier one, never the reverse.
@@ -54,7 +68,8 @@ light is what lets the planning phase finish fast.
 6. **Write the DELTA only** to the `output` path (`docs/backlog.yaml`). Same YAML shape
    as the original backlog — `epic` (reuse the existing epic id/title, or add one for a
    large new area), `sprints:` (the NEW sprints), `stories:` (the NEW light stories:
-   `id`, `title`, `body` user-story, `acceptance`, `deps`, `owner`, `sprint_id`).
+   `id`, `title`, `body` user-story, `acceptance`, `deps`, `owner`, `sprint_id`, and
+   `screen_key` on every frontend-lane story).
    Do NOT re-emit the existing stories — only the new ones. Output ONLY valid YAML to
    that file.
 
@@ -82,6 +97,7 @@ stories:
     acceptance: |
       - Color/type/spacing tokens defined and applied to buttons, inputs, cards.
     owner: react-dev
+    screen_key: none          # foundation story → no screen of its own (explicit opt-out)
     sprint_id: SP-ui-redesign-1
     deps: []                  # foundation → no deps (fires first)
   - id: S-ui-redesign-5
@@ -91,6 +107,7 @@ stories:
     acceptance: |
       - Hero + search use the shared components and tokens.
     owner: react-dev
+    screen_key: public.home   # builds a screen → reuse the shipped key, or a new dotted key
     sprint_id: SP-ui-redesign-2
     deps: [S-ui-redesign-1]   # uses the design system → depends on it (fires AFTER)
 ```
