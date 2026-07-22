@@ -125,7 +125,7 @@ function parseOne(raw: unknown, i: number): PlanAction {
   // ids explícitos duplicados dentro del mismo split = colisión (el apply exige ids únicos).
   const ids = parts.map((p) => p.id).filter((x): x is string => !!x);
   if (new Set(ids).size !== ids.length) throw new PlanParseError(`${where} (split ${storyId}): ids de partes duplicados`);
-  return { op, storyId, parts };
+  return { op: "split", storyId, parts };
 }
 
 // parseActions: el bloque → acciones tipadas y con forma válida. Un `actions: []` (o vacío) es
