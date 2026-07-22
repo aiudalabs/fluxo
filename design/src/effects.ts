@@ -31,6 +31,26 @@ async function applyPlanStep(store: SupabaseDesignStore, workdir: string, step: 
   console.log(`  ↪ plan_apply: sprint ${sprintKey} planeado — ${actions.length} acción(es) → ${muts.length} mutación(es), planned_at estampado`);
 }
 
+// reviewCloseStep: cierra la ceremonia sprint-review — estampa reviewed_at (destraba el ciclo) y
+// registra la decisión (accepted | accepted_with_corrections según el doc de correcciones). Determinista.
+async function reviewCloseStep(store: SupabaseDesignStore, workdir: string, step: EffectStep, ctx: StepContext): Promise<void> {
+  const inputs = resolveInputs(step.inputs, ctx);
+  const sprintKey = String(inputs.sprint_id ?? "");
+  if (!sprintKey) throw new Error(`review_close: falta sprint_id`);
+  const corrPath = String(inputs.corrections ?? "");
+  let corrections = 0;
+  if (corrPath) {
+    try {
+      const txt = readFileSync(join(workdir, corrPath), "utf8");
+      corrections = (txt.match(/^\s*-\s+(id|key):/gm) ?? []).length; // # de stories de corrección en el doc
+    } catch { /* sin doc (skip_if_empty saltó corrections) → sin correcciones */ }
+  }
+  await store.stampSprintReviewed(sprintKey);
+  const decision = corrections > 0 ? "accepted_with_corrections" : "accepted";
+  await store.brainAppend("sprint_reviewed", { sprint: sprintKey, decision, corrections }, "engine:review_close");
+  console.log(`  ↪ review_close: sprint ${sprintKey} ${decision}${corrections ? ` (${corrections} corrección/es)` : ""}, reviewed_at estampado`);
+}
+
 // makeEffectExecutor: el executor único que se inyecta a runDesign. Despacha por stepType. Un design/
 // iterate run usa pr/ticket_publish; una ceremonia usa sus efectos. Todos por el mismo executor.
 export function makeEffectExecutor(store: SupabaseDesignStore, workdir: string, opts?: { github?: GithubTarget; full?: boolean }): HandoffExecutor {
@@ -43,6 +63,8 @@ export function makeEffectExecutor(store: SupabaseDesignStore, workdir: string, 
           return publish.run(step, ctx);
         case "plan_apply":
           return applyPlanStep(store, workdir, step, ctx);
+        case "review_close":
+          return reviewCloseStep(store, workdir, step, ctx);
         default:
           throw new Error(`effect: stepType no soportado '${step.stepType}' (¿falta cablear su handler en effects.ts?)`);
       }

@@ -406,6 +406,17 @@ export class SupabaseDesignStore {
     });
   }
 
+  // ── Sprint-review (review_close) ──────────────────────────────────────────────────
+  // stampSprintReviewed: cierra la review de un sprint — estampa reviewed_at + review_run_id (lo que
+  // DESTRABA el avance del ciclo: el reloj puede correr la retro, y el siguiente sprint su planning).
+  // No toca status de stories → sin choque con la máquina de estados. sprintKey = KEY del sprint.
+  async stampSprintReviewed(sprintKey: string): Promise<void> {
+    await this.rest(`/sprints?project_id=eq.${this.cfg.project}&key=eq.${encodeURIComponent(sprintKey)}`, {
+      method: "PATCH",
+      body: JSON.stringify({ reviewed_at: new Date().toISOString(), review_run_id: this.runId || null }),
+    });
+  }
+
   // sink wires phase lifecycle to design_phases and the handoff to the run status.
   get sink(): EngineSink {
     return {
