@@ -79,15 +79,19 @@ export default function Overview() {
   const [tickets, setTickets] = useState<OrchestratorTicket[]>([]);
   const [docNames, setDocNames] = useState<string[]>([]);
   const [recent, setRecent] = useState<Rec[]>([]);
+  const [spend, setSpend] = useState<{ usd: number; runs: number }>({ usd: 0, runs: 0 });
   const [descOpen, setDescOpen] = useState(false);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     let cancelled = false;
     const load = async () => {
-      const [{ data: rows }, { data: runs }, { data: rec }] = await Promise.all([
+      const [{ data: rows }, { data: arts }, { data: rec }] = await Promise.all([
         supabase.from("stories").select("key,title,status,sprint_id,blocked_by").eq("project_id", projectId),
-        supabase.from("design_runs").select("id").eq("project_id", projectId).order("created_at", { ascending: false }).limit(1),
+        // Los docs salen del brain (kind=artifact) — TODAS las versiones de TODOS los runs, no solo el
+        // último. Si no, cuando el último run es una ceremonia (sprint-planning), la spec se reduce a su
+        // único doc (PLAN-…md) y los del diseño "desaparecen". El Studio ya lee de acá.
+        supabase.from("brain_events").select("payload").eq("project_id", projectId).eq("kind", "artifact"),
         supabase.from("stories").select("key,title,status,pr_url,session_url,updated_at").eq("project_id", projectId).order("updated_at", { ascending: false }).limit(6),
       ]);
       if (cancelled) return;
@@ -102,14 +106,26 @@ export default function Overview() {
         deps: (s.blocked_by as string[] | null) ?? [],
         sprint_id: s.sprint_id ? sprintKey.get(s.sprint_id as string) : undefined,
       })));
-      const runId = (runs as { id: string }[])?.[0]?.id ?? null;
-      if (runId) {
-        const { data: ph } = await supabase.from("design_phases").select("artifacts").eq("run_id", runId);
-        if (cancelled) return;
-        const names = new Set<string>();
-        for (const p of (ph as { artifacts: { path: string }[] }[]) ?? []) for (const a of p.artifacts ?? []) names.add(a.path.replace(/^.*\//, ""));
-        setDocNames([...names]);
+      const names = new Set<string>();
+      for (const e of (arts as { payload: { path?: string } }[]) ?? []) {
+        const p = e.payload?.path;
+        if (!p) continue;
+        const base = p.replace(/^.*\//, "");
+        if (!base.startsWith(".")) names.add(base); // .vibeforge-gate & co. no son docs
       }
+      setDocNames([...names]);
+
+      // Gasto real = build (run_costs) + diseño/ceremonias (design_phases.usd). Antes el KPI era $0 fijo.
+      const [{ data: rc }, { data: dpc }] = await Promise.all([
+        supabase.from("run_costs").select("usd").eq("project_id", projectId),
+        supabase.from("design_phases").select("usd,run_id").eq("project_id", projectId),
+      ]);
+      if (cancelled) return;
+      const rcUsd = ((rc as { usd: number | null }[]) ?? []).reduce((s, r) => s + (Number(r.usd) || 0), 0);
+      const dpRows = (dpc as { usd: number | null; run_id: string }[]) ?? [];
+      const dpUsd = dpRows.reduce((s, r) => s + (Number(r.usd) || 0), 0);
+      const workerRuns = new Set(dpRows.filter((r) => Number(r.usd) > 0).map((r) => r.run_id)).size;
+      setSpend({ usd: rcUsd + dpUsd, runs: ((rc as unknown[]) ?? []).length + workerRuns });
       setLoading(false);
     };
     void load();
@@ -218,8 +234,8 @@ export default function Overview() {
         </div>
         <div className="stat">
           <div className="eyebrow">{t("overview.kpi.spend")}</div>
-          <div className="n serif acc">$0.00</div>
-          <div className="sub">{t("overview.kpi.spend.sub", { n: 0 })}</div>
+          <div className="n serif acc">${spend.usd.toFixed(2)}</div>
+          <div className="sub">{t("overview.kpi.spend.sub", { n: spend.runs })}</div>
         </div>
       </div>
 
