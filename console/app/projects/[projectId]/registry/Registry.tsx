@@ -138,11 +138,34 @@ export default function Registry() {
 }
 
 function TemplatesPane({ templates, t }: { templates: string[]; t: (k: string, v?: Record<string, string | number>) => string }) {
+  const [sel, setSel] = useState<string | null>(null);
+  const [content, setContent] = useState<string | null>(null);
+  const open = useCallback(async (p: string) => {
+    setSel(p); setContent(null);
+    try {
+      const res = await fetch(`/api/registry?kind=templates&path=${encodeURIComponent(p)}`);
+      const d = (await res.json()) as { content?: string };
+      setContent(res.ok ? (d.content ?? "") : "(no se pudo cargar el template)");
+    } catch { setContent("(error al cargar)"); }
+  }, []);
+
+  // Drill-down: ver el contenido de un template (el CI/scaffold que Fluxo siembra en el repo).
+  if (sel) {
+    return (
+      <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+        <button className="reg-back" onClick={() => { setSel(null); setContent(null); }}>← templates</button>
+        <h3 style={{ margin: 0, fontFamily: "var(--mono, monospace)", fontSize: 13, wordBreak: "break-all" }}>{sel}</h3>
+        {content == null ? <div className="placeholder"><span className="spin" /></div> : <DocView content={content} path={sel} />}
+      </div>
+    );
+  }
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-      <p className="c" style={{ margin: "0 0 8px" }}>{t("registry.templates.intro")}</p>
+    <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+      <p className="c" style={{ margin: "0 0 8px" }}>{t("registry.templates.intro")} — clickeá para ver el contenido.</p>
       {templates.map((p) => (
-        <div key={p} className="tag" style={{ fontFamily: "var(--mono, monospace)", fontSize: 12, alignSelf: "flex-start" }}>{p}</div>
+        <button key={p} onClick={() => open(p)}
+          style={{ textAlign: "left", fontFamily: "var(--mono, monospace)", fontSize: 12, padding: "5px 8px", border: "1px solid var(--stroke)", borderRadius: 6, background: "var(--panel)", color: "var(--ink2)", cursor: "pointer", alignSelf: "stretch", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}
+          title={p}>{p}</button>
       ))}
       {templates.length === 0 && <div className="td-empty">—</div>}
     </div>

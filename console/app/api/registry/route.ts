@@ -61,6 +61,21 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ kind, id, yaml: yamlC, md });
   }
 
+  // Contenido de un TEMPLATE por su path relativo bajo templates/github-native (para que la UI pueda
+  // ABRIR y ver qué CI/scaffold siembra Fluxo, no solo listar el path). Path-safe: sin ".." y resuelto
+  // DENTRO del árbol de templates (no se puede leer fuera).
+  if (kind === "templates") {
+    const rel = req.nextUrl.searchParams.get("path") ?? "";
+    const baseDir = path.join(ROOT, "templates", "github-native");
+    const abs = path.resolve(baseDir, rel);
+    if (!rel || rel.includes("..") || !(abs === baseDir || abs.startsWith(baseDir + path.sep))) {
+      return NextResponse.json({ error: "bad path" }, { status: 400 });
+    }
+    const content = await readOr(abs);
+    if (content == null) return NextResponse.json({ error: "not found" }, { status: 404 });
+    return NextResponse.json({ kind: "templates", path: rel, content });
+  }
+
   // Catálogo: por cada kind, la lista de items con un resumen (role/primera línea) + modelo.
   const catalog: Record<string, Array<{ id: string; summary: string | null; model: string | null; wired?: boolean }>> = {};
   for (const k of KINDS) {
