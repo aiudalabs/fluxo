@@ -82,10 +82,11 @@ services:
       - "{{repo_path}}:/repo"
     environment:
       PORT: "3000"
-      # SAME-ORIGIN: el browser llama a /api/... (mismo origen que la página) → el `edge` lo rutea al
-      # backend. NO uses una URL absoluta interna (http://backend:4000): el browser del usuario no la
-      # resuelve. Relativa = anda por el túnel sin CORS ni conocer la URL pública de antemano.
-      NEXT_PUBLIC_API_URL: /api
+      # URL PÚBLICA ABSOLUTA (no relativa): el mismo origen que la página, pero absoluta para que también
+      # funcionen los SERVER COMPONENTS (SSR: /directory, /book) — un fetch server-side a "/api" relativo
+      # falla (no tiene origin). El browser la ve same-origin (sin CORS); el server la alcanza por hairpin
+      # (container → IP pública → Caddy → edge). El runner la conoce de antemano (subdominio determinístico).
+      NEXT_PUBLIC_API_URL: "{{public_api_url}}"
     command: ["sh", "-lc", "npm run dev --workspace frontend"]
     depends_on:
       install:

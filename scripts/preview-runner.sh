@@ -183,6 +183,7 @@ process_one() { # $1=id  $2=project_id  $3=ref
   # 4) renderizar compose + copiar edge Caddyfile
   local port; port=$(free_port); echo "$port" > "$wd/.port"; touch "$PREVIEW_DIR/.port-$port"
   local jwt; jwt="preview-$(head -c16 /dev/urandom | od -An -tx1 | tr -d ' \n')"
+  local public_api_url="https://preview-$pid.$PREVIEW_BASE_HOST/api"   # absoluta → sirve SSR y browser
   cp "$recipe/edge.Caddyfile" "$wd/edge.Caddyfile"
   sed -e "s#{{preview_id}}#$pid#g" \
       -e "s#{{repo_path}}#$repodir#g" \
@@ -190,6 +191,7 @@ process_one() { # $1=id  $2=project_id  $3=ref
       -e "s#{{extensions_sql}}#$recipe/00-extensions.sql#g" \
       -e "s#{{emulation_sql}}#$emulation#g" \
       -e "s#{{edge_caddyfile}}#$wd/edge.Caddyfile#g" \
+      -e "s#{{public_api_url}}#$public_api_url#g" \
       -e "s#{{jwt_secret}}#$jwt#g" \
       "$recipe/compose.yml.tmpl" > "$wd/compose.yml"
 
