@@ -83,6 +83,7 @@ export default function Studio() {
   const [versions, setVersions] = useState<Version[]>([]);
   const [status, setStatus] = useState<"loading" | "ready" | "error">("loading");
   const [error, setError] = useState("");
+  const [showInc, setShowInc] = useState(false); // overlay "Pedir incremento" (acción del topbar)
 
   const [selected, setSelected] = useState<string | null>(null); // doc path
   const [selPhase, setSelPhase] = useState<number | null>(null); // phase index
@@ -211,6 +212,7 @@ export default function Studio() {
           </button>
         )}
         <div className="sp" />
+        <button className="btn sm" onClick={() => setShowInc(true)} title="Agregá una feature o mejora al producto ya construido">＋ Pedir incremento</button>
         {(phases.length > 0 || files.length > 0) && !fullscreen && (
           <button className={`btn ghost sm${!railOpen ? " on" : ""}`} onClick={() => setRailOpen((v) => !v)} title={t("studio.docs.railToggle")}>
             ⇤ {t("studio.docs.railToggle")}
@@ -293,11 +295,6 @@ export default function Studio() {
               </nav>
             )}
           </div>
-
-          {/* Pedir incremento desde el Studio (self-serve): agregar features al producto ya construido. */}
-          <div className="rail-sec">
-            <IncrementRequest />
-          </div>
         </aside>
 
         {/* ── Main ── */}
@@ -365,6 +362,19 @@ export default function Studio() {
           onClick={() => pickPhase(phases.findIndex((p) => p.phase_id === pendingGate.phase_id))}>
           <span className="d" style={{ background: "var(--accent)" }} /> {t("studio.docs.reviewChanges")}
         </button>
+      )}
+
+      {/* Overlay "Pedir incremento": acción con espacio propio (no atrapada en el rail). */}
+      {showInc && (
+        <div onClick={() => setShowInc(false)}
+          style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.55)", zIndex: 50, display: "flex", alignItems: "flex-start", justifyContent: "center", padding: "8vh 16px", overflow: "auto" }}>
+          <div onClick={(e) => e.stopPropagation()} style={{ width: "100%", maxWidth: 640 }}>
+            <IncrementRequest />
+            <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 10 }}>
+              <button className="btn ghost sm" onClick={() => setShowInc(false)}>Cerrar</button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );
