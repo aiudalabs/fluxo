@@ -18,6 +18,29 @@ permissions:
 jobs:
   test-verify:
     runs-on: ubuntu-latest
+    # STACK react-supabase = Postgres (Supabase es Postgres — la fuente única de datos). Las suites de
+    # backend/worker se conectan a Postgres (5432), así que la CI levanta uno como service y expone
+    # DATABASE_URL. La DB la determina EL STACK (data): un stack con otra base (mysql…) declara la suya
+    # en SU propio template — cero hardcode cross-proyecto, cero parche en el repo del cliente.
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      # La convención de conexión de las suites del stack. Si el repo usa otro nombre de var, el
+      # scaffold del stack debe alinearlo (la CI provee la base; el harness del repo migra el schema).
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/postgres
+      POSTGRES_URL: postgresql://postgres:postgres@localhost:5432/postgres
     steps:
       - name: Checkout
         uses: actions/checkout@v4
