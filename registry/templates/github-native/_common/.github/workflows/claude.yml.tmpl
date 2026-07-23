@@ -66,6 +66,32 @@ jobs:
           # sesión "trabaja" 40 turnos y muere sin poder crear un archivo).
           claude_args: "--permission-mode bypassPermissions"
 
+      # Reporte de COSTO (F-spend): claude-code-action deja claude-execution-output.json con
+      # costUSD/tokens por modelo. Sumamos costo + tokens y los posteamos como un comentario
+      # machine-readable (<!-- fluxo:cost {...} -->) en el primer issue del despacho — el worker
+      # (reconcileCosts) lo parsea y lo guarda en run_costs. always(): reportamos aunque el run
+      # haya fallado/vaciado. (Este paso se perdió en el commit d0e7ced al reestructurar el YAML;
+      # restaurado — sin él el gasto del build no se registra.)
+      - name: Report cost
+        if: ${{ always() && inputs.issues != '' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ISSUES: ${{ inputs.issues }}
+        run: |
+          F="${RUNNER_TEMP:-/home/runner/work/_temp}/claude-execution-output.json"
+          [ -f "$F" ] || F=$(find "${RUNNER_TEMP:-/home/runner/work/_temp}" "$GITHUB_WORKSPACE" -name 'claude-execution-output.json' 2>/dev/null | head -1)
+          if [ -z "$F" ] || [ ! -f "$F" ]; then echo "sin execution output — nada que reportar"; exit 0; fi
+          # Suma RECURSIVA sobre todo el doc (robusto a cómo anide modelUsage): costUSD + tokens.
+          USD=$(jq '[.. | .costUSD? // empty] | add // 0' "$F" 2>/dev/null || echo 0)
+          IN=$(jq '[.. | .inputTokens? // empty] | add // 0' "$F" 2>/dev/null || echo 0)
+          OUT=$(jq '[.. | .outputTokens? // empty] | add // 0' "$F" 2>/dev/null || echo 0)
+          CR=$(jq '[.. | .cacheReadInputTokens? // empty] | add // 0' "$F" 2>/dev/null || echo 0)
+          N=$(echo "$ISSUES" | cut -d, -f1 | tr -d ' ')
+          [ -z "$N" ] && exit 0
+          printf '<!-- fluxo:cost {"run":"%s","usd":%s,"in":%s,"out":%s,"cacheRead":%s,"issues":"%s"} -->\n💰 Costo de este run: **$%s** · %s in / %s out tokens\n' \
+            "$GITHUB_RUN_ID" "$USD" "$IN" "$OUT" "$CR" "$ISSUES" "$USD" "$IN" "$OUT" > /tmp/fluxo-cost.md
+          gh issue comment "$N" -R "${{ github.repository }}" -F /tmp/fluxo-cost.md || true
+
       # Checkpoint de rescate DETERMINISTA (cazado en vivo dos veces: sesiones
       # que implementan durante 100+ turnos y terminan sin pushear — por
       # session-limit o por "esperar" sub-agentes en headless). La disciplina
