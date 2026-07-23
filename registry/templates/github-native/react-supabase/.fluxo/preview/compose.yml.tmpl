@@ -1,0 +1,73 @@
+# preview.compose — react-supabase (Next.js + Fastify + Postgres), EFÍMERO (release v2 / docs/14).
+# Corre la app END-TO-END para el preview navegable Fluxo-hosted. Sin Dockerfile en el repo → usa
+# node:20 + los scripts de los workspaces. El worker (Baileys/WhatsApp) se OMITE (no aporta a la UI).
+# DB efímera propia + migraciones. El preview-runner sustituye {{repo_path}} y {{preview_port}} y lo
+# corre en una RED AISLADA (sin acceso a prod ni al host). Data por-stack: un stack con otra base
+# declara su propia receta.
+#
+# SEGURIDAD: read_only donde se puede, no-root, límites, sin secrets del sistema, DB efímera propia.
+name: fluxo-preview-{{preview_id}}
+
+services:
+  # 1) Instala UNA vez (monorepo por workspaces) sobre el volumen compartido; los demás esperan a que
+  #    termine OK (evita el race de dos `npm ci` sobre el mismo node_modules).
+  install:
+    image: node:20-slim
+    working_dir: /repo
+    volumes:
+      - "{{repo_path}}:/repo"
+    command: ["sh", "-lc", "npm ci --no-audit --no-fund"]
+    mem_limit: 1g
+    pids_limit: 400
+
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: app
+      POSTGRES_PASSWORD: app
+      POSTGRES_DB: app
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U app"]
+      interval: 3s
+      timeout: 3s
+      retries: 30
+    tmpfs:
+      - /var/lib/postgresql/data   # DB en RAM: efímera de verdad + más rápida (preview descartable)
+    mem_limit: 512m
+    pids_limit: 200
+
+  backend:
+    image: node:20-slim
+    working_dir: /repo
+    volumes:
+      - "{{repo_path}}:/repo"
+    environment:
+      DATABASE_URL: postgres://app:app@db:5432/app
+      PORT: "4000"
+      NODE_ENV: development
+    command: ["sh", "-lc", "npm run migrate --workspace backend && npm run dev --workspace backend"]
+    depends_on:
+      install:
+        condition: service_completed_successfully
+      db:
+        condition: service_healthy
+    mem_limit: 768m
+    pids_limit: 300
+
+  frontend:
+    image: node:20-slim
+    working_dir: /repo
+    volumes:
+      - "{{repo_path}}:/repo"
+    environment:
+      PORT: "3000"
+      # La UI le pega al backend del propio preview (red interna del compose).
+      NEXT_PUBLIC_API_BASE_URL: http://backend:4000
+    command: ["sh", "-lc", "npm run dev --workspace frontend"]
+    depends_on:
+      install:
+        condition: service_completed_successfully
+    ports:
+      - "127.0.0.1:{{preview_port}}:3000"   # el runner mapea → Caddy rutea el subdominio efímero
+    mem_limit: 768m
+    pids_limit: 300
