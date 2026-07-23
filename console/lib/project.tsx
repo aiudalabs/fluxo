@@ -13,7 +13,7 @@
 import { createContext, useContext, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { browserClient, activeToken } from "./supabaseClient";
+import { browserClient, activeToken, freshToken } from "./supabaseClient";
 import { useLocale } from "./locale";
 import { TopBar } from "@/components/shell/TopBar";
 import { FloatingAssistant } from "@/components/FloatingAssistant";
@@ -49,11 +49,20 @@ export function ProjectShell({ projectId, children }: { projectId: string; child
   const [project, setProject] = useState<ProjectMeta | null>(null);
   const [collapsed, setCollapsed] = useState(false);
 
-  // Arm the tenant token on the realtime socket once for the whole project context. The
-  // feature views subscribe through the same client, so their streams are tenant-scoped.
+  // Arm the tenant token on the realtime socket, and RE-arm it periodically. Sin esto el socket se
+  // armaba una sola vez con el token de sesión y nunca se refrescaba → a las 8h el JWT vencía y el
+  // realtime moría ("JWT expired"). freshToken() además refresca la sesión si está por vencer, así
+  // mientras la pestaña esté abierta el token no expira. (Una sesión YA vencida → re-login: un JWT
+  // vencido no se puede refrescar.) Las queries ya usan freshToken() vía el accessToken del cliente.
   useEffect(() => {
-    const tok = activeToken();
-    if (tok) void supabase.realtime.setAuth(tok);
+    let stopped = false;
+    const arm = async () => {
+      const tok = (await freshToken()) ?? activeToken();
+      if (!stopped && tok) void supabase.realtime.setAuth(tok);
+    };
+    void arm();
+    const iv = setInterval(() => void arm(), 20 * 60 * 1000); // cada 20 min (ventana de refresh = 60 min)
+    return () => { stopped = true; clearInterval(iv); };
   }, [supabase]);
 
   // Cargar la metadata del proyecto (nombre/descr/org/repo) — RLS la scopea al tenant.
