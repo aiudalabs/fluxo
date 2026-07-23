@@ -17,6 +17,7 @@ import { createServer } from "node:http";
 import { fileURLToPath } from "node:url";
 import { dirname, resolve } from "node:path";
 import { runAssistant, sseEvent, type ChatMsg } from "./assistant.ts";
+import { buildAssistantTools, ASSISTANT_TOOL_IDS } from "./assistantTools.ts";
 import { GithubApp, GithubRepo } from "./github.ts";
 import { Projector, type MirroredStory } from "./projection.ts";
 import { candidates, storyPrompt, sprintPrompt, docsGuardOk, sprintToPlan, sprintToReview, sprintToRetro, type Policy, type DStory, type DSprint } from "./dispatch.ts";
@@ -583,8 +584,13 @@ if (assistantPort > 0) {
         const st = await buildStateSummary(projectId);
         if (!st) { res.statusCode = 404; res.end(JSON.stringify({ error: "proyecto no encontrado" })); return; }
 
+        // Pieza 3: tools READ scopeadas a ESTE proyecto (backlog/story/sprints/doc del brain). El bot
+        // lee lo que necesita; las mutaciones siguen confirmables en la UI (nada ejecuta acá).
+        const tools = buildAssistantTools({ projectId, rest });
+        const withTools = { mcpServers: { fluxo: tools }, allowedTools: ASSISTANT_TOOL_IDS, maxTurns: 6 };
+
         if (!wantsSse) {
-          const text = await runAssistant({ stateSummary: st.summary, messages: messages.slice(-12) });
+          const text = await runAssistant({ stateSummary: st.summary, messages: messages.slice(-12), ...withTools });
           res.setHeader("Content-Type", "application/json");
           res.end(JSON.stringify({ text }));
           return;
@@ -598,6 +604,7 @@ if (assistantPort > 0) {
         const text = await runAssistant({
           stateSummary: st.summary,
           messages: messages.slice(-12),
+          ...withTools,
           onDelta: (delta) => res.write(sseEvent({ delta })),
         });
         res.write(sseEvent({ done: true, text }));
