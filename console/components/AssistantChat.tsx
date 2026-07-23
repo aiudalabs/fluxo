@@ -13,7 +13,7 @@ import { useEffect, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { useProject } from "@/lib/project";
-import { sessionToken } from "@/lib/supabaseClient";
+import { freshToken } from "@/lib/supabaseClient";
 
 type Msg = { id: string; role: "user" | "assistant"; content: string };
 type Conv = { id: string; title: string | null; created_at: string };
@@ -34,6 +34,14 @@ function parseAction(content: string): { text: string; action: ActionProposal | 
   let action: ActionProposal | null = null;
   try { action = JSON.parse(m[1].trim()) as ActionProposal; } catch { /* bloque malformado: ignorá */ }
   return { text: content.replace(m[0], "").trim(), action };
+}
+
+// isAuthError · detecta sesión vencida (401 del proxy o "JWT expired" de Supabase) para mostrar un
+// aviso claro de re-login en vez de un error mudo (Pieza 4).
+function isAuthError(e: unknown, status?: number): boolean {
+  if (status === 401) return true;
+  const msg = (e instanceof Error ? e.message : String(e ?? "")).toLowerCase();
+  return msg.includes("jwt") || msg.includes("expired") || msg.includes("no session") || msg.includes("401");
 }
 
 // Título del hilo = las primeras palabras del primer mensaje (para la lista de conversaciones).
@@ -77,6 +85,7 @@ export function AssistantChat() {
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
   const [streaming, setStreaming] = useState<string | null>(null); // Pieza 2: bubble en vivo mientras llega el SSE.
+  const [sessionExpired, setSessionExpired] = useState(false);     // Pieza 4: aviso de re-login.
   const [acts, setActs] = useState<Record<string, ActState>>({});
   const scrollRef = useRef<HTMLDivElement>(null);
   const convIdRef = useRef<string | null>(null); // convId vivo (el del closure de send() queda stale).
@@ -121,7 +130,7 @@ export function AssistantChat() {
         const { error } = await supabase.from("increment_requests").insert({ project_id: projectId, tenant_id: project?.tenant_id, instructions: a.instructions });
         if (error) throw error;
       } else if (a.type === "dispatch") {
-        const tok = await sessionToken();
+        const tok = await freshToken();
         const h = tok ? { authorization: `Bearer ${tok}` } : undefined;
         const cr = await fetch(`/api/projects/${projectId}/candidates`, { headers: h });
         const cands = ((await cr.json())?.candidates ?? []) as Array<{ kind: string; id: string; title: string }>;
@@ -157,7 +166,7 @@ export function AssistantChat() {
   const send = async (text?: string) => {
     const content = (text ?? input).trim();
     if (!content || busy) return;
-    setInput(""); setBusy(true);
+    setInput(""); setBusy(true); setSessionExpired(false);
     try {
       // 1) Asegurar una conversación (crearla con el título del primer mensaje si es nueva).
       let cid = convId;
@@ -172,12 +181,13 @@ export function AssistantChat() {
       const history: Msg[] = [...msgs, userMsg];
       setMsgs(history);
       // 3) Pedir la respuesta al worker (vía proxy), consumiendo el stream SSE.
-      const tok = await sessionToken();
+      const tok = await freshToken();
       const r = await fetch(`/api/projects/${projectId}/assistant`, {
         method: "POST",
         headers: { "Content-Type": "application/json", ...(tok ? { authorization: `Bearer ${tok}` } : {}) },
         body: JSON.stringify({ messages: history.map((m) => ({ role: m.role, content: m.content })) }),
       });
+      if (r.status === 401) { setSessionExpired(true); setStreaming(null); return; } // sesión vencida → aviso claro.
       // SSE (streaming) o JSON (fallback / error del worker) según content-type.
       const ct = r.headers.get("content-type") ?? "";
       let reply: string;
@@ -198,6 +208,9 @@ export function AssistantChat() {
       setMsgs((m) => (cid === convIdRef.current ? [...m, finalMsg] : m));
     } catch (e) {
       setStreaming(null);
+      // Sesión vencida (el insert a Supabase o el proxy fallan con JWT expired) → aviso de re-login,
+      // no un error mudo (Pieza 4).
+      if (isAuthError(e)) { setSessionExpired(true); return; }
       setMsgs((m) => [...m, { id: `tmp-e-${Date.now()}`, role: "assistant", content: `⚠ ${e instanceof Error ? e.message : String(e)}` }]);
     } finally { setBusy(false); }
   };
@@ -274,6 +287,12 @@ export function AssistantChat() {
           {busy && streaming === null && <div className="brain-think"><span className="spin" /> pensando…</div>}
         </div>
 
+        {sessionExpired && (
+          <div className="brain-err" style={{ display: "flex", alignItems: "center", gap: 10, justifyContent: "space-between" }}>
+            <span>⚠ Tu sesión venció. Volvé a iniciar sesión para seguir usando el asistente.</span>
+            <a className="btn" href="/login">Iniciar sesión</a>
+          </div>
+        )}
         <form className="brain-form" onSubmit={(e) => { e.preventDefault(); void send(); }}>
           <textarea
             value={input} onChange={(e) => setInput(e.target.value)} rows={1}
