@@ -56,3 +56,52 @@ backend + DB efímera), en un subdominio temporal de Fluxo, **sin que el cliente
   sigue intacto.
 - E2E: un incremento → build → merge → Review → **preview navegable** en la pestaña, se navega la app
   de verdad, y expira sola.
+
+---
+
+## ✅ VALIDADO + IMPLEMENTADO (2026-07-23) — con misalon, end-to-end
+
+Se validó y construyó el vertical completo. **Dos cambios de diseño vs el plan de arriba**, ambos por
+lo aprendido corriéndolo de verdad:
+
+### Cambio 1 — expose por **quick-tunnel**, no por Caddy+wildcard-DNS
+El plan original ruteaba `preview-<id>.fluxo.aiudalabs.com` en el Caddy de prod (Fase 2) — pero eso
+exige el wildcard DNS (acción del cliente en GoDaddy) y toca el Caddy de prod (riesgo). Se validó una
+alternativa **más simple y sin DNS**: un **cloudflared quick-tunnel** por preview (`*.trycloudflare.com`,
+sin cuenta, sin DNS, HTTPS incluido) — justo el estilo Lovable/Replit. Para *mostrar* rápido, gana el
+túnel; el subdominio propio queda como opción B futura (branded/estable). El Caddy de prod NO se toca.
+
+### Cambio 2 — el runner es **HOST-level**, no dentro del worker
+El worker corre non-root SIN docker socket (modelo de seguridad — corre design runs). Los previews
+necesitan docker en el host → el `preview-runner` es un **servicio systemd host-level** (`scripts/
+preview-runner.sh`) que poll-ea la cola `preview_requests` en Supabase (service_role) — mismo patrón
+que `increment_requests`. Así docker queda fuera de los contenedores de la app.
+
+### Los 4 problemas que resolvió la receta (un stack Supabase corriendo de verdad)
+1. **Supabase-ismos en el schema:** las migraciones referencian `auth.users`/`auth.uid()`. Un Postgres
+   pelado no tiene el schema `auth` → `0000_*.sql` explota. Fix: montar la emulación en el **init-dir**
+   de Postgres (la del repo si existe — `backend/test/setup/supabase-emulation.sql` — o la genérica del
+   recipe). Corre en el boot, antes de migrar.
+2. **Auth local:** `SUPABASE_JWT_SECRET` (firma la sesión) + `AUTH_PROVIDER=local` (sin GoTrue real).
+3. **Ruteo same-origin:** el front llama a la API **desde el browser** → una URL interna no la resuelve.
+   Fix: `NEXT_PUBLIC_API_URL=/api` + un `edge` (Caddy en el compose) que rutea `/api` → backend.
+4. **El túnel apunta al `edge`**, no al frontend suelto (si no, `/api` no existe y la UI abre vacía).
+
+### Piezas construidas
+- **Receta (data):** `registry/templates/github-native/react-supabase/.fluxo/preview/` — `compose.yml.tmpl`
+  (install·db·backend·frontend·edge), `edge.Caddyfile`, `00-extensions.sql`, `supabase-emulation.sql`
+  (genérica, fallback), `README.md` (el contrato del stack + seed opcional).
+- **Cola:** `supabase/migrations/20260723120000_preview_requests.sql` (RLS por tenant; el runner
+  actualiza con service_role).
+- **Runner:** `scripts/preview-runner.sh` — clone→render→up→wait→seed?→túnel→estampa url; reaper por TTL.
+  Corre en el VPS como `fluxo-preview-runner.service` (systemd). Necesita `cloudflared` + docker.
+- **UI:** pestaña **"App en vivo"** (`console/app/projects/[projectId]/preview/`) — genera/regenera,
+  muestra estado (building/live/expired/failed), la URL + iframe, y la fecha de expiración.
+
+### Pendiente (no bloquea el uso self-serve de la pestaña)
+- **Cablear `release`** (Fase 4): el paso release del sprint-review encola un `preview_requests` en vez
+  del stub. Hoy el usuario lo dispara desde la pestaña "App en vivo".
+- **Fidelidad Supabase:** stacks que usen Realtime/Storage/Edge Functions server-side declararían una
+  receta con Supabase local (no solo Postgres+emulación). Para apps con auth local (lo común), alcanza.
+- **Opción B (subdominio branded):** cablear el wildcard DNS + Caddy on-demand TLS cuando se quiera una
+  URL estable/branded en vez del `*.trycloudflare.com`.

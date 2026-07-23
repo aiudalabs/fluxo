@@ -1,11 +1,20 @@
 # preview.compose — react-supabase (Next.js + Fastify + Postgres), EFÍMERO (release v2 / docs/14).
-# Corre la app END-TO-END para el preview navegable Fluxo-hosted. Sin Dockerfile en el repo → usa
+# Corre la app END-TO-END y NAVEGABLE para el preview Fluxo-hosted. Sin Dockerfile en el repo → usa
 # node:20 + los scripts de los workspaces. El worker (Baileys/WhatsApp) se OMITE (no aporta a la UI).
-# DB efímera propia + migraciones. El preview-runner sustituye {{repo_path}} y {{preview_port}} y lo
-# corre en una RED AISLADA (sin acceso a prod ni al host). Data por-stack: un stack con otra base
-# declara su propia receta.
 #
-# SEGURIDAD: read_only donde se puede, no-root, límites, sin secrets del sistema, DB efímera propia.
+# El preview-runner (scripts/preview-runner.sh) sustituye los {{placeholders}} y lo corre en una RED
+# AISLADA. Data por-stack: un stack con otra base declara su propia receta.
+#
+# Lo que este recipe resolvió (validado con misalon, 2026-07-23 — ver docs/14):
+#   1. Supabase-ismos: las migraciones dependen del schema `auth` (auth.users, auth.uid()). Un Postgres
+#      pelado NO lo tiene → la DB monta la emulación en el init-dir ANTES de migrar ({{emulation_sql}}).
+#   2. Env de auth local: SUPABASE_JWT_SECRET (firma la sesión) + AUTH_PROVIDER=local (sin Supabase real).
+#   3. Ruteo SAME-ORIGIN: el `edge` (Caddy) rutea /api → backend, resto → frontend. Así el BROWSER llega
+#      al backend por el mismo origen (el front usa NEXT_PUBLIC_API_URL=/api). Sin CORS, sin 2º túnel.
+#   4. El túnel público apunta al `edge` (puerto {{preview_port}}), no al frontend suelto.
+#
+# SEGURIDAD: red propia, límites de CPU/mem/pids, DB efímera en RAM (tmpfs), sin secrets del sistema,
+# sin Docker socket. El JWT secret es un valor DESCARTABLE por-preview (lo genera el runner).
 name: fluxo-preview-{{preview_id}}
 
 services:
@@ -17,7 +26,7 @@ services:
     volumes:
       - "{{repo_path}}:/repo"
     command: ["sh", "-lc", "npm ci --no-audit --no-fund"]
-    mem_limit: 1g
+    mem_limit: 1500m
     pids_limit: 400
 
   db:
@@ -26,11 +35,17 @@ services:
       POSTGRES_USER: app
       POSTGRES_PASSWORD: app
       POSTGRES_DB: app
+    volumes:
+      # El init-dir corre *.sql alfabéticamente en el PRIMER boot, ANTES de que la DB esté healthy
+      # (o sea, antes de que el backend migre). 00 = extensiones; 01 = emulación de Supabase (auth
+      # schema + roles + auth.uid()/auth.role()). Sin esto, `0000_*.sql` falla: schema "auth" does not exist.
+      - "{{extensions_sql}}:/docker-entrypoint-initdb.d/00-extensions.sql:ro"
+      - "{{emulation_sql}}:/docker-entrypoint-initdb.d/01-supabase-emulation.sql:ro"
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U app"]
       interval: 3s
       timeout: 3s
-      retries: 30
+      retries: 40
     tmpfs:
       - /var/lib/postgresql/data   # DB en RAM: efímera de verdad + más rápida (preview descartable)
     mem_limit: 512m
@@ -45,13 +60,19 @@ services:
       DATABASE_URL: postgres://app:app@db:5432/app
       PORT: "4000"
       NODE_ENV: development
+      # Firma/verifica la sesión JWT (Supabase-shaped). Valor DESCARTABLE por-preview.
+      SUPABASE_JWT_SECRET: "{{jwt_secret}}"
+      # Auth y storage locales (sin proyecto Supabase real). Son los defaults del backend, explícitos.
+      AUTH_PROVIDER: local
+      STORAGE_PROVIDER: local
+    # Migra (ahora que la emulación creó el schema `auth`) y arranca el server.
     command: ["sh", "-lc", "npm run migrate --workspace backend && npm run dev --workspace backend"]
     depends_on:
       install:
         condition: service_completed_successfully
       db:
         condition: service_healthy
-    mem_limit: 768m
+    mem_limit: 900m
     pids_limit: 300
 
   frontend:
@@ -61,13 +82,26 @@ services:
       - "{{repo_path}}:/repo"
     environment:
       PORT: "3000"
-      # La UI le pega al backend del propio preview (red interna del compose).
-      NEXT_PUBLIC_API_BASE_URL: http://backend:4000
+      # SAME-ORIGIN: el browser llama a /api/... (mismo origen que la página) → el `edge` lo rutea al
+      # backend. NO uses una URL absoluta interna (http://backend:4000): el browser del usuario no la
+      # resuelve. Relativa = anda por el túnel sin CORS ni conocer la URL pública de antemano.
+      NEXT_PUBLIC_API_URL: /api
     command: ["sh", "-lc", "npm run dev --workspace frontend"]
     depends_on:
       install:
         condition: service_completed_successfully
-    ports:
-      - "127.0.0.1:{{preview_port}}:3000"   # el runner mapea → Caddy rutea el subdominio efímero
-    mem_limit: 768m
+    mem_limit: 900m
     pids_limit: 300
+
+  # El entrypoint del preview: rutea /api → backend, resto → frontend. El túnel público apunta ACÁ.
+  edge:
+    image: caddy:2-alpine
+    volumes:
+      - "{{edge_caddyfile}}:/etc/caddy/Caddyfile:ro"
+    ports:
+      - "127.0.0.1:{{preview_port}}:80"   # el runner apunta el túnel efímero a este puerto
+    depends_on:
+      - frontend
+      - backend
+    mem_limit: 128m
+    pids_limit: 100

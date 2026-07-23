@@ -1,0 +1,12 @@
+# Edge del preview efímero (react-supabase). Un solo origen para el browser: la app en `/`, la API en
+# `/api`. Así el frontend (NEXT_PUBLIC_API_URL=/api) le pega al backend por el MISMO dominio del túnel
+# → sin CORS, sin segundo túnel, sin conocer la URL pública de antemano. `handle_path` quita el prefijo
+# /api antes de proxear (el backend expone /salons, /auth, … en la raíz).
+:80 {
+	handle_path /api/* {
+		reverse_proxy backend:4000
+	}
+	handle {
+		reverse_proxy frontend:3000
+	}
+}

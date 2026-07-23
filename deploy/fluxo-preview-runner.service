@@ -1,0 +1,31 @@
+# Fluxo preview-runner (release v2 · docs/14) — servicio HOST-level que levanta los previews efímeros
+# navegables. Corre en el VPS (NO en un contenedor): necesita docker + cloudflared en el host. Poll-ea
+# la cola `preview_requests` en Supabase con service_role. Ver scripts/preview-runner.sh.
+#
+# Instalar en el VPS:
+#   1) cloudflared:  curl -sL -o /usr/local/bin/cloudflared \
+#        https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64 \
+#        && chmod +x /usr/local/bin/cloudflared
+#   2) que /opt/fluxo tenga registry/ + scripts/ (el rsync del deploy ya los lleva).
+#   3) cp deploy/fluxo-preview-runner.service /etc/systemd/system/ && systemctl daemon-reload \
+#        && systemctl enable --now fluxo-preview-runner
+#   log:  journalctl -u fluxo-preview-runner -f
+[Unit]
+Description=Fluxo preview-runner (previews efímeros navegables)
+After=docker.service network-online.target
+Wants=docker.service network-online.target
+
+[Service]
+Type=simple
+# SUPABASE_URL + SUPABASE_SERVICE_ROLE_KEY vienen del .env.prod del deploy (ya los tiene).
+EnvironmentFile=/opt/fluxo/deploy/.env.prod
+Environment=REGISTRY_DIR=/opt/fluxo/registry
+Environment=PREVIEW_DIR=/opt/fluxo/previews
+Environment=PREVIEW_TTL_HOURS=6
+Environment=INTERVAL=15
+ExecStart=/usr/bin/env bash /opt/fluxo/scripts/preview-runner.sh
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target

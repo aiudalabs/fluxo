@@ -1,0 +1,226 @@
+#!/usr/bin/env bash
+# ─────────────────────────────────────────────────────────────────────────────────────────────────
+# Fluxo preview-runner (release v2 · docs/14) — el "Docker especial" para previews efímeros navegables.
+#
+# Corre HOST-level en el VPS (systemd), NO en el worker: el worker es non-root sin docker socket (modelo
+# de seguridad). Este runner tiene docker + cloudflared y poll-ea la cola `preview_requests` en Supabase.
+#
+# Por cada pedido `pending`:  clona/actualiza el repo @ref → renderiza la receta del stack
+# (registry/templates/github-native/<stack>/.fluxo/preview) → docker compose up (red aislada, DB efímera,
+# emulación Supabase + edge same-origin) → espera healthy → seed opcional → túnel cloudflared → estampa
+# preview_url + status=live + expires_at.  Reaper: baja los `live` vencidos.
+#
+# Env requerido:  SUPABASE_URL  SUPABASE_SERVICE_ROLE_KEY
+# Env opcional:   REGISTRY_DIR(=/opt/fluxo/registry)  PREVIEW_DIR(=/opt/fluxo/previews)
+#                 GITHUB_TOKEN(clona repos privados)  PREVIEW_TTL_HOURS(=6)  INTERVAL(=15)
+#                 PORT_BASE(=8900)  DEFAULT_STACK(=react-supabase)
+# ─────────────────────────────────────────────────────────────────────────────────────────────────
+set -uo pipefail
+
+REGISTRY_DIR="${REGISTRY_DIR:-/opt/fluxo/registry}"
+PREVIEW_DIR="${PREVIEW_DIR:-/opt/fluxo/previews}"
+PREVIEW_TTL_HOURS="${PREVIEW_TTL_HOURS:-6}"
+INTERVAL="${INTERVAL:-15}"
+PORT_BASE="${PORT_BASE:-8900}"
+DEFAULT_STACK="${DEFAULT_STACK:-react-supabase}"
+
+: "${SUPABASE_URL:?falta SUPABASE_URL}"
+: "${SUPABASE_SERVICE_ROLE_KEY:?falta SUPABASE_SERVICE_ROLE_KEY}"
+REST="${SUPABASE_URL%/}/rest/v1"
+mkdir -p "$PREVIEW_DIR"
+
+log() { echo "[preview-runner $(date -u +%H:%M:%S)] $*"; }
+
+# ── Supabase REST (service_role → bypassa RLS) ──────────────────────────────────────────────────
+rest_get() { # $1 = path+query
+  curl -sS -H "apikey: $SUPABASE_SERVICE_ROLE_KEY" -H "Authorization: Bearer $SUPABASE_SERVICE_ROLE_KEY" \
+    "$REST/$1"
+}
+rest_patch() { # $1 = path+query   $2 = json body
+  curl -sS -X PATCH -H "apikey: $SUPABASE_SERVICE_ROLE_KEY" -H "Authorization: Bearer $SUPABASE_SERVICE_ROLE_KEY" \
+    -H "Content-Type: application/json" -H "Prefer: return=minimal" \
+    "$REST/$1" -d "$2" >/dev/null
+}
+# json escape (para error strings)
+jesc() { printf '%s' "$1" | python3 -c 'import json,sys; print(json.dumps(sys.stdin.read()))' 2>/dev/null || printf '""'; }
+
+set_status() { # $1=id  $2=status  $3=json-extra("" o ,"k":v)
+  rest_patch "preview_requests?id=eq.$1" "{\"status\":\"$2\",\"updated_at\":\"$(date -u +%FT%TZ)\"${3:-}}"
+}
+# ids de un array JSON [{id,...}] por stdin, uno por línea
+json_ids() { python3 -c 'import json,sys
+try:
+  [print(r["id"]) for r in json.load(sys.stdin) if r.get("id")]
+except Exception: pass'; }
+pid_of() { echo "p$(echo "$1" | tr -d '-' | cut -c1-10)"; }  # pid corto y estable de un uuid
+
+# ── un free port a partir de PORT_BASE ──────────────────────────────────────────────────────────
+free_port() {
+  local p="$PORT_BASE"
+  while ss -ltn 2>/dev/null | grep -q ":$p " || [ -f "$PREVIEW_DIR/.port-$p" ]; do p=$((p+1)); done
+  echo "$p"
+}
+
+# ── teardown de un preview (compose down + túnel) ───────────────────────────────────────────────
+teardown() { # $1 = preview_id
+  local pid="$1"
+  local wd="$PREVIEW_DIR/$pid"
+  systemctl stop "fluxo-tunnel-$pid" 2>/dev/null; systemctl reset-failed "fluxo-tunnel-$pid" 2>/dev/null
+  [ -f "$wd/compose.yml" ] && docker compose -f "$wd/compose.yml" down -v >/dev/null 2>&1
+  [ -f "$wd/.port" ] && rm -f "$PREVIEW_DIR/.port-$(cat "$wd/.port" 2>/dev/null)" 2>/dev/null
+  rm -rf "$wd" 2>/dev/null
+}
+
+# ── procesar UN pedido ──────────────────────────────────────────────────────────────────────────
+process_one() { # $1=id  $2=project_id  $3=ref
+  local id="$1" project_id="$2" ref="$3"
+  local pid wd
+  pid="$(pid_of "$id")"
+  wd="$PREVIEW_DIR/$pid"
+  log "build $id (project $project_id, ref ${ref:-default}) → $pid"
+  set_status "$id" building ""
+
+  # 1) datos del proyecto (repo + stack)
+  local prow repo stack
+  prow=$(rest_get "projects?id=eq.$project_id&select=repo,settings")
+  repo=$(printf '%s' "$prow" | python3 -c 'import json,sys; d=json.load(sys.stdin); print(d[0].get("repo","") if d else "")' 2>/dev/null)
+  stack=$(printf '%s' "$prow" | python3 -c 'import json,sys; d=json.load(sys.stdin); s=(d[0].get("settings") or {}) if d else {}; print(s.get("stack") or "")' 2>/dev/null)
+  [ -z "$stack" ] && stack="$DEFAULT_STACK"
+  if [ -z "$repo" ]; then
+    set_status "$id" failed ",\"error\":$(jesc "el proyecto no tiene repo")"; return
+  fi
+  # `stack` viene de projects.settings (tenant-controlled) y arma un path → sanitizá (anti traversal).
+  if ! printf '%s' "$stack" | grep -qE '^[a-z0-9-]+$'; then
+    set_status "$id" failed ",\"error\":$(jesc "stack inválido: $stack")"; return
+  fi
+
+  local recipe="$REGISTRY_DIR/templates/github-native/$stack/.fluxo/preview"
+  if [ ! -f "$recipe/compose.yml.tmpl" ]; then
+    set_status "$id" failed ",\"error\":$(jesc "sin receta de preview para el stack $stack")"; return
+  fi
+
+  # Regenerar REEMPLAZA, no acumula: bajá cualquier preview activo previo del MISMO proyecto (otro id).
+  # Si no, cada "Regenerar" deja el stack anterior + túnel + puerto vivos hasta el TTL (VPS chico).
+  rest_get "preview_requests?project_id=eq.$project_id&status=in.(live,building)&id=neq.$id&select=id" | json_ids | while read -r oid; do
+    [ -n "$oid" ] && { teardown "$(pid_of "$oid")"; set_status "$oid" expired ""; }
+  done
+
+  teardown "$pid"   # limpia cualquier resto previo de ESTE id
+  mkdir -p "$wd"
+
+  # 2) clonar/actualizar el repo (token para privados)
+  local clone_url="$repo"
+  case "$repo" in
+    https://github.com/*) [ -n "${GITHUB_TOKEN:-}" ] && clone_url="https://x-access-token:${GITHUB_TOKEN}@github.com/${repo#https://github.com/}";;
+  esac
+  local repodir="$wd/repo"
+  if ! git clone --depth 1 ${ref:+--branch "$ref"} "$clone_url" "$repodir" >"$wd/clone.log" 2>&1; then
+    # ref puede no ser una rama (o repo privado): reintenta sin --branch
+    if ! git clone --depth 1 "$clone_url" "$repodir" >>"$wd/clone.log" 2>&1; then
+      set_status "$id" failed ",\"error\":$(jesc "git clone falló: $(tail -2 "$wd/clone.log" | tr '\n' ' ')")"; teardown "$pid"; return
+    fi
+  fi
+
+  # 3) emulación: la del repo (app-specific) si existe, si no la genérica del recipe
+  local emulation="$recipe/supabase-emulation.sql"
+  [ -f "$repodir/backend/test/setup/supabase-emulation.sql" ] && emulation="$repodir/backend/test/setup/supabase-emulation.sql"
+
+  # 4) renderizar compose + copiar edge Caddyfile
+  local port; port=$(free_port); echo "$port" > "$wd/.port"; touch "$PREVIEW_DIR/.port-$port"
+  local jwt; jwt="preview-$(head -c16 /dev/urandom | od -An -tx1 | tr -d ' \n')"
+  cp "$recipe/edge.Caddyfile" "$wd/edge.Caddyfile"
+  sed -e "s#{{preview_id}}#$pid#g" \
+      -e "s#{{repo_path}}#$repodir#g" \
+      -e "s#{{preview_port}}#$port#g" \
+      -e "s#{{extensions_sql}}#$recipe/00-extensions.sql#g" \
+      -e "s#{{emulation_sql}}#$emulation#g" \
+      -e "s#{{edge_caddyfile}}#$wd/edge.Caddyfile#g" \
+      -e "s#{{jwt_secret}}#$jwt#g" \
+      "$recipe/compose.yml.tmpl" > "$wd/compose.yml"
+
+  # 5) levantar
+  if ! docker compose -f "$wd/compose.yml" up -d >"$wd/up.log" 2>&1; then
+    set_status "$id" failed ",\"error\":$(jesc "docker compose up falló: $(tail -2 "$wd/up.log" | tr '\n' ' ')")"; teardown "$pid"; return
+  fi
+
+  # 6) esperar el edge (front + api arriba). Hasta 5 min (npm ci + migrate + next dev).
+  local ok=""
+  for _ in $(seq 1 40); do
+    sleep 8
+    local fe api
+    # front: cualquier 2xx/3xx = la app respondió (puede redirigir / → /login con 302/303/307/308).
+    fe=$(curl -s -o /dev/null -w "%{http_code}" "http://127.0.0.1:$port" 2>/dev/null || echo 000)
+    # api: cualquier respuesta HTTP concreta = el backend está arriba (404 = sin ruta /health, pero vivo);
+    #      000/502/503/504 = el edge todavía no alcanza al backend.
+    api=$(curl -s -o /dev/null -w "%{http_code}" "http://127.0.0.1:$port/api/health" 2>/dev/null || echo 000)
+    case "$fe" in 2??|3??)
+      case "$api" in 000|502|503|504) ;; *) ok=1; break;; esac
+    ;; esac
+  done
+  if [ -z "$ok" ]; then
+    set_status "$id" failed ",\"error\":$(jesc "la app no respondió a tiempo (front/api). Ver logs del contenedor.")"; teardown "$pid"; return
+  fi
+
+  # 7) seed opcional (si el repo lo trae)
+  if [ -f "$repodir/.fluxo/preview/seed.sh" ]; then
+    ( cd "$repodir" && API_BASE="http://127.0.0.1:$port/api" PREVIEW_ID="$pid" bash .fluxo/preview/seed.sh ) >"$wd/seed.log" 2>&1 || log "seed falló (no bloquea): $id"
+  fi
+
+  # 8) túnel público (cloudflared quick-tunnel, sin DNS)
+  systemctl reset-failed "fluxo-tunnel-$pid" 2>/dev/null
+  systemd-run --unit="fluxo-tunnel-$pid" --collect \
+    cloudflared tunnel --url "http://127.0.0.1:$port" --no-autoupdate >/dev/null 2>&1
+  local url=""
+  for _ in $(seq 1 20); do
+    sleep 3
+    url=$(journalctl -u "fluxo-tunnel-$pid" --no-pager 2>/dev/null | grep -oE 'https://[a-z0-9-]+\.trycloudflare\.com' | head -1)
+    [ -n "$url" ] && break
+  done
+  if [ -z "$url" ]; then
+    set_status "$id" failed ",\"error\":$(jesc "no se pudo abrir el túnel público")"; teardown "$pid"; return
+  fi
+
+  local exp; exp=$(date -u -d "+${PREVIEW_TTL_HOURS} hours" +%FT%TZ 2>/dev/null || date -u -v+${PREVIEW_TTL_HOURS}H +%FT%TZ)
+  set_status "$id" live ",\"preview_url\":$(jesc "$url"),\"expires_at\":\"$exp\""
+  log "LIVE $id → $url (expira $exp)"
+}
+
+# ── reaper: baja los `live` vencidos ────────────────────────────────────────────────────────────
+reap() {
+  local now
+  now=$(date -u +%FT%TZ)
+  rest_get "preview_requests?status=eq.live&expires_at=lt.$now&select=id" | json_ids | while read -r rid; do
+    [ -z "$rid" ] && continue
+    log "reap $rid (vencido)"
+    teardown "$(pid_of "$rid")"
+    set_status "$rid" expired ""
+  done
+}
+
+# ── sweep de arranque: los `building` que quedaron de una corrida anterior (deploy/restart) no se
+#    re-toman (el loop toma solo `pending`) ni se reapean (el reaper toma solo `live`) → quedarían
+#    zombies con spinner eterno. Bajalos y marcalos failed; el usuario regenera. ─────────────────
+sweep_building() {
+  rest_get "preview_requests?status=eq.building&select=id" | json_ids | while read -r bid; do
+    [ -z "$bid" ] && continue
+    log "sweep building huérfano $bid (runner reiniciado)"
+    teardown "$(pid_of "$bid")"
+    set_status "$bid" failed ",\"error\":$(jesc "el runner se reinició durante el build — regenerá el preview")"
+  done
+}
+
+log "arrancado. registry=$REGISTRY_DIR previews=$PREVIEW_DIR ttl=${PREVIEW_TTL_HOURS}h interval=${INTERVAL}s"
+sweep_building || true
+while true; do
+  reap || true
+  # tomar pendientes (uno por vuelta para no saturar el VPS chico)
+  pend=$(rest_get "preview_requests?status=eq.pending&select=id,project_id,ref&order=created_at.asc&limit=1")
+  echo "$pend" | python3 -c 'import json,sys
+try:
+  d=json.load(sys.stdin)
+  if d: print("\t".join([d[0]["id"], d[0]["project_id"], d[0].get("ref") or ""]))
+except Exception: pass' 2>/dev/null | while IFS=$'\t' read -r id project_id ref; do
+    [ -n "$id" ] && process_one "$id" "$project_id" "$ref"
+  done
+  sleep "$INTERVAL"
+done
