@@ -12,6 +12,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { DocView } from "@/components/DocView";
+import { IncrementRequest } from "@/components/IncrementRequest";
 import { useProject } from "@/lib/project";
 import { useT } from "@/lib/i18n";
 
@@ -291,6 +292,11 @@ export default function Studio() {
                 })}
               </nav>
             )}
+          </div>
+
+          {/* Pedir incremento desde el Studio (self-serve): agregar features al producto ya construido. */}
+          <div className="rail-sec">
+            <IncrementRequest />
           </div>
         </aside>
 

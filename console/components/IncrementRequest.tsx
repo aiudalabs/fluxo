@@ -18,6 +18,7 @@ export function IncrementRequest() {
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
   const [reqs, setReqs] = useState<Req[]>([]);
+  const [showPast, setShowPast] = useState(false); // los pedidos done/failed se colapsan (no comen pantalla)
 
   useEffect(() => {
     let dead = false;
@@ -65,19 +66,31 @@ export function IncrementRequest() {
 
       {msg && <p style={{ marginTop: 10, fontSize: 12.5, color: msg.ok ? "var(--emerald)" : "var(--danger)" }}>{msg.text}</p>}
 
-      {reqs.length > 0 && (
-        <div style={{ marginTop: 14, display: "flex", flexDirection: "column", gap: 6 }}>
-          <div className="eyebrow acc">Pedidos</div>
-          {reqs.map((r) => (
-            <div key={r.id} style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12.5, padding: "6px 0", borderBottom: "1px solid var(--stroke)" }}>
-              <span style={{ width: 8, height: 8, borderRadius: 999, background: STATUS_COLOR[r.status] ?? "var(--muted)", flexShrink: 0 }} />
-              <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.instructions}</span>
-              <span style={{ color: STATUS_COLOR[r.status] ?? "var(--muted)", textTransform: "uppercase", fontSize: 10, letterSpacing: 0.4 }}>{r.status}</span>
-              <span style={{ color: "var(--muted)", fontSize: 11 }}>{new Date(r.created_at).toLocaleDateString()}</span>
-            </div>
-          ))}
-        </div>
-      )}
+      {reqs.length > 0 && (() => {
+        const active = reqs.filter((r) => r.status === "pending" || r.status === "running");
+        const past = reqs.filter((r) => r.status === "done" || r.status === "failed");
+        const Row = (r: Req) => (
+          <div key={r.id} style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12.5, padding: "6px 0", borderBottom: "1px solid var(--stroke)" }}>
+            <span style={{ width: 8, height: 8, borderRadius: 999, background: STATUS_COLOR[r.status] ?? "var(--muted)", flexShrink: 0 }} />
+            <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={r.instructions}>{r.instructions}</span>
+            <span style={{ color: STATUS_COLOR[r.status] ?? "var(--muted)", textTransform: "uppercase", fontSize: 10, letterSpacing: 0.4 }}>{r.status}</span>
+            <span style={{ color: "var(--muted)", fontSize: 11 }}>{new Date(r.created_at).toLocaleDateString()}</span>
+          </div>
+        );
+        return (
+          <div style={{ marginTop: 14, display: "flex", flexDirection: "column", gap: 6 }}>
+            {active.length > 0 && <><div className="eyebrow acc">En curso</div>{active.map(Row)}</>}
+            {past.length > 0 && (
+              <>
+                <button className="btn ghost sm" style={{ alignSelf: "flex-start", marginTop: active.length ? 6 : 0, fontSize: 12 }} onClick={() => setShowPast((v) => !v)}>
+                  {showPast ? "▾" : "▸"} {past.length} anterior{past.length > 1 ? "es" : ""} (completados)
+                </button>
+                {showPast && past.map(Row)}
+              </>
+            )}
+          </div>
+        );
+      })()}
     </div>
   );
 }
