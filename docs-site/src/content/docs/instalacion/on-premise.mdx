@@ -1,0 +1,118 @@
+---
+title: On-premise (self-host)
+description: Self-host completo de Fluxo — tu Supabase, tu VPS con Docker, tu GitHub App.
+---
+
+import { Steps, Aside, FileTree, Badge } from '@astrojs/starlight/components';
+
+En **on-premise** operás vos el plano de control completo. La topología es liviana a propósito: el VPS
+corre **sólo** el plano de control — `console` (Next.js) + `worker` (el conductor) + `caddy` (TLS/proxy).
+La base es **Supabase** (Postgres/RLS/Realtime/Auth), y la **ejecución de agentes corre en las GitHub
+Actions del cliente** con su token (BYO). Por eso el VPS queda chico.
+
+## Prerrequisitos
+
+- Un **VPS** con **Docker + Docker Compose** y un dominio apuntando a su IP (registro `A`).
+- Un proyecto **Supabase** (el free alcanza — la data de Fluxo pesa ~13 MB).
+- Una **GitHub App** propia (App ID, client id/secret, private key PEM, webhook secret). Es la identidad
+  con la que Fluxo crea repos, abre Issues/PRs y dispara Actions.
+- `psql` en tu máquina (para aplicar las migraciones).
+
+## 1. Aplicar las migraciones a Supabase
+
+```bash
+# desde tu máquina, contra la DB de la nube
+# (Supabase → Project Settings → Database → Connection string):
+psql "$SUPABASE_DB_URL" -f supabase/migrations/<cada-migración>.sql
+```
+
+<Aside type="caution">
+El historial de migraciones puede tener *drift*. Aplicá **cada archivo por `psql` directo** — no uses
+`supabase db push` / `migration up`, que fallan cuando el `schema_migrations` está desincronizado.
+</Aside>
+
+## 2. Configurar el entorno
+
+```bash
+cp deploy/.env.prod.example deploy/.env.prod
+# completá TODOS los valores. NO lo commitees.
+```
+
+Los que no pueden faltar:
+
+- `SUPABASE_URL`, `SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`, `SUPABASE_JWT_SECRET`
+- `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY` *(build-args del console — Next los inlinea)*
+- `GITHUB_APP_ID`, `GITHUB_APP_CLIENT_ID`, `GITHUB_APP_CLIENT_SECRET`, `GITHUB_WEBHOOK_SECRET`
+- `PUBLIC_DOMAIN` / `PUBLIC_URL`, `OAUTH_REDIRECT_URI`
+
+La private key va como **archivo** montado (`deploy/app.pem`), no como env (el multilínea no es fiable).
+
+<Aside type="note" title="El worker corre como no-root">
+La imagen del worker corre como el usuario `node` (uid 1000). El `app.pem` montado tiene que ser legible
+por ese uid:
+
+```bash
+chown 1000:1000 deploy/app.pem && chmod 600 deploy/app.pem
+```
+</Aside>
+
+## 3. Levantar
+
+```bash
+cd deploy
+docker compose --env-file .env.prod -f docker-compose.prod.yml up -d --build
+```
+
+Caddy saca el certificado TLS solo. El console queda en `https://$PUBLIC_DOMAIN`; el worker corre
+headless (su polling mantiene el ciclo vivo).
+
+<FileTree>
+- deploy/
+  - docker-compose.prod.yml   console + worker + caddy
+  - Caddyfile                 TLS + reverse-proxy
+  - .env.prod                 secretos (no se commitea)
+  - app.pem                   private key de la GitHub App
+</FileTree>
+
+## 4. Apuntar la GitHub App
+
+- **Callback URL** → `https://$PUBLIC_DOMAIN/auth/github/callback`
+- Instalá la App en la organización donde vivirán los repos.
+
+## 5. Preview efímero navegable <Badge text="opcional" variant="note" />
+
+Si querés la pestaña **"App en vivo"** (ver la app corriendo end-to-end en un subdominio temporal), sumá
+el **preview-runner** — un servicio host-level (systemd) que levanta contenedores descartables y los
+expone por `sslip.io` con TLS on-demand del Caddy de prod:
+
+<Steps>
+1. Instalá `cloudflared`/`docker` en el host y copiá `deploy/fluxo-preview-runner.service` a
+   `/etc/systemd/system/`.
+2. `systemctl enable --now fluxo-preview-runner`.
+3. Aplicá la migración `preview_requests` (paso 1) si no lo hiciste.
+</Steps>
+
+<Aside type="note">
+Corre **host-level** (no en el worker) a propósito: el worker es no-root y sin acceso al Docker socket
+por seguridad; los previews necesitan Docker en el host.
+</Aside>
+
+## 6. Backups
+
+El free tier de Supabase no trae backups gestionados. Un cron nocturno en el VPS:
+
+```bash
+pg_dump "$SUPABASE_DB_URL" | gzip > /backups/fluxo-$(date +%F).sql.gz
+```
+
+## Mantenimiento
+
+- **El worker es siempre-on:** su polling mantiene activa la DB (evita la pausa por inactividad del free
+  tier) y ejecuta los reconcilers del método.
+- **Actualizar:** traé los cambios del repo al VPS y re-corré el `docker compose up -d --build`. Para
+  cambios de `registry/` (el método) no hace falta rebuild si el worker lo lee del filesystem.
+
+<Aside type="tip">
+El *método* (workflows/agentes) es idéntico en cloud y on-premise — vive en `registry/`. Ver
+[Workflows y agentes](/metodo/workflows-y-agentes/) y [Extender el método](/metodo/extender-el-metodo/).
+</Aside>

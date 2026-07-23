@@ -1,0 +1,59 @@
+---
+title: Fluxo
+description: La fábrica de software gobernada — método, workflows, agentes e instalación.
+template: splash
+hero:
+  tagline: Convierte el brief de un cliente en un backlog gateado y trazable, ejecuta el trabajo con agentes en su GitHub, y guarda todo el conocimiento en un registro auditable.
+  actions:
+    - text: Entender el método
+      link: /metodo/workflows-y-agentes/
+      icon: right-arrow
+      variant: primary
+    - text: Instalar
+      link: /instalacion/cloud/
+      icon: external
+      variant: minimal
+---
+
+import { Card, CardGrid } from '@astrojs/starlight/components';
+
+## Qué es Fluxo
+
+**Fluxo** es una **fábrica de software gobernada**, vendida por **AIuda Labs**. Toma el brief de un
+cliente (en español), lo convierte en un **backlog gateado y trazable**, y ejecuta el trabajo con
+**agentes de IA** corriendo en el GitHub del propio cliente. Todo el conocimiento operativo queda en un
+registro auditable.
+
+La tesis de arquitectura: **alquilar el sustrato determinista** (Postgres + RLS, GitHub Actions) como
+configuración declarativa, y dejar como código propio **solo el método** — que vive como *data*
+(YAML + markdown) en el `registry/`, nunca hardcodeado.
+
+<CardGrid stagger>
+	<Card title="El método" icon="open-book">
+		Qué **workflows** existen, qué los dispara, y qué **agentes** usa cada fase — paso a paso.
+		[Workflows y agentes →](/metodo/workflows-y-agentes/)
+	</Card>
+	<Card title="Extenderlo" icon="puzzle">
+		Cómo **cablear un workflow nuevo**, **modificar uno existente**, o agregar un agente/skill —
+		sin tocar el motor. [Extender el método →](/metodo/extender-el-metodo/)
+	</Card>
+	<Card title="Cloud" icon="cloud-download">
+		Usar Fluxo en `fluxo.aiudalabs.com` — multi-tenant, cero instalación.
+		[Empezar en la nube →](/instalacion/cloud/)
+	</Card>
+	<Card title="On-premise" icon="setting">
+		Self-host completo: tu Supabase, tu VPS, tu GitHub App.
+		[Instalar on-premise →](/instalacion/on-premise/)
+	</Card>
+</CardGrid>
+
+## Los dos planos
+
+Todo lo que hace Fluxo cae en uno de dos planos:
+
+- **🧠 Diseño / planeo** — corre en el *worker* (con el Claude Agent SDK). Convierte ideas en backlog y
+  gestiona las ceremonias Scrum. Los agentes de este plano son *analistas, PMs, arquitectos, diseñadores*.
+- **🔨 Build** — corre en las **GitHub Actions del cliente** (con SU token → cero costo de infra para
+  Fluxo). Los agentes de este plano son *desarrolladores* que escriben el código de cada story.
+
+El detalle completo está en [Workflows y agentes](/metodo/workflows-y-agentes/).

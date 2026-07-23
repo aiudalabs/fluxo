@@ -1,0 +1,184 @@
+---
+title: Extender el método
+description: Cómo cablear un workflow nuevo, modificar uno existente, o agregar un agente/skill — sin tocar el motor.
+---
+
+import { Aside, Steps, Tabs, TabItem, FileTree } from '@astrojs/starlight/components';
+
+La regla de oro de Fluxo: **el método es data, el motor es genérico**. Para cambiar lo que la fábrica
+hace, editás YAML/markdown en `registry/` — casi nunca código. "Cablear" un workflow significa agregar un
+**disparador genérico** (que lee una condición y lanza un YAML), no escribir un `if fase == …`.
+
+## Anatomía de un paso
+
+Un workflow (`registry/workflows/<id>.yaml`) es una lista de `steps`. Cada paso tiene un `type`:
+
+| `type` | Qué hace |
+|---|---|
+| `design` | Invoca un `agent:` con `inputs:`. Es una "fase". Admite `skip_if_empty` y `on_fail` (reintento). |
+| `validate` | Chequeo determinista (sin agente). |
+| `human_gate` | **Frena** hasta que apruebes/corrijas en Studio. `on_fail: { goto, feedback }` = el loop de correcciones. |
+| `ticket_publish` | Publica el backlog al board (append idempotente). |
+| `release` | Arma el preview navegable. |
+| `plan_apply` | Aplica las acciones de un plan de sprint al store. |
+| `review_close` | Estampa `reviewed_at` + publica correcciones. |
+| `registry_apply` | Escribe las ediciones aprobadas del método a `registry/` (lo usa la retro). |
+
+<Aside type="note">
+Los tipos de efecto (`release`, `plan_apply`, `review_close`, `registry_apply`) son **operaciones
+genéricas y acotadas**, no ceremonias específicas. El motor las despacha por `type`; ninguna sabe "qué
+ceremonia" la usa.
+</Aside>
+
+---
+
+## Ejemplo 1 — cablear un workflow NUEVO
+
+Supongamos que querés un flujo **`hotfix`**: dado un bug reportado, planear un parche mínimo y publicarlo
+sin todo el SDLC. Son dos piezas: el **YAML** (el método) y el **disparador** (el pegamento genérico).
+
+<Steps>
+
+1. **Escribí el workflow** en `registry/workflows/hotfix.yaml`:
+
+   ```yaml
+   id: hotfix
+   version: 1.0.0
+   steps:
+     - id: plan
+       type: design
+       label: Plan del hotfix
+       agent: iteration-planner        # reusás un agente existente
+       inputs:
+         change_request: $trigger.instructions
+         output: docs/backlog.yaml
+     - id: plan_gate
+       type: human_gate
+       inputs:
+         reason: "Revisá el parche propuesto antes de construirlo."
+       on_fail:
+         goto: plan
+         feedback: $plan_gate.detail
+     - id: handoff
+       type: ticket_publish
+       label: Handoff → stories
+       inputs:
+         backlog: docs/backlog.yaml
+         repo: $trigger.repo
+         project_id: $trigger.project_id
+   ```
+
+2. **Cableá el disparador** en `design/src/worker.ts` — un reconciler genérico que lee una condición y
+   lanza el YAML (mismo patrón que `reconcileIncrements`):
+
+   ```ts
+   async function reconcileHotfixes() {
+     // lee una cola/condición del store (p.ej. una tabla `hotfix_requests` con status=pending)
+     const reqs = await rest(`/hotfix_requests?status=eq.pending&select=id,project_id,instructions`);
+     for (const req of reqs) {
+       if (designing.has(req.project_id)) continue;
+       designing.add(req.project_id);
+       await rest(`/hotfix_requests?id=eq.${req.id}`, { method: "PATCH", body: JSON.stringify({ status: "running" }) });
+       // spawnDesign genérico: lanza main.ts con --workflow=hotfix
+       spawnDesign(req.project_id, name, undefined, "hotfix");
+     }
+   }
+   ```
+
+   Y sumalo al loop del worker: `try { await reconcileHotfixes(); } catch (e) { … }`.
+
+3. **(Si toca datos)** agregá la migración de la cola (`supabase/migrations/…`) con RLS por tenant —
+   espejando `increment_requests`. **Listo:** el motor ya sabe correr `hotfix` porque es data-driven.
+
+</Steps>
+
+<Aside type="tip">
+Fijate que **no tocaste el motor** (`engine.ts`): sólo agregaste un YAML y un reconciler que lee una
+condición. El disparador no sabe qué es un "hotfix" — lee una fila y lanza un workflow por nombre.
+</Aside>
+
+---
+
+## Ejemplo 2 — modificar uno existente
+
+El caso real: **`iterate` siempre corre la fase `mockups`**, aunque el incremento sea de navegación o
+backend. Hay dos formas de cambiarlo, ambas sin tocar código:
+
+<Tabs>
+  <TabItem label="A) Variante nueva (recomendado)">
+
+Creás `registry/workflows/iterate-lean.yaml` — igual que `iterate` pero **sin** el paso `mockups`:
+
+```yaml
+id: iterate-lean
+version: 1.0.0
+steps:
+  - id: plan
+    type: design
+    agent: iteration-planner
+    inputs: { change_request: $trigger.instructions, output: docs/backlog.yaml }
+  - id: plan_gate
+    type: human_gate
+    inputs: { reason: "Revisá el backlog delta." }
+    on_fail: { goto: plan, feedback: $plan_gate.detail }
+  - id: handoff              # ← se salta mockups por completo
+    type: ticket_publish
+    inputs: { backlog: docs/backlog.yaml, repo: $trigger.repo, project_id: $trigger.project_id }
+```
+
+Después, en `reconcileIncrements`, elegís qué variante lanzar (p.ej. según un flag del pedido:
+`spawnIterate(..., req.needs_ui ? "iterate" : "iterate-lean")`). Una línea, y el método queda como data.
+
+  </TabItem>
+  <TabItem label="B) Editar el existente">
+
+Editás `registry/workflows/iterate.yaml` y **borrás el bloque `mockups`**. Afecta a *todos* los
+incrementos. Simple, pero pierde la opción de mockup cuando sí hace falta.
+
+  </TabItem>
+</Tabs>
+
+<Aside type="note">
+En la práctica, el `designer` en modo-incremento **ya hace no-op** si el delta no trae `screen_key`
+nuevos (no escribe mockups para cambios backend/navegación). Lo que las variantes evitan es **invocar al
+agente** en absoluto — un ahorro de tiempo/costo cuando sabés de antemano que no hay UI nueva.
+</Aside>
+
+---
+
+## Ejemplo 3 — agregar un agente o un skill
+
+Un **agente** es una persona que ejecuta pasos `agent:`. Son dos archivos en `registry/agents/`:
+
+<FileTree>
+- registry/agents/
+  - mi-agente.yaml   metadata (role, model, skills que carga)
+  - mi-agente.md     la persona / prompt (cómo piensa y qué produce)
+</FileTree>
+
+```yaml title="registry/agents/mi-agente.yaml"
+role: Lo que hace este agente en una línea
+model: claude-opus-4-8
+skills: [story-template, acceptance-self-audit]   # skills de registry/skills/ que carga
+```
+
+Un **skill** (`registry/skills/<id>.md`) es conocimiento reusable (una plantilla, un checklist, un
+método) que uno o varios agentes cargan. Agregar uno = crear el markdown y referenciarlo en el `skills:`
+de un agente. Todo esto aparece automáticamente en la consola → **Registry**.
+
+---
+
+## Autonomía — gates que se aprueban solos
+
+Cada `human_gate` puede llevar un `mode`: `manual` (default, esperás vos) o `auto_if_safe` (se aprueba
+solo cuando un chequeo de riesgo genérico lo permite). Se configura por proyecto
+(`settings.gate_autonomy`). El loop `retro → registry_apply` bajo autonomía es lo que hace a la fábrica
+**auto-mejorable** sin intervención — salvo donde el riesgo exige una persona (retro y sprint-review
+quedan siempre con gate humano).
+
+<Aside type="caution" title="Reglas no negociables">
+- Todo método nuevo = YAML/markdown en `registry/`. **Cero `if step.id/fase == …`** en el motor.
+- Cada tipo de paso es **genérico y reusable**, no una ceremonia específica.
+- Los disparadores **leen una condición y lanzan**; no codifican el método.
+- Tests antes que implementación en lo determinista (el motor es el moat: chico y fuertemente testeado).
+</Aside>

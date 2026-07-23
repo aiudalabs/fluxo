@@ -1,0 +1,183 @@
+---
+title: Workflows y agentes
+description: Los flujos que lanza Fluxo, qué los dispara y qué agente usa cada fase — paso a paso.
+---
+
+import { Aside, Steps, Badge, CardGrid, LinkCard } from '@astrojs/starlight/components';
+
+Esta es la fuente de verdad del **método**: qué flujos existen, qué los dispara, y qué agente hace cada
+paso. Nada de esto está hardcodeado — cada workflow es un YAML en `registry/workflows/`, cada agente un
+markdown en `registry/agents/`, y el motor (`design/src/engine.ts`) los recorre de forma genérica.
+
+## Los dos planos
+
+Todo cae en uno de dos planos, y es la distinción más importante para entender Fluxo:
+
+| | 🧠 **Plano de diseño / planeo** | 🔨 **Plano de build** |
+|---|---|---|
+| **Dónde corre** | El *worker* de Fluxo (Claude Agent SDK) | Las **GitHub Actions del cliente** |
+| **Con qué credencial** | La de Fluxo | La del **cliente** (BYO → cero COGS) |
+| **Qué hace** | Idea → backlog; ceremonias Scrum | Escribe el código de cada story |
+| **Agentes** | analyst, pm, architect, designer, scrum-master… | dev, react-dev, flutter-dev, python-dev… |
+| **Se define en** | `registry/workflows/*.yaml` | `claude.yml` (la Action sembrada en el repo) |
+
+Un **disparador** (reconciler en `design/src/worker.ts`) mira una condición en la base y lanza el
+workflow correspondiente. El disparador **no sabe** qué es una ceremonia ni un diseño: lee una condición
+y ejecuta un YAML. Ese es el corazón de "cero metodología en código".
+
+<Aside type="tip" title="Anatomía de un workflow">
+Cada workflow es una lista de **pasos**. Los tipos de paso: `design` (invoca un `agent:`), `validate`
+(chequeo determinista), `human_gate` (frena a esperar tu aprobación en Studio), y `handoff` / efectos
+(publican al board, aplican un plan, cierran un sprint…). El motor los recorre en orden; los `gate` son
+los puntos donde vos decidís.
+</Aside>
+
+---
+
+## Plano de diseño — los workflows
+
+### `design` — el SDLC completo <Badge text="cableado" variant="success" />
+
+Convierte una idea en un backlog completo. Es el flujo más largo: 8 fases de agente, cada una seguida de
+un gate donde aprobás o pedís cambios.
+
+**Disparador:** `reconcileDesign` → un proyecto **sin run y sin backlog** → lanza el workflow de
+`settings.workflow` (default `design`). *(También reanuda runs huérfanos.)*
+
+<Steps>
+
+1. **`discovery`** → agente **analyst** — arma el brief de descubrimiento. → *gate*
+2. **`constitution`** → agente **principles** — los principios/defaults del proyecto. → *gate*
+3. **`prd`** → agente **pm** — el PRD. → *validate* → *gate*
+4. **`data_model`** → agente **data-modeler** — el modelo de datos. → *gate*
+5. **`architecture`** → agente **architect** — la arquitectura. → *gate*
+6. **`ui`** → agente **ux** — las pantallas (UI_SCREENS). → *gate*
+7. **`mockups`** → agente **designer** — los mockups HTML. → *gate*
+8. **`backlog`** → agente **scrum-master** — sprints + stories con AC. → *validate* → *gate*
+9. **`docs_pr`** + **`handoff`** — publica los docs y **crea las stories/sprints en el board**.
+
+</Steps>
+
+### `iterate` — incremento / change-request <Badge text="cableado" variant="success" />
+
+Agrega features al producto **ya construido**. Lee el backlog existente y emite un **delta** de sprints
+y stories nuevos, que se appendean al board.
+
+**Disparador:** `reconcileIncrements` → una fila `pending` en `increment_requests` (la creás desde la UI
+con *"Pedir incremento"*) → lanza `iterate`.
+
+<Steps>
+
+1. **`plan`** → agente **iteration-planner** — lee el backlog y emite el DELTA. → *plan_gate*
+2. **`mockups`** → agente **designer** — mockups del delta.
+3. **`handoff`** — APPENDea las stories nuevas al board.
+
+</Steps>
+
+<Aside type="caution" title="Ojo con la fase de mockups">
+`iterate` **siempre** incluye el paso `mockups`, aunque el incremento sea sólo de navegación o backend y
+no necesite diseño nuevo. Es un candidato claro para hacerlo **condicional** (o quitarlo de una variante).
+En [Extender el método](/metodo/extender-el-metodo/#ejemplo-2-modificar-uno-existente) hay un ejemplo de
+exactamente cómo cambiarlo — sin tocar el motor.
+</Aside>
+
+### Ceremonias Scrum — por-sprint <Badge text="cableado" variant="success" />
+
+Se prenden con los toggles del proyecto (`planning_mode` / `review_mode` / `retro_mode` = `ceremony`).
+El disparador `reconcileCeremonies` corre en prioridad **review → retro → planning** y elige el sprint
+según su estado (`planned_at` / `reviewed_at` / `retro_at` + stories terminadas).
+
+#### `sprint-planning`
+<Steps>
+1. **`plan`** → agente **planner** — decide qué entra al sprint. → *validate* → *plan_gate*
+2. **`apply`** — muta el backlog (mueve/pospone/edita stories del sprint).
+</Steps>
+
+#### `sprint-review`
+<Steps>
+1. **`release`** — arma el preview navegable del sprint *(ver [preview efímero](#el-preview-efímero))*.
+2. **`report`** → agente **demo-reporter** — el reporte del incremento.
+3. **`corrections`** → agente **scrum-master** — correcciones detectadas. → *review_gate*
+4. **`publish_corrections`** + **`close`** — publica las correcciones y cierra el sprint.
+</Steps>
+
+#### `retro`
+<Steps>
+1. **`analyze`** → agente **retro-analyst** — propone mejoras **al método**. → *validate_proposals* → *retro_gate*
+2. **`apply`** — escribe las mejoras aprobadas a `registry/` (agents/skills/workflows).
+</Steps>
+
+<Aside type="note">
+La `retro` es lo que hace a Fluxo **auto-mejorable**: la fábrica edita su propio método, auditado y
+gateado. Por seguridad, algunos agentes del método (retro-analyst, retro) están protegidos y no se pueden
+sobreescribir desde una retro.
+</Aside>
+
+---
+
+## Plano de build — cómo se escribe el código
+
+**Disparador:** `reconcileBuild` toma las stories `ready` (gateadas por sus dependencias y por las
+*capabilities* del repo) y, si el proyecto tiene `dispatch_mode = auto`, dispara **`claude.yml`**
+(`workflow_dispatch`) en el repo del cliente.
+
+- El que **codea** es **Claude Code** corriendo en la Action, con el prompt de la story/sprint
+  reconstruido por el kernel de despacho. *(Podés ver el prompt EXACTO en la consola → Registry →
+  pestaña **"Por corrida"**.)*
+- La **persona** sale del `lane` de la story → **`dev`**, **`react-dev`**, **`flutter-dev`**,
+  **`python-dev`** o **`firebase-dev`**.
+- Después del build, otros reconcilers cierran el loop:
+  - `reconcileProjection` — Issues/PRs de GitHub → estado de la story en el board.
+  - `reconcileApprovals` — aprueba los workflow-runs seguros (`auto_if_safe`).
+  - `reconcileAutoMerge` — mergea los PRs gateados que pasan los checks.
+
+<Aside type="tip" title="Por qué corre en el GitHub del cliente">
+La ejecución de agentes (lo caro) usa el token del **cliente** en **sus** Actions. Fluxo no paga cómputo
+de build: el VPS de Fluxo sólo corre el plano de control (consola + worker + proxy). Es el modelo BYO
+(bring-your-own) que mantiene el COGS de Fluxo cerca de cero.
+</Aside>
+
+---
+
+## Cableado: qué corre de verdad vs solo-data
+
+En `registry/workflows/` hay más YAMLs de los que un disparador lanza hoy. La consola marca esto en
+Registry con un badge <Badge text="● cableado" variant="success" /> vs <Badge text="○ solo-data" />.
+
+| Workflow | Estado | Qué es |
+|---|---|---|
+| `design`, `demo-design` | <Badge text="cableado" variant="success" /> | Plano de diseño (idea → backlog) |
+| `iterate` | <Badge text="cableado" variant="success" /> | Incrementos (change-requests) |
+| `sprint-planning`, `sprint-review`, `retro` | <Badge text="cableado" variant="success" /> | Ceremonias (por `*_mode=ceremony`) |
+| `factory`, `factory-plus` | <Badge text="en la Action" variant="note" /> | El build "expresado" en `claude.yml` |
+| `release` | <Badge text="paso interno" variant="note" /> | Lo usa `sprint-review` |
+| `demo`, `gated`, `mockups-only` | <Badge text="solo-data" /> | Variantes/plantillas, ningún reconciler las lanza hoy |
+
+<Aside type="note" title="El preview efímero">
+El paso `release` de `sprint-review` produce un **preview navegable**: la app corriendo end-to-end
+(frontend + backend + DB efímera) en un subdominio temporal, para *mostrar* el incremento. Es
+complementario al deploy real (que es BYO a la Vercel/Firebase del cliente). También se dispara a mano
+desde la pestaña **"App en vivo"** del proyecto.
+</Aside>
+
+---
+
+## Referencia — agentes y skills
+
+**Agentes** (`registry/agents/*.md`) — la persona que ejecuta un paso `agent:`:
+
+`analyst` · `principles` · `pm` · `data-modeler` · `architect` · `ux` · `designer` · `art-director` ·
+`scrum-master` · `iteration-planner` · `planner` · `demo-reporter` · `retro-analyst` · `story-detailer` ·
+`product-advisor` · `reviewer` · `verifier` · **build:** `dev` · `react-dev` · `flutter-dev` ·
+`python-dev` · `firebase-dev`.
+
+**Skills** (`registry/skills/*.md`) — conocimiento reusable que un agente carga (plantillas, checklists,
+métodos): `prd-template` · `architecture-template` · `data-model-template` · `ui-screens-template` ·
+`story-template` · `discovery-brief-template` · `sprint-planning-method` · `sharding-method` ·
+`retro-method` · `mockup-html` · `design-system` · `frontend-quality` · `visual-acceptance` ·
+`acceptance-self-audit` · `po-checklist` · `opinionated-defaults` · `increment-report` · `brain-write`.
+
+<CardGrid>
+	<LinkCard title="Extender el método →" href="/metodo/extender-el-metodo/" description="Cablear un workflow nuevo, modificar uno existente, o agregar un agente/skill." />
+	<LinkCard title="Instalación →" href="/instalacion/cloud/" description="Cloud u on-premise." />
+</CardGrid>

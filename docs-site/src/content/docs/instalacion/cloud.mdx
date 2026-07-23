@@ -1,0 +1,60 @@
+---
+title: Cloud (fluxo.aiudalabs.com)
+description: Usar Fluxo en la nube — multi-tenant, cero instalación. Solo conectás tu GitHub.
+---
+
+import { Steps, Aside, CardGrid, LinkCard } from '@astrojs/starlight/components';
+
+La versión **cloud** de Fluxo corre en `fluxo.aiudalabs.com`, gestionada por AIuda Labs. No instalás nada:
+el plano de control (consola + worker) y la base (Supabase managed) los operamos nosotros. Vos sólo
+**conectás tu GitHub** — y como el build corre en **tus** GitHub Actions con **tu** token, el cómputo de
+los agentes es tuyo (transparente y sin sorpresas de costo).
+
+## Qué necesitás
+
+- Una cuenta de **GitHub** (personal u organización) donde vivirán los repos que Fluxo construye.
+- Permiso para **instalar una GitHub App** en esa cuenta/organización.
+
+## Empezar
+
+<Steps>
+
+1. **Entrá a [fluxo.aiudalabs.com](https://fluxo.aiudalabs.com)** y hacé login con GitHub.
+
+2. **Instalá la Fluxo App** en tu cuenta/organización cuando te lo pida. Esto es lo que le permite a
+   Fluxo crear repos, abrir Issues/PRs y disparar las Actions **en tu nombre**. Podés limitarla a repos
+   específicos.
+
+3. **Creá un proyecto** — le das un nombre y la organización destino. Fluxo verifica que la App esté
+   instalada ahí antes de dejarte crear (así el build nunca falla por "App no instalada").
+
+4. **Describí el producto** (el brief, en español). Fluxo arranca el workflow de diseño: descubrimiento →
+   PRD → arquitectura → UI → backlog. Vas **aprobando cada gate** en el Studio.
+
+5. **Aprobado el backlog**, las stories caen al Board y los agentes empiezan a construir en tus Actions.
+   Monitoreás todo desde la consola (Board, Agentes, Flow).
+
+</Steps>
+
+<Aside type="tip" title="Cómo funciona por dentro">
+El *qué* (los workflows, los agentes) es idéntico al on-premise — está todo en
+[Workflows y agentes](/metodo/workflows-y-agentes/). La diferencia es sólo **quién opera el plano de
+control**: en cloud, AIuda Labs; on-premise, vos.
+</Aside>
+
+## Costos y datos
+
+- **Cómputo de build:** corre en tus GitHub Actions (tu token, tu cuenta de GitHub) → lo ves y lo
+  controlás vos.
+- **Datos:** el brain de tu tenant (backlog, trazabilidad, decisiones) vive aislado por **RLS** en la
+  Supabase gestionada. El código siempre vive en **tu** GitHub.
+
+## Cuándo ir a on-premise
+
+Elegí self-host si necesitás que **todo** (incluida la base y el plano de control) corra en tu propia
+infra — por compliance, aislamiento de datos, o para operar Fluxo como producto propio.
+
+<CardGrid>
+	<LinkCard title="Instalar on-premise →" href="/instalacion/on-premise/" description="Tu Supabase, tu VPS, tu GitHub App." />
+	<LinkCard title="El método →" href="/metodo/workflows-y-agentes/" description="Qué hace Fluxo, paso a paso." />
+</CardGrid>
