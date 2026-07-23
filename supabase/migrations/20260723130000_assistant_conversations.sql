@@ -6,7 +6,10 @@
 --
 -- RLS: idéntica al resto del schema (F1-01/F2-01) — tenant_id en cada fila (incl. messages, golden
 -- rule 3: toda tabla lleva tenant_id + policy propia), scopeada a auth.jwt()->>'tenant' (fail-closed
--- si falta el claim). Test de fuga cross-tenant en supabase/tests/ (bloqueante en CI).
+-- si falta el claim). El cliente PASA tenant_id (patrón de increment_requests/preview_requests): un
+-- default `auth.jwt()->>'tenant'` NO dispara en el contexto de column-default (owner) aunque sí en la
+-- policy, así que no lo usamos — el RLS with-check igual impide forjar otro tenant. Test de fuga
+-- cross-tenant en supabase/tests/ (bloqueante en CI).
 
 -- ── Conversaciones (hilos) ────────────────────────────────────────────────────────────────────────
 create table if not exists public.assistant_conversations (
@@ -17,10 +20,6 @@ create table if not exists public.assistant_conversations (
   created_at  timestamptz not null default now(),
   updated_at  timestamptz not null default now()
 );
-
--- Como projects (F5-P1): el cliente NUNCA setea tenant_id — sale del claim del JWT (mismo valor que
--- exige el RLS with-check). Un insert desde el browser no puede forjar otro tenant.
-alter table public.assistant_conversations alter column tenant_id set default (auth.jwt() ->> 'tenant')::uuid;
 
 alter table public.assistant_conversations enable row level security;
 revoke all on public.assistant_conversations from anon, authenticated;
@@ -57,8 +56,6 @@ create table if not exists public.assistant_messages (
   content         text not null,
   created_at      timestamptz not null default now()
 );
-
-alter table public.assistant_messages alter column tenant_id set default (auth.jwt() ->> 'tenant')::uuid;
 
 alter table public.assistant_messages enable row level security;
 revoke all on public.assistant_messages from anon, authenticated;
