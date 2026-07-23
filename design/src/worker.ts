@@ -41,10 +41,19 @@ const intervalMs = Number(arg("interval") ?? 15) * 1000;
 
 const base = url.replace(/\/$/, "") + "/rest/v1";
 const svc = { apikey: serviceKey, Authorization: `Bearer ${serviceKey}`, Accept: "application/json", "Content-Type": "application/json" };
+// 5xx/429 transitorios (incl. 525 SSL de Cloudflare↔Supabase): hipos de infra, no fallas reales.
+const TRANSIENT_HTTP = new Set([429, 500, 502, 503, 504, 520, 521, 522, 523, 524, 525, 527, 530]);
 const rest = async <T>(path: string, init: RequestInit = {}): Promise<T> => {
-  const res = await fetch(`${base}${path}`, { ...init, headers: svc });
-  if (!res.ok) throw new Error(`supabase ${init.method ?? "GET"} ${path} → ${res.status} ${await res.text()}`);
-  return (res.status === 204 ? undefined : await res.json()) as T;
+  for (let attempt = 0; ; attempt++) {
+    const res = await fetch(`${base}${path}`, { ...init, headers: svc });
+    if (res.ok) return (res.status === 204 ? undefined : await res.json()) as T;
+    // Un blip de infra no debe cortar un reconcile — backoff (0.6s, 1.2s, 2.4s, 4.8s) y reintentá.
+    if (TRANSIENT_HTTP.has(res.status) && attempt < 4) {
+      await new Promise((r) => setTimeout(r, 600 * Math.pow(2, attempt)));
+      continue;
+    }
+    throw new Error(`supabase ${init.method ?? "GET"} ${path} → ${res.status} ${await res.text()}`);
+  }
 };
 
 const ghAppId = process.env.GITHUB_APP_ID;

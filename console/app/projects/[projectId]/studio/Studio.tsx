@@ -15,6 +15,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { DocView } from "@/components/DocView";
 import { IncrementRequest } from "@/components/IncrementRequest";
 import { useProject } from "@/lib/project";
+import { freshToken } from "@/lib/supabaseClient";
 import { useT } from "@/lib/i18n";
 
 type Artifact = { path: string; kind: string; content: string };
@@ -125,6 +126,7 @@ export default function Studio() {
   const [error, setError] = useState("");
   const [showInc, setShowInc] = useState(false); // overlay "Pedir incremento" (acción del topbar)
 
+  const [resuming, setResuming] = useState(false); // reanudar un run failed
   const [selected, setSelected] = useState<string | null>(null); // doc path
   const [selPhase, setSelPhase] = useState<number | null>(null); // phase index
   const [ver, setVer] = useState<number | null>(null); // brain_event id, null = última
@@ -225,6 +227,18 @@ export default function Studio() {
   function pickDoc(path: string) { setSelected(path); setSelPhase(null); }
   function pickPhase(i: number) { setSelPhase(i); }
 
+  // Reanudar un run que quedó `failed` (p.ej. por un hipo transitorio de Supabase): el endpoint lo
+  // repone a resumable → el worker lo re-resume desde donde quedó. El realtime de design_runs recarga.
+  const resumeRun = async () => {
+    setResuming(true);
+    try {
+      const tok = await freshToken();
+      const r = await fetch(`/api/projects/${projectId}/design/resume`, { method: "POST", headers: tok ? { authorization: `Bearer ${tok}` } : {} });
+      if (!r.ok) { const j = await r.json().catch(() => ({})); setError(j.error ?? `error ${r.status}`); }
+    } catch (e) { setError(e instanceof Error ? e.message : String(e)); }
+    finally { setResuming(false); }
+  };
+
   const pendingGate = useMemo(() => gates.find((g) => g.status === "pending") ?? null, [gates]);
   const awaitingCount = phases.filter((p) => p.status === "awaiting_gate").length;
   const isTerminal = run ? run.status === "done" || run.status === "failed" : false;
@@ -301,7 +315,17 @@ export default function Studio() {
           return <div className="studio-livebanner done"><span className="lb-ic">✓</span><span>{cer ? <><b>{cer}</b> completada.</> : "Diseño completo — el backlog quedó listo."}</span></div>;
         }
         if (run.status === "failed") {
-          return <div className="studio-livebanner failed"><span className="lb-ic">✕</span><span>{cer ? <>La ceremonia <b>{cer}</b> falló.</> : "El diseño falló."} Revisá los docs o volvé a intentar.</span></div>;
+          return (
+            <div className="studio-livebanner failed">
+              <span className="lb-ic">✕</span>
+              <span>{cer ? <>La ceremonia <b>{cer}</b> falló — se re-planea sola (mirá el Flow).</> : <>El diseño se cortó. Puede haber sido un hipo transitorio — <b>reanudá</b> para seguir desde donde quedó.</>}</span>
+              {!cer && (
+                <button className="btn sm" disabled={resuming} onClick={() => void resumeRun()} style={{ marginLeft: "auto" }}>
+                  {resuming ? "Reanudando…" : "↻ Reanudar"}
+                </button>
+              )}
+            </div>
+          );
         }
         return null;
       })()}

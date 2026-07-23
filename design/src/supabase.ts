@@ -112,19 +112,28 @@ export class SupabaseDesignStore {
     };
   }
 
+  // 5xx transitorios de Cloudflare↔origen (incl. 525 SSL handshake) + rate-limit: son HIPOS de infra,
+  // NO fallas del diseño. Un run de varias fases aprobadas NO debe morir porque un read tuvo un blip.
+  private static readonly TRANSIENT = new Set([429, 500, 502, 503, 504, 520, 521, 522, 523, 524, 525, 527, 530]);
+
   private async rest(path: string, init: RequestInit & { prefer?: string }): Promise<Response> {
     const { prefer, ...rest } = init;
-    let res = await fetch(`${this.base}${path}`, { ...rest, headers: this.headers(prefer) });
-    // El JWT pudo vencer EN VUELO (fase larga entre el authToken() y el fetch): re-minteá y
-    // reintentá UNA vez antes de rendirte. Sin esto, un 401 tardío mataba el run entero.
-    if (res.status === 401) {
-      this.remint();
-      res = await fetch(`${this.base}${path}`, { ...rest, headers: this.headers(prefer) });
-    }
-    if (!res.ok) {
+    let reminted = false;
+    let last = "";
+    // Hasta 5 intentos: 401 → re-minteá el JWT (venció en vuelo) y reintentá inmediato UNA vez;
+    // 5xx/429 → backoff (0.6s, 1.2s, 2.4s, 4.8s) y reintentá; otro !ok → error real, tirá.
+    for (let attempt = 0; attempt < 5; attempt++) {
+      const res = await fetch(`${this.base}${path}`, { ...rest, headers: this.headers(prefer) });
+      if (res.ok) return res;
+      if (res.status === 401 && !reminted) { this.remint(); reminted = true; continue; }
+      if (SupabaseDesignStore.TRANSIENT.has(res.status) && attempt < 4) {
+        last = String(res.status);
+        await new Promise((r) => setTimeout(r, 600 * Math.pow(2, attempt)));
+        continue;
+      }
       throw new Error(`supabase ${init.method} ${path} → ${res.status} ${await res.text()}`);
     }
-    return res;
+    throw new Error(`supabase ${init.method} ${path} → ${last} (agotados los reintentos transitorios)`);
   }
 
   // keyMap lee key→id de una tabla scopeada al proyecto (para materializar idempotente sin
