@@ -263,9 +263,15 @@ export class SupabaseDesignStore {
     const haveSprints = await this.keyMap("sprints");
     const newSprints = sprints.filter((sp) => !haveSprints.has(sp.key));
     if (newSprints.length) {
+      // Los sprints NUEVOS van DESPUÉS de los existentes: un delta (iterate) no debe colisionar en
+      // position=0 con SP1 (rompería el orden del frontier de las ceremonias). base = max(pos)+1; en
+      // un diseño fresco (sin sprints) base=0 → 0,1,2… como antes. sp.position explícita gana si viene.
+      const posRes = await this.rest(`/sprints?project_id=eq.${this.cfg.project}&select=position`, { method: "GET", prefer: "count=none" });
+      const positions = ((await posRes.json()) as Array<{ position: number | null }>).map((r) => r.position ?? 0);
+      const base = positions.length ? Math.max(...positions) + 1 : 0;
       await this.rest("/sprints", {
         method: "POST",
-        body: JSON.stringify(newSprints.map((sp, i) => ({ ...s, key: sp.key, title: sp.title ?? sp.key, goal: sp.goal ?? "", position: sp.position ?? i }))),
+        body: JSON.stringify(newSprints.map((sp, i) => ({ ...s, key: sp.key, title: sp.title ?? sp.key, goal: sp.goal ?? "", position: sp.position ?? (base + i) }))),
       });
     }
     const sprintKeyToId = await this.keyMap("sprints");
