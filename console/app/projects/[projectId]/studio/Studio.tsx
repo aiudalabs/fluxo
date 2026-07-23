@@ -11,6 +11,7 @@
 // salen del brain (brain_events append-only, kind=artifact) en vez de la historia git.
 
 import { useEffect, useMemo, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { DocView } from "@/components/DocView";
 import { IncrementRequest } from "@/components/IncrementRequest";
 import { useProject } from "@/lib/project";
@@ -58,10 +59,46 @@ function phaseState(status: string): PhaseState {
 }
 const PHASE_ICON: Record<PhaseState, string> = { pending: "", running: "●", awaiting: "⏸", approved: "✓", failed: "✕" };
 
-function phaseTitle(t: (k: string) => string, phaseId: string, fallback: string) {
+// Workflows de ceremonia: para ellos el `label` del YAML (que ya es el nombre Scrum correcto:
+// "Planificación del sprint", "Reporte del incremento"…) GANA sobre la clave i18n studio.phase.<id>.
+// Si no, studio.phase.plan="Plan de cambio" (hecha para el iterate) secuestra la planificación del
+// sprint y la muestra como "Change plan" — la confusión que reportó el usuario.
+const CEREMONY_WORKFLOWS = new Set(["sprint-planning", "sprint-review", "retro"]);
+
+function phaseTitle(t: (k: string) => string, workflow: string, phaseId: string, fallback: string) {
+  if (CEREMONY_WORKFLOWS.has(workflow)) return fallback; // el label del YAML manda
   const k = `studio.phase.${phaseId}`;
   const v = t(k);
   return v === k ? fallback : v;
+}
+
+// Nombre de la ceremonia para el encuadre (eyebrow/banner). null = es un run de diseño, no ceremonia.
+function ceremonyName(workflow: string): string | null {
+  switch (workflow) {
+    case "sprint-planning": return "Sprint Planning";
+    case "sprint-review": return "Sprint Review";
+    case "retro": return "Retrospectiva";
+    default: return null;
+  }
+}
+
+// Etiqueta del botón de aprobar, en términos Scrum según la ceremonia (más claro que "Aprobar fase").
+function approveLabel(t: (k: string) => string, workflow: string): string {
+  switch (workflow) {
+    case "sprint-planning": return "Aprobar el plan";
+    case "sprint-review": return "Aceptar el incremento";
+    case "retro": return "Aprobar las mejoras";
+    default: return t("studio.view.approve");
+  }
+}
+
+// Título amistoso de un doc de ceremonia (el nombre de archivo varía por sprint: PLAN-SP1.md…).
+function ceremonyDocTitle(name: string): string | null {
+  if (/^PLAN-/i.test(name)) return "Plan del sprint";
+  if (/^REVIEW-/i.test(name)) return "Reporte del sprint";
+  if (/^CORRECTIONS-/i.test(name)) return "Correcciones del sprint";
+  if (/^RETRO-/i.test(name)) return "Retrospectiva";
+  return null;
 }
 
 function upsertBy<T extends { id: string }>(setter: React.Dispatch<React.SetStateAction<T[]>>, row: T) {
@@ -77,6 +114,9 @@ function upsertBy<T extends { id: string }>(setter: React.Dispatch<React.SetStat
 export default function Studio() {
   const { projectId, supabase, project } = useProject();
   const t = useT();
+  // ?run=<id> — Flow linkea acá al clickear una ceremonia/gate; cargamos ESE run. Sin el param,
+  // el último (comportamiento de siempre). Así una ceremonia histórica abre SU run, no el más nuevo.
+  const runParam = useSearchParams().get("run");
   const [run, setRun] = useState<Run | null>(null);
   const [phases, setPhases] = useState<Phase[]>([]);
   const [gates, setGates] = useState<Gate[]>([]);
@@ -97,12 +137,23 @@ export default function Studio() {
     // Realtime. Así el Studio muestra UN SOLO run (el último) — sin acumular fases de runs
     // viejos y manejando bien los deletes (el bug de "varios árboles").
     const load = async () => {
-      const { data: runs, error: rErr } = await supabase
-        .from("design_runs").select("*").eq("project_id", projectId)
-        .order("created_at", { ascending: false }).limit(1);
-      if (cancelled) return;
-      if (rErr) { setError(rErr.message); setStatus("error"); return; }
-      const latest = (runs as Run[])?.[0] ?? null;
+      // Con ?run= cargamos ESE run (scopeado al proyecto por RLS); si no existe o no viene el param,
+      // caemos al más reciente (comportamiento base).
+      let latest: Run | null = null;
+      let rErr: { message: string } | null = null;
+      if (runParam) {
+        const { data, error } = await supabase.from("design_runs").select("*")
+          .eq("project_id", projectId).eq("id", runParam).maybeSingle();
+        if (cancelled) return;
+        rErr = error; latest = (data as Run) ?? null;
+      }
+      if (!latest) {
+        const { data: runs, error } = await supabase.from("design_runs").select("*")
+          .eq("project_id", projectId).order("created_at", { ascending: false }).limit(1);
+        if (cancelled) return;
+        rErr = error ?? rErr; latest = (runs as Run[])?.[0] ?? null;
+      }
+      if (rErr && !latest) { setError(rErr.message); setStatus("error"); return; }
       setRun(latest);
       if (latest) {
         const [{ data: ph }, { data: gt }, { data: ev }] = await Promise.all([
@@ -132,7 +183,7 @@ export default function Studio() {
       .on("postgres_changes", { event: "*", schema: "public", table: "design_gates", filter: `project_id=eq.${projectId}` }, () => void load())
       .subscribe();
     return () => { cancelled = true; void supabase.removeChannel(channel); };
-  }, [projectId, supabase]);
+  }, [projectId, supabase, runParam]);
 
   // Documentos = paths VERSIONADOS en el brain (fuente de verdad: cada doc de diseño se sube a git
   // y se registra como brain_event; los chips vN de cada doc salen de ahí). Última versión por path
@@ -203,7 +254,7 @@ export default function Studio() {
       {/* Barra propia del Studio: SOLO estado + control de fases (el nombre/nav vive en el
           TopBar del shell). Adelgazada para que el shell se sienta de una pieza. */}
       <header className="studio-topbar">
-        <span className="studio-eyebrow">Diseño</span>
+        <span className="studio-eyebrow">{ceremonyName(run.workflow) ?? "Diseño"}</span>
         <span className="studio-branch"><span className="d" /> {t("studio.docs.onBranch")}</span>
         {!isTerminal && (
           <button className="studio-runchip" onClick={() => pickPhase(phases.findIndex((p) => p.status === "awaiting_gate"))}>
@@ -225,14 +276,16 @@ export default function Studio() {
           para saltar) · done/failed = terminal. Se actualiza por Realtime como el resto. */}
       {(() => {
         const runningPhase = phases.find((p) => p.status === "running");
+        const cer = ceremonyName(run.workflow);
         if (pendingGate) {
           const gi = phases.findIndex((p) => p.phase_id === pendingGate.phase_id);
-          const name = phaseTitle(t, pendingGate.phase_id, pendingGate.phase_id);
+          const gphase = phases.find((p) => p.phase_id === pendingGate.phase_id);
+          const name = phaseTitle(t, run.workflow, pendingGate.phase_id, gphase?.label ?? pendingGate.phase_id);
           return (
             <button className="studio-livebanner awaiting" onClick={() => gi >= 0 && pickPhase(gi)}>
               <span className="lb-ic">⏸</span>
-              <span>Te toca: hay preguntas para vos en <b>{name}</b>. Respondelas para que el diseño continúe.</span>
-              <span className="lb-cta">Ir a responder →</span>
+              <span>Te toca: hay una decisión para vos en <b>{name}</b>{cer ? <> ({cer})</> : ""}. Revisala para continuar.</span>
+              <span className="lb-cta">Ir a revisar →</span>
             </button>
           );
         }
@@ -240,15 +293,15 @@ export default function Studio() {
           return (
             <div className="studio-livebanner working">
               <span className="spin" />
-              <span>El agente está diseñando{runningPhase ? <> la fase <b>{phaseTitle(t, runningPhase.phase_id, runningPhase.label)}</b></> : ""}… Esperá, esto puede tardar un par de minutos. La pantalla se actualiza sola.</span>
+              <span>{cer ? <>Preparando <b>{cer}</b></> : "El agente está diseñando"}{runningPhase ? <> — fase <b>{phaseTitle(t, run.workflow, runningPhase.phase_id, runningPhase.label)}</b></> : ""}… Esperá, esto puede tardar un par de minutos. La pantalla se actualiza sola.</span>
             </div>
           );
         }
         if (run.status === "done") {
-          return <div className="studio-livebanner done"><span className="lb-ic">✓</span><span>Diseño completo — el backlog quedó listo.</span></div>;
+          return <div className="studio-livebanner done"><span className="lb-ic">✓</span><span>{cer ? <><b>{cer}</b> completada.</> : "Diseño completo — el backlog quedó listo."}</span></div>;
         }
         if (run.status === "failed") {
-          return <div className="studio-livebanner failed"><span className="lb-ic">✕</span><span>El diseño falló. Revisá los docs o volvé a intentar.</span></div>;
+          return <div className="studio-livebanner failed"><span className="lb-ic">✕</span><span>{cer ? <>La ceremonia <b>{cer}</b> falló.</> : "El diseño falló."} Revisá los docs o volvé a intentar.</span></div>;
         }
         return null;
       })()}
@@ -268,7 +321,7 @@ export default function Studio() {
                 return (
                   <button key={p.phase_id} className={`v-phase v-${st}${selPhase === i ? " on" : ""}`} onClick={() => pickPhase(i)} title={p.label}>
                     <span className="v-g">{PHASE_ICON[st]}</span>
-                    <span className="v-lbl">{phaseTitle(t, p.phase_id, p.label)}</span>
+                    <span className="v-lbl">{phaseTitle(t, run.workflow, p.phase_id, p.label)}</span>
                     {i < phases.length - 1 && <span className="v-conn" />}
                   </button>
                 );
@@ -302,14 +355,14 @@ export default function Studio() {
           {viewPhase ? (
             <div className="studio-doc-scroll">
               <div className="studio-doc-inner">
-                <PhasePanel phase={viewPhase} gate={viewGate} onError={setError} />
+                <PhasePanel phase={viewPhase} gate={viewGate} workflow={run.workflow} onError={setError} />
               </div>
             </div>
           ) : (
             <>
               <div className="studio-doc-head">
                 <span className="eyebrow">
-                  {activeFile ? (meta(activeFile.name).titleKey ? t(meta(activeFile.name).titleKey!) : activeFile.name) : t("studio.docs.eyebrow")}
+                  {activeFile ? (meta(activeFile.name).titleKey ? t(meta(activeFile.name).titleKey!) : (ceremonyDocTitle(activeFile.name) ?? activeFile.name)) : t("studio.docs.eyebrow")}
                 </span>
                 {approved && <span className="doc-okchip">{t("studio.docs.approved")}</span>}
                 {activeVersions.length > 0 && (
@@ -383,8 +436,9 @@ export default function Studio() {
 // PhasePanel · la vista de una fase: su documento + el gate CONVERSACIONAL de v1
 // (aprobar / pedir cambios / responder las preguntas abiertas). Cualquiera resuelve el
 // gate row (design_gates); el motor de diseño lo levanta y avanza o repite la fase.
-function PhasePanel({ phase, gate, onError }: { phase: Phase; gate: Gate | null; onError: (m: string) => void }) {
-  const { supabase } = useProject();
+function PhasePanel({ phase, gate, workflow, onError }: { phase: Phase; gate: Gate | null; workflow: string; onError: (m: string) => void }) {
+  const { projectId, supabase } = useProject();
+  const router = useRouter();
   const t = useT();
   const [mode, setMode] = useState<"none" | "reject" | "answer">("none");
   const [feedback, setFeedback] = useState("");
@@ -410,7 +464,7 @@ function PhasePanel({ phase, gate, onError }: { phase: Phase; gate: Gate | null;
   return (
     <>
       <div className="studio-doc-head" style={{ paddingLeft: 0, paddingRight: 0 }}>
-        <span className="eyebrow">{phaseTitle(t, phase.phase_id, phase.label)}</span>
+        <span className="eyebrow">{phaseTitle(t, workflow, phase.phase_id, phase.label)}</span>
         {phaseState(phase.status) === "approved" && !gate && <span className="doc-okchip">{t("studio.docs.approved")}</span>}
       </div>
 
@@ -423,9 +477,17 @@ function PhasePanel({ phase, gate, onError }: { phase: Phase; gate: Gate | null;
       {gate && (
         <div style={{ border: "1px solid var(--accent-line)", background: "var(--accent-soft)", borderRadius: 14, padding: "16px 18px" }}>
           <div style={{ fontFamily: "var(--mono)", fontSize: 11.5, color: "var(--accent)", marginBottom: 6 }}>
-            {gate.gate_id} · #{gate.attempt}
+            {gate.attempt > 1 ? `Intento ${gate.attempt}` : "Tu decisión"}
           </div>
           <p style={{ margin: "0 0 14px", fontSize: 14.5, color: "var(--ink)" }}>{gate.reason}</p>
+
+          {/* Sprint Review = ver el incremento corriendo antes de aceptar → atajo a la pestaña "App en vivo". */}
+          {workflow === "sprint-review" && (
+            <button className="btn sm" style={{ marginBottom: 12 }}
+              onClick={() => router.push(`/projects/${projectId}/preview`)}>
+              ▶ Abrir preview ↗
+            </button>
+          )}
 
           {gate.open_questions.length > 0 && mode === "answer" && (
             <div style={{ marginBottom: 12 }}>
@@ -456,7 +518,7 @@ function PhasePanel({ phase, gate, onError }: { phase: Phase; gate: Gate | null;
 
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
             <button className="btn primary sm" disabled={busy !== null} onClick={() => resolve({ outcome: "approve" }, "approve")}>
-              ✓ {t("studio.view.approve")}
+              ✓ {approveLabel(t, workflow)}
             </button>
             {gate.open_questions.length > 0 && (
               <button className={`btn ghost sm${mode === "answer" ? " on" : ""}`} onClick={() => setMode(mode === "answer" ? "none" : "answer")}>

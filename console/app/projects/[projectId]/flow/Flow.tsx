@@ -68,16 +68,20 @@ export default function Flow() {
   const [state, setState] = useState<"loading" | "ready" | "error">("loading");
   const [tab, setTab] = useState<FlowTab>("cycle");
   const [sel, setSel] = useState<string | null>(null);
+  const [settings, setSettings] = useState<Record<string, unknown>>({});
+  const [awaitingByRunId, setAwaitingByRunId] = useState<Record<string, boolean>>({});
 
   useEffect(() => {
     let cancelled = false;
     const load = async () => {
-      const [{ data: runs }, { data: sp }, { data: st }] = await Promise.all([
+      const [{ data: runs }, { data: sp }, { data: st }, { data: proj }] = await Promise.all([
         supabase.from("design_runs").select("id").eq("project_id", projectId).order("created_at", { ascending: false }).limit(1),
         supabase.from("sprints").select("*").eq("project_id", projectId),
         supabase.from("stories").select("*").eq("project_id", projectId),
+        supabase.from("projects").select("settings").eq("id", projectId).maybeSingle(),
       ]);
       if (cancelled) return;
+      setSettings(((proj as { settings: Record<string, unknown> | null } | null)?.settings) ?? {});
       const runId = (runs as { id: string }[])?.[0]?.id ?? null;
       const [{ data: ph }, { data: gt }] = runId
         ? await Promise.all([
@@ -114,6 +118,19 @@ export default function Flow() {
         kind: (s.kind as string) ?? undefined,
         agent_lost: (s.agent_lost as string) ?? undefined,
       })));
+
+      // Gate pendiente por-ceremonia: juntamos los *_run_id de cada sprint y preguntamos qué runs
+      // tienen un design_gate abierto → estado "◆ esperando tu decisión" en la estación de la ceremonia.
+      const cerRunIds = [...new Set(((sp as SprintRow[]) ?? [])
+        .flatMap((s) => [s.planning_run_id, s.review_run_id, s.retro_run_id])
+        .filter((x): x is string => !!x))];
+      let awaiting: Record<string, boolean> = {};
+      if (cerRunIds.length) {
+        const { data: cg } = await supabase.from("design_gates").select("run_id").in("run_id", cerRunIds).eq("status", "pending");
+        if (cancelled) return;
+        awaiting = Object.fromEntries(((cg as { run_id: string }[]) ?? []).map((g) => [g.run_id, true]));
+      }
+      setAwaitingByRunId(awaiting);
       setState("ready");
     };
     void load();
@@ -122,12 +139,18 @@ export default function Flow() {
       .on("postgres_changes", { event: "*", schema: "public", table: "stories", filter: `project_id=eq.${projectId}` }, () => void load())
       .on("postgres_changes", { event: "*", schema: "public", table: "sprints", filter: `project_id=eq.${projectId}` }, () => void load())
       .on("postgres_changes", { event: "*", schema: "public", table: "design_phases", filter: `project_id=eq.${projectId}` }, () => void load())
+      .on("postgres_changes", { event: "*", schema: "public", table: "design_gates", filter: `project_id=eq.${projectId}` }, () => void load())
       .subscribe();
     return () => { cancelled = true; void supabase.removeChannel(ch); };
   }, [projectId, supabase]);
 
-  // v2 no tiene tabla de settings de ceremonias → default "auto" (el scheduler no gatea).
-  const modes: CeremonyModes = useMemo(() => ({ planning: "auto", review: "auto", retro: "auto" }), []);
+  // Los modos de ceremonia salen de projects.settings (planning_mode/review_mode/retro_mode = "off"|
+  // "ceremony", que escribe Settings). El modelo del ciclo trata "auto" como atenuado/no-activada y
+  // "ceremony" como activa → mapeamos en el borde ("off" → "auto") sin renombrar los tipos internos.
+  const modes: CeremonyModes = useMemo(() => {
+    const m = (k: string): "auto" | "ceremony" => (settings?.[k] === "ceremony" ? "ceremony" : "auto");
+    return { planning: m("planning_mode"), review: m("review_mode"), retro: m("retro_mode") };
+  }, [settings]);
   const model = useMemo(() => buildFlow({ phases, sprints, tickets, modes, stateOf: phaseState }), [phases, sprints, tickets, modes]);
   const laid = useMemo(() => layoutFlow(model), [model]);
   const rfNodes = useMemo(() => laid.nodes.map((n) => ({ ...n, selected: n.id === sel })), [laid, sel]);
@@ -161,6 +184,7 @@ export default function Flow() {
             <FlowCycle
               model={model}
               modes={modes}
+              awaitingByRunId={awaitingByRunId}
               selected={sel}
               onSelect={setSel}
               onOpenBoard={goBoard}
@@ -169,7 +193,7 @@ export default function Flow() {
               onOpenSettings={() => {}}
               onAddBacklog={goBoard}
               onOpenAbout={() => {}}
-              onOpenStudio={() => router.push(`/projects/${projectId}/studio`)}
+              onOpenStudio={(runId?: string) => router.push(`/projects/${projectId}/studio${runId ? `?run=${runId}` : ""}`)}
             />
           </div>
         ) : (

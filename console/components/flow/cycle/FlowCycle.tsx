@@ -35,8 +35,10 @@ export interface FlowCycleProps {
   onOpenSettings: (focus: SettingsFocus) => void; // estación "no activada" → configurar
   onAddBacklog: () => void; // ＋ añadir al Product Backlog (modal de solicitud de cambio)
   onOpenAbout: () => void; // ⓘ — qué es cada estación (página /flow/about)
-  onOpenStudio: () => void; // STUDIO / DISEÑO → el Studio y sus documentos
+  onOpenStudio: (runId?: string) => void; // STUDIO / DISEÑO → el Studio; con runId abre ESE run (ceremonia)
   previewPending?: boolean;
+  // run_id de ceremonia → tiene un design_gate pendiente (Flow lo arma). Enciende el estado "awaiting".
+  awaitingByRunId?: Record<string, boolean>;
 }
 
 // ── Estilo de una forma (rect/circle) según su estado vivo ──────────────────────
@@ -138,7 +140,6 @@ export function FlowCycle(props: FlowCycleProps) {
     model,
     modes,
     selected,
-    onSelect,
     onOpenBoard,
     onOpenSprint,
     onOpenPreview,
@@ -146,9 +147,10 @@ export function FlowCycle(props: FlowCycleProps) {
     onAddBacklog,
     onOpenAbout,
     onOpenStudio,
+    awaitingByRunId,
   } = props;
   const { t, lang } = useI18n();
-  const v = useMemo(() => buildCycleView(model, modes), [model, modes]);
+  const v = useMemo(() => buildCycleView(model, modes, awaitingByRunId ?? {}), [model, modes, awaitingByRunId]);
 
   const stageByKey = useMemo(() => new Map(v.stages.map((s) => [s.key, s])), [v.stages]);
   const stage = (k: StageKey) => stageByKey.get(k)!;
@@ -193,16 +195,17 @@ export function FlowCycle(props: FlowCycleProps) {
     onOpenStudio();
   };
   const openGate = () => {
-    if (v.awaitingGate) onSelect(v.awaitingGate);
+    // El ◆ de la banda de diseño (gate humano pendiente) → al Studio (el taller), donde se aprueba.
+    if (v.awaitingGate) onOpenStudio();
   };
   // Click de una ceremonia = su acción según el ciclo de vida:
-  //   off → Settings (activarla) · running/awaiting/done → su run · waiting → informativa.
+  //   off → Settings (activarla) · running/awaiting/done → al Studio (el run/gate vivo) · waiting → informativa.
   const clickCeremony = (c: CeremonyStation) => {
     if (c.control === "off") {
       onOpenSettings("autonomy");
       return;
     }
-    if (c.runId && sprintId) onSelect(ceremonyId(c));
+    if (c.runId) onOpenStudio(c.runId); // abre ESE run de la ceremonia (no el más nuevo)
   };
   const ceremonyClickable = (c: CeremonyStation) => c.control === "off" || !!c.runId;
   const openSprint = () => {
@@ -300,11 +303,11 @@ export function FlowCycle(props: FlowCycleProps) {
 
           {/* ============ IZQUIERDA: pipeline de diseño (STUDIO) — click → el Studio ============ */}
           <rect x="18" y="118" width="150" height="300" rx="14" {...shapeProps(v.bandState, { soft: true })}
-            style={{ cursor: "pointer" }} onClick={onOpenStudio}>
+            style={{ cursor: "pointer" }} onClick={() => onOpenStudio()}>
             <title>{t("flow.cycle.studioTitle")} → abrir el Studio</title>
           </rect>
           <text x="93" y="143" textAnchor="middle" fontSize="13" fontWeight="800" className="f-orange"
-            style={{ cursor: "pointer" }} onClick={onOpenStudio}>
+            style={{ cursor: "pointer" }} onClick={() => onOpenStudio()}>
             {t("flow.cycle.studioTitle")}
           </text>
           <FitText x="93" y="158" maxWidth={140} textAnchor="middle" fontSize="9" className="f-ink2">

@@ -148,9 +148,9 @@ export function activeSprint(sprints: SprintGroupDesc[]): SprintGroupDesc | null
 //   running  → el run está en vuelo: click ⇒ el run en vivo.
 //   awaiting → el run terminó y espera tu decisión: click ⇒ el gate/run.
 //   done     → sellada (con fecha): click ⇒ el run histórico.
-// Nota: "awaiting" hoy no es distinguible de "running" con los datos del sprint
-// (no hay estado de gate de ceremonia en el modelo); queda modelado para cuando el
-// engine lo exponga. La derivación colapsa run-en-vuelo → running.
+// "awaiting" se deriva de `awaitingByRunId` (el run de la ceremonia tiene un design_gate
+// pendiente) — Flow lo arma juntando cada *_run_id del sprint con sus gates. Si no llega,
+// un run-en-vuelo colapsa a "running" (comportamiento anterior).
 export type ControlState = "off" | "waiting" | "running" | "awaiting" | "done";
 
 export interface CeremonyStation {
@@ -182,18 +182,23 @@ function ceremonyStation(
   sprint: SprintGroupDesc | null,
   modes: CeremonyModes,
   model: FlowModel,
+  awaitingByRunId: Record<string, boolean>,
 ): CeremonyStation {
   const dim = modes[kind] === "auto";
   const node = sprint
     ? model.ceremonies.find((c) => c.kind === kind && c.sprintId === sprint.id) ?? null
     : null;
   // Derivación del ciclo de vida:
-  //   modo auto            → off (no activada).
-  //   modo ceremony + run  → running (en vuelo) o done (*_at sellado).
-  //   modo ceremony sin run→ waiting (activada, aún no le toca).
+  //   modo auto                    → off (no activada).
+  //   modo ceremony + run sellado  → done (*_at).
+  //   modo ceremony + run con gate → awaiting (esperando tu decisión).
+  //   modo ceremony + run en vuelo → running.
+  //   modo ceremony sin run        → waiting (activada, aún no le toca).
   let control: ControlState;
   if (dim) control = "off";
-  else if (node) control = node.state === "done" ? "done" : "running";
+  else if (node && node.state === "done") control = "done";
+  else if (node && node.runId && awaitingByRunId[node.runId]) control = "awaiting";
+  else if (node) control = "running";
   else control = "waiting";
   return {
     kind,
@@ -250,7 +255,11 @@ export interface CycleView {
   increment: IncrementStation;
 }
 
-export function buildCycleView(model: FlowModel, modes: CeremonyModes): CycleView {
+export function buildCycleView(
+  model: FlowModel,
+  modes: CeremonyModes,
+  awaitingByRunId: Record<string, boolean> = {},
+): CycleView {
   const stages = designStages(model.designPhases);
   const sprint = activeSprint(model.sprints);
   return {
@@ -260,9 +269,9 @@ export function buildCycleView(model: FlowModel, modes: CeremonyModes): CycleVie
     productBacklog: productBacklogState(stages, model),
     sprint,
     counts: sprintCounts(sprint),
-    planning: ceremonyStation("planning", sprint, modes, model),
-    review: ceremonyStation("review", sprint, modes, model),
-    retro: ceremonyStation("retro", sprint, modes, model),
+    planning: ceremonyStation("planning", sprint, modes, model, awaitingByRunId),
+    review: ceremonyStation("review", sprint, modes, model, awaitingByRunId),
+    retro: ceremonyStation("retro", sprint, modes, model, awaitingByRunId),
     increment: incrementStation(sprint, model),
   };
 }
