@@ -16,6 +16,7 @@
 #                 PORT_BASE(=8900)  DEFAULT_STACK(=react-supabase)
 # ─────────────────────────────────────────────────────────────────────────────────────────────────
 set -uo pipefail
+export GIT_TERMINAL_PROMPT=0   # nunca prompteés user/pass → un repo privado sin token FALLA rápido, no cuelga
 
 REGISTRY_DIR="${REGISTRY_DIR:-/opt/fluxo/registry}"
 PREVIEW_DIR="${PREVIEW_DIR:-/opt/fluxo/previews}"
@@ -23,6 +24,9 @@ PREVIEW_TTL_HOURS="${PREVIEW_TTL_HOURS:-6}"
 INTERVAL="${INTERVAL:-15}"
 PORT_BASE="${PORT_BASE:-8900}"
 DEFAULT_STACK="${DEFAULT_STACK:-react-supabase}"
+# GitHub App: para clonar repos PRIVADOS del cliente sin token estático (misma credencial headless que
+# el worker). El pem en el HOST (el .env.prod trae GITHUB_APP_PRIVATE_KEY_PATH = path DENTRO del container).
+GITHUB_APP_PEM="${GITHUB_APP_PEM:-/opt/fluxo/deploy/app.pem}"
 
 : "${SUPABASE_URL:?falta SUPABASE_URL}"
 : "${SUPABASE_SERVICE_ROLE_KEY:?falta SUPABASE_SERVICE_ROLE_KEY}"
@@ -53,6 +57,31 @@ try:
   [print(r["id"]) for r in json.load(sys.stdin) if r.get("id")]
 except Exception: pass'; }
 pid_of() { echo "p$(echo "$1" | tr -d '-' | cut -c1-10)"; }  # pid corto y estable de un uuid
+
+# ── GitHub App: installation token para clonar el repo privado del cliente (replica design/src/github.ts) ─
+b64url() { openssl base64 -A | tr '+/' '-_' | tr -d '='; }   # base64url de stdin
+gh_api() { curl -s -H "Authorization: Bearer $1" -H "Accept: application/vnd.github+json" -H "User-Agent: fluxo" "${@:2}"; }
+github_token() { # $1 = owner  → imprime un installation token (vacío si no hay app / falla → repo público)
+  local owner="$1" now head payload jwt insts inst_id
+  [ -n "${GITHUB_APP_ID:-}" ] && [ -r "$GITHUB_APP_PEM" ] || return 0
+  now=$(date +%s)
+  head=$(printf '{"alg":"RS256","typ":"JWT"}' | b64url)
+  payload=$(printf '{"iat":%d,"exp":%d,"iss":"%s"}' $((now-60)) $((now+540)) "$GITHUB_APP_ID" | b64url)
+  jwt="$head.$payload.$(printf '%s' "$head.$payload" | openssl dgst -sha256 -sign "$GITHUB_APP_PEM" -binary | b64url)"
+  insts=$(gh_api "$jwt" "https://api.github.com/app/installations")
+  inst_id=$(printf '%s' "$insts" | python3 -c 'import json,sys
+o=sys.argv[1].lower()
+try:
+  d=json.load(sys.stdin)
+  if not isinstance(d,list) or not d: print(""); sys.exit()
+  m=[i for i in d if (i.get("account") or {}).get("login","").lower()==o]
+  print((m[0] if m else d[0]).get("id",""))
+except Exception: print("")' "$owner")
+  [ -n "$inst_id" ] || return 0
+  gh_api "$jwt" -X POST "https://api.github.com/app/installations/$inst_id/access_tokens" | python3 -c 'import json,sys
+try: print(json.load(sys.stdin).get("token","") or "")
+except Exception: print("")'
+}
 
 # ── un free port a partir de PORT_BASE ──────────────────────────────────────────────────────────
 free_port() {
@@ -108,16 +137,23 @@ process_one() { # $1=id  $2=project_id  $3=ref
   teardown "$pid"   # limpia cualquier resto previo de ESTE id
   mkdir -p "$wd"
 
-  # 2) clonar/actualizar el repo (token para privados)
-  local clone_url="$repo"
+  # 2) clonar el repo. Token: GITHUB_TOKEN si está, si no un installation token de la GitHub App (repos
+  #    privados del cliente, sin credencial estática). Sin token → clona anónimo (solo repos públicos).
+  local clone_url="$repo" gh_tok owner
   case "$repo" in
-    https://github.com/*) [ -n "${GITHUB_TOKEN:-}" ] && clone_url="https://x-access-token:${GITHUB_TOKEN}@github.com/${repo#https://github.com/}";;
+    https://github.com/*)
+      owner="${repo#https://github.com/}"; owner="${owner%%/*}"
+      gh_tok="${GITHUB_TOKEN:-}"; [ -z "$gh_tok" ] && gh_tok="$(github_token "$owner")"
+      [ -n "$gh_tok" ] && clone_url="https://x-access-token:${gh_tok}@github.com/${repo#https://github.com/}"
+    ;;
   esac
   local repodir="$wd/repo"
   if ! git clone --depth 1 ${ref:+--branch "$ref"} "$clone_url" "$repodir" >"$wd/clone.log" 2>&1; then
     # ref puede no ser una rama (o repo privado): reintenta sin --branch
     if ! git clone --depth 1 "$clone_url" "$repodir" >>"$wd/clone.log" 2>&1; then
-      set_status "$id" failed ",\"error\":$(jesc "git clone falló: $(tail -2 "$wd/clone.log" | tr '\n' ' ')")"; teardown "$pid"; return
+      # redactá el token si git lo eco en la URL del error (no filtrarlo a la DB)
+      local cerr; cerr=$(tail -2 "$wd/clone.log" | sed 's#x-access-token:[^@]*@#x-access-token:***@#g' | tr '\n' ' ')
+      set_status "$id" failed ",\"error\":$(jesc "git clone falló: $cerr")"; teardown "$pid"; return
     fi
   fi
 
