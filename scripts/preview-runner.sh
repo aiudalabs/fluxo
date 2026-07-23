@@ -7,13 +7,20 @@
 #
 # Por cada pedido `pending`:  clona/actualiza el repo @ref → renderiza la receta del stack
 # (registry/templates/github-native/<stack>/.fluxo/preview) → docker compose up (red aislada, DB efímera,
-# emulación Supabase + edge same-origin) → espera healthy → seed opcional → túnel cloudflared → estampa
-# preview_url + status=live + expires_at.  Reaper: baja los `live` vencidos.
+# emulación Supabase + edge same-origin) → espera healthy → seed opcional → estampa preview_url
+# (https://preview-<pid>.<sslip-host>) + status=live + expires_at.  Reaper: baja los `live` vencidos.
+#
+# EXPOSE: el edge del preview se une a la red `fluxo-preview-ingress` (compartida con el Caddy de prod);
+# Caddy lo alcanza por nombre y le da TLS + el subdominio sslip.io (DNS wildcard automático a la IP del
+# VPS, cero setup del cliente; NO trycloudflare, que muchas redes bloquean). pid = por-PROYECTO → el
+# subdominio/cert es estable entre regeneraciones (no churnea certs de Let's Encrypt).
 #
 # Env requerido:  SUPABASE_URL  SUPABASE_SERVICE_ROLE_KEY
 # Env opcional:   REGISTRY_DIR(=/opt/fluxo/registry)  PREVIEW_DIR(=/opt/fluxo/previews)
 #                 GITHUB_TOKEN(clona repos privados)  PREVIEW_TTL_HOURS(=6)  INTERVAL(=15)
 #                 PORT_BASE(=8900)  DEFAULT_STACK(=react-supabase)
+#                 PREVIEW_BASE_HOST(=2.25.78.202.sslip.io)  INGRESS_NET(=fluxo-preview-ingress)
+#                 CADDY_CONTAINER(=deploy-caddy-1)
 # ─────────────────────────────────────────────────────────────────────────────────────────────────
 set -uo pipefail
 export GIT_TERMINAL_PROMPT=0   # nunca prompteés user/pass → un repo privado sin token FALLA rápido, no cuelga
@@ -24,6 +31,9 @@ PREVIEW_TTL_HOURS="${PREVIEW_TTL_HOURS:-6}"
 INTERVAL="${INTERVAL:-15}"
 PORT_BASE="${PORT_BASE:-8900}"
 DEFAULT_STACK="${DEFAULT_STACK:-react-supabase}"
+PREVIEW_BASE_HOST="${PREVIEW_BASE_HOST:-2.25.78.202.sslip.io}"   # sslip.io → IP del VPS, DNS wildcard auto
+INGRESS_NET="${INGRESS_NET:-fluxo-preview-ingress}"              # red compartida edge↔Caddy de prod
+CADDY_CONTAINER="${CADDY_CONTAINER:-deploy-caddy-1}"
 # GitHub App: para clonar repos PRIVADOS del cliente sin token estático (misma credencial headless que
 # el worker). El pem en el HOST (el .env.prod trae GITHUB_APP_PRIVATE_KEY_PATH = path DENTRO del container).
 GITHUB_APP_PEM="${GITHUB_APP_PEM:-/opt/fluxo/deploy/app.pem}"
@@ -90,11 +100,19 @@ free_port() {
   echo "$p"
 }
 
-# ── teardown de un preview (compose down + túnel) ───────────────────────────────────────────────
+# ── red de ingress: la crea (idempotente) y conecta el Caddy de prod para que alcance los edges ──
+ensure_ingress() {
+  docker network inspect "$INGRESS_NET" >/dev/null 2>&1 || docker network create "$INGRESS_NET" >/dev/null 2>&1
+  if docker inspect "$CADDY_CONTAINER" >/dev/null 2>&1; then
+    docker inspect "$CADDY_CONTAINER" --format '{{range $k,$v := .NetworkSettings.Networks}}{{$k}} {{end}}' 2>/dev/null | grep -qw "$INGRESS_NET" \
+      || docker network connect "$INGRESS_NET" "$CADDY_CONTAINER" >/dev/null 2>&1
+  fi
+}
+
+# ── teardown de un preview (compose down) ───────────────────────────────────────────────────────
 teardown() { # $1 = preview_id
   local pid="$1"
   local wd="$PREVIEW_DIR/$pid"
-  systemctl stop "fluxo-tunnel-$pid" 2>/dev/null; systemctl reset-failed "fluxo-tunnel-$pid" 2>/dev/null
   [ -f "$wd/compose.yml" ] && docker compose -f "$wd/compose.yml" down -v >/dev/null 2>&1
   [ -f "$wd/.port" ] && rm -f "$PREVIEW_DIR/.port-$(cat "$wd/.port" 2>/dev/null)" 2>/dev/null
   rm -rf "$wd" 2>/dev/null
@@ -104,7 +122,7 @@ teardown() { # $1 = preview_id
 process_one() { # $1=id  $2=project_id  $3=ref
   local id="$1" project_id="$2" ref="$3"
   local pid wd
-  pid="$(pid_of "$id")"
+  pid="$(pid_of "$project_id")"   # por-PROYECTO: subdominio/cert estable entre regeneraciones
   wd="$PREVIEW_DIR/$pid"
   log "build $id (project $project_id, ref ${ref:-default}) → $pid"
   set_status "$id" building ""
@@ -128,13 +146,14 @@ process_one() { # $1=id  $2=project_id  $3=ref
     set_status "$id" failed ",\"error\":$(jesc "sin receta de preview para el stack $stack")"; return
   fi
 
-  # Regenerar REEMPLAZA, no acumula: bajá cualquier preview activo previo del MISMO proyecto (otro id).
-  # Si no, cada "Regenerar" deja el stack anterior + túnel + puerto vivos hasta el TTL (VPS chico).
+  # Regenerar REEMPLAZA, no acumula: el pid es por-proyecto, así que el `teardown "$pid"` de abajo baja
+  # el stack anterior del proyecto. Acá solo marco expiradas las filas activas previas de este proyecto
+  # (otra request), para que la UI no muestre dos "live".
   rest_get "preview_requests?project_id=eq.$project_id&status=in.(live,building)&id=neq.$id&select=id" | json_ids | while read -r oid; do
-    [ -n "$oid" ] && { teardown "$(pid_of "$oid")"; set_status "$oid" expired ""; }
+    [ -n "$oid" ] && set_status "$oid" expired ""
   done
 
-  teardown "$pid"   # limpia cualquier resto previo de ESTE id
+  teardown "$pid"   # limpia el stack previo del proyecto (mismo pid) y su workdir
   mkdir -p "$wd"
 
   # 2) clonar el repo. Token: GITHUB_TOKEN si está, si no un installation token de la GitHub App (repos
@@ -174,7 +193,8 @@ process_one() { # $1=id  $2=project_id  $3=ref
       -e "s#{{jwt_secret}}#$jwt#g" \
       "$recipe/compose.yml.tmpl" > "$wd/compose.yml"
 
-  # 5) levantar
+  # 5) levantar (la red de ingress tiene que existir para el edge)
+  ensure_ingress
   if ! docker compose -f "$wd/compose.yml" up -d >"$wd/up.log" 2>&1; then
     set_status "$id" failed ",\"error\":$(jesc "docker compose up falló: $(tail -2 "$wd/up.log" | tr '\n' ' ')")"; teardown "$pid"; return
   fi
@@ -202,33 +222,28 @@ process_one() { # $1=id  $2=project_id  $3=ref
     ( cd "$repodir" && API_BASE="http://127.0.0.1:$port/api" PREVIEW_ID="$pid" bash .fluxo/preview/seed.sh ) >"$wd/seed.log" 2>&1 || log "seed falló (no bloquea): $id"
   fi
 
-  # 8) túnel público (cloudflared quick-tunnel, sin DNS)
-  systemctl reset-failed "fluxo-tunnel-$pid" 2>/dev/null
-  systemd-run --unit="fluxo-tunnel-$pid" --collect \
-    cloudflared tunnel --url "http://127.0.0.1:$port" --no-autoupdate >/dev/null 2>&1
-  local url=""
-  for _ in $(seq 1 20); do
-    sleep 3
-    url=$(journalctl -u "fluxo-tunnel-$pid" --no-pager 2>/dev/null | grep -oE 'https://[a-z0-9-]+\.trycloudflare\.com' | head -1)
-    [ -n "$url" ] && break
-  done
-  if [ -z "$url" ]; then
-    set_status "$id" failed ",\"error\":$(jesc "no se pudo abrir el túnel público")"; teardown "$pid"; return
-  fi
-
+  # 8) expose: el edge ya está en la red de ingress (por el compose) → el Caddy de prod lo alcanza por
+  #    nombre y le da TLS + el subdominio sslip.io. La URL es determinística por-proyecto (cert estable).
+  local url="https://preview-$pid.$PREVIEW_BASE_HOST"
   local exp; exp=$(date -u -d "+${PREVIEW_TTL_HOURS} hours" +%FT%TZ 2>/dev/null || date -u -v+${PREVIEW_TTL_HOURS}H +%FT%TZ)
   set_status "$id" live ",\"preview_url\":$(jesc "$url"),\"expires_at\":\"$exp\""
   log "LIVE $id → $url (expira $exp)"
 }
 
+# id\tproject_id por fila (para derivar el pid por-proyecto en teardown)
+json_id_proj() { python3 -c 'import json,sys
+try:
+  [print("%s\t%s"%(r["id"],r.get("project_id",""))) for r in json.load(sys.stdin) if r.get("id")]
+except Exception: pass'; }
+
 # ── reaper: baja los `live` vencidos ────────────────────────────────────────────────────────────
 reap() {
   local now
   now=$(date -u +%FT%TZ)
-  rest_get "preview_requests?status=eq.live&expires_at=lt.$now&select=id" | json_ids | while read -r rid; do
+  rest_get "preview_requests?status=eq.live&expires_at=lt.$now&select=id,project_id" | json_id_proj | while IFS=$'\t' read -r rid rproj; do
     [ -z "$rid" ] && continue
     log "reap $rid (vencido)"
-    teardown "$(pid_of "$rid")"
+    [ -n "$rproj" ] && teardown "$(pid_of "$rproj")"
     set_status "$rid" expired ""
   done
 }
@@ -237,15 +252,16 @@ reap() {
 #    re-toman (el loop toma solo `pending`) ni se reapean (el reaper toma solo `live`) → quedarían
 #    zombies con spinner eterno. Bajalos y marcalos failed; el usuario regenera. ─────────────────
 sweep_building() {
-  rest_get "preview_requests?status=eq.building&select=id" | json_ids | while read -r bid; do
+  rest_get "preview_requests?status=eq.building&select=id,project_id" | json_id_proj | while IFS=$'\t' read -r bid bproj; do
     [ -z "$bid" ] && continue
     log "sweep building huérfano $bid (runner reiniciado)"
-    teardown "$(pid_of "$bid")"
+    [ -n "$bproj" ] && teardown "$(pid_of "$bproj")"
     set_status "$bid" failed ",\"error\":$(jesc "el runner se reinició durante el build — regenerá el preview")"
   done
 }
 
-log "arrancado. registry=$REGISTRY_DIR previews=$PREVIEW_DIR ttl=${PREVIEW_TTL_HOURS}h interval=${INTERVAL}s"
+log "arrancado. registry=$REGISTRY_DIR previews=$PREVIEW_DIR ttl=${PREVIEW_TTL_HOURS}h host=$PREVIEW_BASE_HOST interval=${INTERVAL}s"
+ensure_ingress || true
 sweep_building || true
 while true; do
   reap || true

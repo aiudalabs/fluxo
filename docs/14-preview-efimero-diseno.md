@@ -64,12 +64,23 @@ backend + DB efímera), en un subdominio temporal de Fluxo, **sin que el cliente
 Se validó y construyó el vertical completo. **Dos cambios de diseño vs el plan de arriba**, ambos por
 lo aprendido corriéndolo de verdad:
 
-### Cambio 1 — expose por **quick-tunnel**, no por Caddy+wildcard-DNS
-El plan original ruteaba `preview-<id>.fluxo.aiudalabs.com` en el Caddy de prod (Fase 2) — pero eso
-exige el wildcard DNS (acción del cliente en GoDaddy) y toca el Caddy de prod (riesgo). Se validó una
-alternativa **más simple y sin DNS**: un **cloudflared quick-tunnel** por preview (`*.trycloudflare.com`,
-sin cuenta, sin DNS, HTTPS incluido) — justo el estilo Lovable/Replit. Para *mostrar* rápido, gana el
-túnel; el subdominio propio queda como opción B futura (branded/estable). El Caddy de prod NO se toca.
+### Cambio 1 — expose por **Caddy de prod + sslip.io** (NO trycloudflare)
+Primero se probó un **cloudflared quick-tunnel** (`*.trycloudflare.com`, sin DNS) — anduvo para validar,
+pero **muchas redes bloquean `*.trycloudflare.com`** (se abusa para phishing → ISPs/routers/resolvers de
+seguridad lo filtran; da NXDOMAIN aunque 8.8.8.8 resuelva). No sirve para usuarios reales.
+
+Solución final (elegida por el usuario): **`preview-<pid>.<IP-del-VPS>.sslip.io` ruteado por el Caddy de
+prod** con TLS on-demand. `sslip.io` da DNS wildcard automático a la IP del VPS (cero setup DNS del
+cliente), y no está en las blocklists de trycloudflare. Piezas:
+- El `edge` del preview se une a la red `fluxo-preview-ingress` (compartida SOLO con el Caddy de prod;
+  db/backend/frontend quedan aislados). El runner crea la red y conecta el Caddy (idempotente).
+- El Caddy de prod (`deploy/Caddyfile`) rutea `*.<host>.sslip.io` → `fluxo-preview-<pid>-edge-1:80`,
+  derivando el contenedor por regex del subdominio (un solo bloque estático sirve todos los previews).
+- **on-demand TLS gateado** por `GET /api/preview/tls-allow` (console, service_role): solo emite cert
+  para previews ACTIVOS → evita emisión ilimitada con SNIs random.
+- **pid por-PROYECTO** (no por-request) → el subdominio/cert es estable entre regeneraciones (no churnea
+  certs de Let's Encrypt; un preview vivo por proyecto, que es el modelo).
+El wildcard branded (`*.fluxo.aiudalabs.com`) queda como opción B (necesita 1 registro DNS del cliente).
 
 ### Cambio 2 — el runner es **HOST-level**, no dentro del worker
 El worker corre non-root SIN docker socket (modelo de seguridad — corre design runs). Los previews

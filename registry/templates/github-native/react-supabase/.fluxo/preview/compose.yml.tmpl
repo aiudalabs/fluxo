@@ -93,15 +93,28 @@ services:
     mem_limit: 900m
     pids_limit: 300
 
-  # El entrypoint del preview: rutea /api → backend, resto → frontend. El túnel público apunta ACÁ.
+  # El entrypoint del preview: rutea /api → backend, resto → frontend. El Caddy de PROD lo alcanza por
+  # nombre (fluxo-preview-<id>-edge-1) vía la red `fluxo-preview-ingress`, y le pega TLS + el subdominio
+  # sslip.io. El puerto local 127.0.0.1:{{preview_port}} lo usa el runner solo para el health-check.
+  # Es el ÚNICO servicio del preview en la red de ingress — db/backend/frontend quedan aislados.
   edge:
     image: caddy:2-alpine
     volumes:
       - "{{edge_caddyfile}}:/etc/caddy/Caddyfile:ro"
     ports:
-      - "127.0.0.1:{{preview_port}}:80"   # el runner apunta el túnel efímero a este puerto
+      - "127.0.0.1:{{preview_port}}:80"
+    networks:
+      - default
+      - ingress
     depends_on:
       - frontend
       - backend
     mem_limit: 128m
     pids_limit: 100
+
+networks:
+  # Red compartida SOLO con el Caddy de prod (el runner la crea y conecta el Caddy). El resto del stack
+  # del preview (db/backend/frontend/install) queda en la red `default` aislada — no toca prod.
+  ingress:
+    external: true
+    name: fluxo-preview-ingress
