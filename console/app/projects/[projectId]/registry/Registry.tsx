@@ -6,7 +6,7 @@
 // (GET /api/projects/[id]/prompts, reconstruido con el kernel de despacho). Sin CRUD (v1 lo tenía;
 // diferido). Estilo: clases del board/wrap de v1; contenido crudo en <pre> (sin deps de markdown).
 
-import { useCallback, useEffect, useState } from "react";
+import { type CSSProperties, useCallback, useEffect, useState } from "react";
 import { DocView } from "@/components/DocView";
 import { useProject } from "@/lib/project";
 import { activeToken } from "@/lib/supabaseClient";
@@ -159,13 +159,20 @@ function TemplatesPane({ templates, t }: { templates: string[]; t: (k: string, v
       </div>
     );
   }
+  // Agrupado por STACK (primer segmento del path) para que sea navegable — no 57 paths planos.
+  const byStack: Record<string, string[]> = {};
+  for (const p of templates) { const s = p.split("/")[0]; (byStack[s] ??= []).push(p); }
+  const btn: CSSProperties = { textAlign: "left", fontFamily: "var(--mono, monospace)", fontSize: 12, padding: "5px 8px", border: "1px solid var(--stroke)", borderRadius: 6, background: "var(--panel)", color: "var(--ink2)", cursor: "pointer", alignSelf: "stretch", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" };
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-      <p className="c" style={{ margin: "0 0 8px" }}>{t("registry.templates.intro")} — clickeá para ver el contenido.</p>
-      {templates.map((p) => (
-        <button key={p} onClick={() => open(p)}
-          style={{ textAlign: "left", fontFamily: "var(--mono, monospace)", fontSize: 12, padding: "5px 8px", border: "1px solid var(--stroke)", borderRadius: 6, background: "var(--panel)", color: "var(--ink2)", cursor: "pointer", alignSelf: "stretch", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}
-          title={p}>{p}</button>
+    <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+      <p className="c" style={{ margin: 0 }}>{t("registry.templates.intro")} — la CI + scaffold que Fluxo siembra en el repo del cliente. Elegí el stack y clickeá un archivo para ver su contenido.</p>
+      {Object.entries(byStack).map(([stack, files]) => (
+        <div key={stack} style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+          <div className="eyebrow acc">{stack}</div>
+          {files.map((p) => (
+            <button key={p} onClick={() => open(p)} style={btn} title={p}>{p.slice(stack.length + 1)}</button>
+          ))}
+        </div>
       ))}
       {templates.length === 0 && <div className="td-empty">—</div>}
     </div>
