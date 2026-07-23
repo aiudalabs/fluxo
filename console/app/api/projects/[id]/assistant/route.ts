@@ -1,9 +1,15 @@
 // P5-1 · AI Assistant — proxy del console al agent-loop del WORKER (que corre el claude-agent-sdk con
 // el token de suscripción en su ambiente probado). El console NO corre el SDK (alpine/root incierto);
 // acá solo verifica la sesión + que el proyecto sea del tenant, y forwardea a WORKER_ASSISTANT_URL.
+//
+// Pieza 2 (streaming): reenvía con Accept: text/event-stream y PIPEA el stream del worker (SSE) tal
+// cual (antes hacía r.json() → bufferizaba todo). Fallback: si el worker responde JSON, el mismo
+// passthrough del body lo entrega igual.
 
 import { NextRequest, NextResponse } from "next/server";
 import { verifySessionJwt, admin } from "@/lib/server/githubAuth";
+
+export const dynamic = "force-dynamic"; // sin buffering: el stream sale a medida que llega.
 
 export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
   const auth = req.headers.get("authorization");
@@ -24,11 +30,17 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
   try {
     const r = await fetch(`${workerUrl.replace(/\/$/, "")}/assistant`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", Accept: "text/event-stream" },
       body: JSON.stringify({ projectId: id, messages: body.messages }),
     });
-    const j = await r.json().catch(() => ({ error: "respuesta inválida del worker" }));
-    return NextResponse.json(j, { status: r.ok ? 200 : 502 });
+    // Passthrough del stream (SSE) o del JSON (fallback) — sin bufferizar.
+    return new Response(r.body, {
+      status: r.ok ? 200 : 502,
+      headers: {
+        "Content-Type": r.headers.get("content-type") ?? "application/json",
+        "Cache-Control": "no-cache, no-transform",
+      },
+    });
   } catch (e) {
     return NextResponse.json({ error: e instanceof Error ? e.message : "el worker no responde" }, { status: 502 });
   }

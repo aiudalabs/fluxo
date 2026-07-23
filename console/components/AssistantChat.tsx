@@ -42,6 +42,33 @@ function titleFrom(text: string): string {
   return t.length > 60 ? t.slice(0, 60) + "…" : t;
 }
 
+// consumeSse (Pieza 2) · lee el stream SSE del proxy: cada `data:{"delta":…}` va al bubble en vivo;
+// `data:{"done":true,"text":…}` trae el texto completo (fuente para parsear fluxo-action); `{"error":…}`
+// aborta. Devuelve el texto final. Si el worker cayó al fallback JSON, el caller lo maneja aparte.
+async function consumeSse(r: Response, onDelta: (d: string) => void): Promise<string> {
+  const reader = r.body?.getReader();
+  if (!reader) return "";
+  const dec = new TextDecoder();
+  let buf = "", streamed = "", final = "";
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buf += dec.decode(value, { stream: true });
+    const parts = buf.split("\n\n");
+    buf = parts.pop() ?? "";
+    for (const part of parts) {
+      const line = part.split("\n").find((l) => l.startsWith("data:"));
+      if (!line) continue;
+      let obj: { delta?: string; done?: boolean; text?: string; error?: string };
+      try { obj = JSON.parse(line.slice(5).trim()); } catch { continue; }
+      if (obj.error) throw new Error(obj.error);
+      if (obj.delta) { streamed += obj.delta; onDelta(obj.delta); }
+      else if (obj.done) final = obj.text ?? streamed;
+    }
+  }
+  return final || streamed;
+}
+
 export function AssistantChat() {
   const { projectId, project, supabase } = useProject();
   const [convs, setConvs] = useState<Conv[]>([]);
@@ -49,9 +76,12 @@ export function AssistantChat() {
   const [msgs, setMsgs] = useState<Msg[]>([]);
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
+  const [streaming, setStreaming] = useState<string | null>(null); // Pieza 2: bubble en vivo mientras llega el SSE.
   const [acts, setActs] = useState<Record<string, ActState>>({});
   const scrollRef = useRef<HTMLDivElement>(null);
-  useEffect(() => { scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" }); }, [msgs, busy]);
+  const convIdRef = useRef<string | null>(null); // convId vivo (el del closure de send() queda stale).
+  useEffect(() => { convIdRef.current = convId; }, [convId]);
+  useEffect(() => { scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" }); }, [msgs, busy, streaming]);
 
   // Lista de conversaciones del proyecto (RLS scopea al tenant). Vive por Realtime; al arrancar
   // selecciona la más reciente para retomar donde quedó.
@@ -115,10 +145,13 @@ export function AssistantChat() {
   const ACTION_LABEL: Record<string, string> = { increment: "Pedir incremento", dispatch: "Despachar build", gate: "Aprobar gate" };
   const ACTION_OK: Record<string, string> = { increment: "✓ Encolado — aparecerá en el board tras el gate del Studio.", dispatch: "✓ Despachado — segui el run en Agentes/board.", gate: "✓ Gate aprobado — el diseño sigue a la próxima fase." };
 
-  // Inserta un mensaje persistido y devuelve su fila (para tener el id real en el estado).
-  const insertMsg = async (conversationId: string, role: "user" | "assistant", content: string): Promise<Msg | null> => {
-    const { data } = await supabase.from("assistant_messages").insert({ conversation_id: conversationId, project_id: projectId, tenant_id: project?.tenant_id, role, content }).select("id,role,content").single();
-    return (data as Msg) ?? null;
+  // Inserta un mensaje persistido y devuelve su fila (con el id real). TIRA si falla — así la
+  // persistencia no falla en silencio (P5-4: un mensaje que se muestra pero no se guardó, desaparece
+  // al recargar → derrota la "memoria"). El caller decide si abortar o mostrar la respuesta con aviso.
+  const insertMsg = async (conversationId: string, role: "user" | "assistant", content: string): Promise<Msg> => {
+    const { data, error } = await supabase.from("assistant_messages").insert({ conversation_id: conversationId, project_id: projectId, tenant_id: project?.tenant_id, role, content }).select("id,role,content").single();
+    if (error || !data) throw new Error(error?.message ?? "no se pudo guardar el mensaje");
+    return data as Msg;
   };
 
   const send = async (text?: string) => {
@@ -134,23 +167,37 @@ export function AssistantChat() {
         cid = (data as Conv).id;
         setConvId(cid);
       }
-      // 2) Persistir el mensaje del usuario (optimista en estado + fila real).
+      // 2) Persistir el mensaje del usuario ANTES de gastar en el worker (si no se guarda, abortá).
       const userMsg = await insertMsg(cid, "user", content);
-      const history: Msg[] = [...msgs, userMsg ?? { id: `tmp-${Date.now()}`, role: "user", content }];
+      const history: Msg[] = [...msgs, userMsg];
       setMsgs(history);
-      // 3) Pedir la respuesta al worker (vía proxy) con toda la historia.
+      // 3) Pedir la respuesta al worker (vía proxy), consumiendo el stream SSE.
       const tok = await sessionToken();
       const r = await fetch(`/api/projects/${projectId}/assistant`, {
         method: "POST",
         headers: { "Content-Type": "application/json", ...(tok ? { authorization: `Bearer ${tok}` } : {}) },
         body: JSON.stringify({ messages: history.map((m) => ({ role: m.role, content: m.content })) }),
       });
-      const j = await r.json().catch(() => ({}));
-      const reply = r.ok ? (j.text ?? "(sin respuesta)") : `⚠ ${j.error ?? `error ${r.status}`}`;
-      // 4) Persistir la respuesta del asistente (Realtime/load reconcilian la lista canónica).
-      const asstMsg = await insertMsg(cid, "assistant", reply);
-      setMsgs((m) => [...m, asstMsg ?? { id: `tmp-a-${Date.now()}`, role: "assistant", content: reply }]);
+      // SSE (streaming) o JSON (fallback / error del worker) según content-type.
+      const ct = r.headers.get("content-type") ?? "";
+      let reply: string;
+      if (ct.includes("text/event-stream")) {
+        reply = await consumeSse(r, (d) => setStreaming((s) => (s ?? "") + d));
+      } else {
+        const j = (await r.json().catch(() => ({}))) as { text?: string; error?: string };
+        reply = r.ok ? (j.text ?? "(sin respuesta)") : `⚠ ${j.error ?? `error ${r.status}`}`;
+      }
+      // 4) Persistir la respuesta (best-effort: si falla, se muestra igual con aviso — no se pierde
+      // la respuesta ya generada; Realtime/load reconcilian la lista canónica).
+      let asstMsg: Msg | null = null;
+      try { asstMsg = await insertMsg(cid, "assistant", reply); }
+      catch { /* la mostramos optimista abajo con nota de no-guardado */ }
+      setStreaming(null);
+      // Guard anti bleed cross-conversación: solo appendeá si seguimos en el mismo hilo (convId vivo).
+      const finalMsg: Msg = asstMsg ?? { id: `tmp-a-${Date.now()}`, role: "assistant", content: `${reply}\n\n_(no se pudo guardar en el historial)_` };
+      setMsgs((m) => (cid === convIdRef.current ? [...m, finalMsg] : m));
     } catch (e) {
+      setStreaming(null);
       setMsgs((m) => [...m, { id: `tmp-e-${Date.now()}`, role: "assistant", content: `⚠ ${e instanceof Error ? e.message : String(e)}` }]);
     } finally { setBusy(false); }
   };
@@ -166,19 +213,20 @@ export function AssistantChat() {
       <div className="brain-inner">
         {/* Barra de conversaciones (P5-4): hilo activo + cambiar de hilo + nuevo. */}
         <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "2px 2px 10px", borderBottom: "1px solid var(--stroke)" }}>
+          {/* Deshabilitado mientras responde: cambiar de hilo mid-stream mezclaría respuestas. */}
           <select
-            value={convId ?? ""} onChange={(e) => setConvId(e.target.value || null)}
-            style={{ flex: 1, maxWidth: 420, padding: "6px 10px", borderRadius: 8, border: "1px solid var(--stroke)", background: "var(--bg2)", color: "var(--text)", fontSize: 13, fontFamily: "inherit" }}
+            value={convId ?? ""} onChange={(e) => setConvId(e.target.value || null)} disabled={busy}
+            style={{ flex: 1, maxWidth: 420, padding: "6px 10px", borderRadius: 8, border: "1px solid var(--stroke)", background: "var(--bg2)", color: "var(--text)", fontSize: 13, fontFamily: "inherit", opacity: busy ? 0.6 : 1 }}
           >
             {convId === null && <option value="">Conversación nueva…</option>}
             {convs.map((c) => <option key={c.id} value={c.id}>{c.title ?? "Sin título"}</option>)}
           </select>
-          <button className="btn ghost sm" onClick={newConversation} title="Nueva conversación">＋ Nueva</button>
-          {convId && <button className="btn ghost sm" onClick={() => void deleteConversation(convId)} title="Borrar esta conversación">🗑</button>}
+          <button className="btn ghost sm" onClick={newConversation} disabled={busy} title="Nueva conversación">＋ Nueva</button>
+          {convId && <button className="btn ghost sm" onClick={() => void deleteConversation(convId)} disabled={busy} title="Borrar esta conversación">🗑</button>}
         </div>
 
         <div className="brain-scroll" ref={scrollRef}>
-          {msgs.length === 0 && !busy ? (
+          {msgs.length === 0 && !busy && streaming === null ? (
             <div className="brain-empty">
               <em>Soy el asistente de este proyecto.</em>
               <p>Preguntame por el estado, los costos, qué está trabado, o qué pedir como próximo incremento.</p>
@@ -216,7 +264,14 @@ export function AssistantChat() {
               );
             })
           )}
-          {busy && <div className="brain-think"><span className="spin" /> pensando…</div>}
+          {/* Bubble en vivo mientras el SSE llega (Pieza 2). El markdown parcial (bloques a medio cerrar)
+              se muestra en crudo; al terminar, el mensaje persistido con su tarjeta lo reemplaza. */}
+          {streaming !== null && (
+            <div className="brain-row">
+              <div className="brain-bubble assistant"><ReactMarkdown remarkPlugins={[remarkGfm]}>{streaming}</ReactMarkdown></div>
+            </div>
+          )}
+          {busy && streaming === null && <div className="brain-think"><span className="spin" /> pensando…</div>}
         </div>
 
         <form className="brain-form" onSubmit={(e) => { e.preventDefault(); void send(); }}>

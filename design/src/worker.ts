@@ -16,7 +16,7 @@ import { spawn } from "node:child_process";
 import { createServer } from "node:http";
 import { fileURLToPath } from "node:url";
 import { dirname, resolve } from "node:path";
-import { runAssistant, type ChatMsg } from "./assistant.ts";
+import { runAssistant, sseEvent, type ChatMsg } from "./assistant.ts";
 import { GithubApp, GithubRepo } from "./github.ts";
 import { Projector, type MirroredStory } from "./projection.ts";
 import { candidates, storyPrompt, sprintPrompt, docsGuardOk, sprintToPlan, sprintToReview, sprintToRetro, type Policy, type DStory, type DSprint } from "./dispatch.ts";
@@ -575,17 +575,38 @@ if (assistantPort > 0) {
     let body = "";
     req.on("data", (c) => { body += c; if (body.length > 200_000) req.destroy(); });
     req.on("end", async () => {
+      // Pieza 2: streaming SSE si el cliente lo pide (Accept: text/event-stream); si no, JSON (fallback).
+      const wantsSse = (req.headers.accept ?? "").includes("text/event-stream");
       try {
         const { projectId, messages } = JSON.parse(body) as { projectId: string; messages: ChatMsg[] };
         if (!projectId || !Array.isArray(messages)) { res.statusCode = 400; res.end(JSON.stringify({ error: "projectId + messages requeridos" })); return; }
         const st = await buildStateSummary(projectId);
         if (!st) { res.statusCode = 404; res.end(JSON.stringify({ error: "proyecto no encontrado" })); return; }
-        const text = await runAssistant({ stateSummary: st.summary, messages: messages.slice(-12) });
-        res.setHeader("Content-Type", "application/json");
-        res.end(JSON.stringify({ text }));
+
+        if (!wantsSse) {
+          const text = await runAssistant({ stateSummary: st.summary, messages: messages.slice(-12) });
+          res.setHeader("Content-Type", "application/json");
+          res.end(JSON.stringify({ text }));
+          return;
+        }
+
+        // SSE: por cada delta `data: {"delta":…}`; al cerrar `data: {"done":true,"text":…}` (el texto
+        // completo va acá para que el cliente parsee el bloque fluxo-action sobre la respuesta entera).
+        res.setHeader("Content-Type", "text/event-stream");
+        res.setHeader("Cache-Control", "no-cache, no-transform");
+        res.setHeader("Connection", "keep-alive");
+        const text = await runAssistant({
+          stateSummary: st.summary,
+          messages: messages.slice(-12),
+          onDelta: (delta) => res.write(sseEvent({ delta })),
+        });
+        res.write(sseEvent({ done: true, text }));
+        res.end();
       } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e);
+        if (wantsSse && res.headersSent) { res.write(sseEvent({ error: msg })); res.end(); return; }
         res.statusCode = 500;
-        res.end(JSON.stringify({ error: e instanceof Error ? e.message : String(e) }));
+        res.end(JSON.stringify({ error: msg }));
       }
     });
   }).listen(assistantPort, () => console.log(`  🤖 assistant http en :${assistantPort} (POST /assistant)`));
