@@ -75,6 +75,17 @@ services:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy_data:/data
       - caddy_config:/config
+    # `default` = red del compose (alcanza a console). `preview_ingress` = red compartida con los edges
+    # de los previews efímeros (release v2 · docs/14), para rutearles TLS + subdominio sslip.io. Declararla
+    # acá la hace durable ante recreates (si no, hay que reconectar a mano — el runner igual la self-healea).
+    networks:
+      - default
+      - preview_ingress
+
+networks:
+  preview_ingress:
+    external: true
+    name: fluxo-preview-ingress
 
 volumes:
   caddy_data:

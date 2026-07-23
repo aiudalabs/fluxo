@@ -14,15 +14,16 @@
 	reverse_proxy console:3000
 }
 
-# Previews efímeros navegables (release v2 · docs/14). `preview-<pid>.<ip>.sslip.io` → el contenedor
-# `edge` del preview (derivado por regex del subdominio), que está en la red `fluxo-preview-ingress`
-# compartida con este Caddy. sslip.io da DNS wildcard automático a la IP del VPS (cero setup DNS del
-# cliente). TLS on-demand gateado por /api/preview/tls-allow. El default es la IP del VPS de prod.
-*.{$PREVIEW_BASE_HOST:2.25.78.202.sslip.io} {
+# Previews efímeros navegables (release v2 · docs/14). CATCH-ALL de HTTPS (cualquier host que NO sea el
+# dominio principal): así Caddy emite un cert POR-HOST on-demand (un site label `*.…` haría que quiera
+# un cert WILDCARD vía DNS-challenge, que no tenemos). Gateado por on_demand_tls → solo previews activos.
+# `preview-<pid>.<ip>.sslip.io` → el edge `fluxo-preview-<pid>-edge-1:80` (derivado por regex), que está
+# en la red `fluxo-preview-ingress` compartida con este Caddy. sslip.io = DNS wildcard auto a la IP del VPS.
+https:// {
 	tls {
 		on_demand
 	}
-	@pv host_regexp pv ^preview-([a-z0-9]+)\.
+	@pv header_regexp pv Host ^preview-([a-z0-9]+)\.
 	handle @pv {
 		reverse_proxy fluxo-preview-{re.pv.1}-edge-1:80
 	}

@@ -264,6 +264,7 @@ log "arrancado. registry=$REGISTRY_DIR previews=$PREVIEW_DIR ttl=${PREVIEW_TTL_H
 ensure_ingress || true
 sweep_building || true
 while true; do
+  ensure_ingress || true   # self-heal: si el Caddy se recreó (deploy), reconectalo a la red de ingress
   reap || true
   # tomar pendientes (uno por vuelta para no saturar el VPS chico)
   pend=$(rest_get "preview_requests?status=eq.pending&select=id,project_id,ref&order=created_at.asc&limit=1")
