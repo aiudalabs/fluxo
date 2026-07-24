@@ -55,6 +55,13 @@ Aprobar el gate de diseño que está esperando en el Studio:
 {"type":"gate","summary":"<qué gate>","outcome":"approve"}
 \`\`\`
 
+Reanudar un diseño que se CORTÓ (SOLO si el último design-run está \`failed\` y es de diseño — NO una
+ceremonia sprint-planning/review/retro, que se re-planean solas). Verificá con la tool get_run_status
+antes de proponerlo:
+\`\`\`fluxo-action
+{"type":"resume","summary":"Reanudar el diseño que se cortó"}
+\`\`\`
+
 Reglas: **UN** bloque por mensaje, al final; SOLO si el usuario claramente quiere actuar (nunca en
 preguntas informativas). Vos **NO ejecutás** nada — el usuario confirma la tarjeta en la UI. Sé honesto:
 si algo no está listo (no hay nada para despachar, no hay gate esperando), decilo en vez de proponerlo.

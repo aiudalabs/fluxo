@@ -144,6 +144,12 @@ export function AssistantChat() {
         if (!g) throw new Error("no hay ningún gate esperando");
         const { error } = await supabase.from("design_gates").update({ status: "resolved", resolved_at: new Date().toISOString(), outcome: a.outcome ?? "approve" }).eq("id", (g as { id: string }).id);
         if (error) throw error;
+      } else if (a.type === "resume") {
+        // Reanudar un design-run cortado — reusa el endpoint /design/resume (repone el run failed →
+        // el worker lo re-resume desde donde quedó). El bot propone; el usuario confirma acá.
+        const tok = await freshToken();
+        const rr = await fetch(`/api/projects/${projectId}/design/resume`, { method: "POST", headers: tok ? { authorization: `Bearer ${tok}` } : undefined });
+        if (!rr.ok) throw new Error(((await rr.json().catch(() => ({})))?.error) ?? `resume ${rr.status}`);
       } else throw new Error("acción desconocida");
       setActs((s) => ({ ...s, [key]: "done" }));
     } catch {
@@ -151,8 +157,8 @@ export function AssistantChat() {
     }
   };
 
-  const ACTION_LABEL: Record<string, string> = { increment: "Pedir incremento", dispatch: "Despachar build", gate: "Aprobar gate" };
-  const ACTION_OK: Record<string, string> = { increment: "✓ Encolado — aparecerá en el board tras el gate del Studio.", dispatch: "✓ Despachado — segui el run en Agentes/board.", gate: "✓ Gate aprobado — el diseño sigue a la próxima fase." };
+  const ACTION_LABEL: Record<string, string> = { increment: "Pedir incremento", dispatch: "Despachar build", gate: "Aprobar gate", resume: "Reanudar diseño" };
+  const ACTION_OK: Record<string, string> = { increment: "✓ Encolado — aparecerá en el board tras el gate del Studio.", dispatch: "✓ Despachado — segui el run en Agentes/board.", gate: "✓ Gate aprobado — el diseño sigue a la próxima fase.", resume: "✓ Reanudado — el conductor lo retoma desde donde quedó (miralo en el Studio/Flow)." };
 
   // Inserta un mensaje persistido y devuelve su fila (con el id real). TIRA si falla — así la
   // persistencia no falla en silencio (P5-4: un mensaje que se muestra pero no se guardó, desaparece
@@ -256,7 +262,7 @@ export function AssistantChat() {
                     {m.role !== "assistant" ? m.content : (
                       <>
                         {parsed!.text && <ReactMarkdown remarkPlugins={[remarkGfm]}>{parsed!.text}</ReactMarkdown>}
-                        {parsed!.action && ["increment", "dispatch", "gate"].includes(parsed!.action.type) && acts[m.id] !== "dismissed" && (
+                        {parsed!.action && ["increment", "dispatch", "gate", "resume"].includes(parsed!.action.type) && acts[m.id] !== "dismissed" && (
                           <div className="brain-action">
                             <div className="h"><span className="tool">{ACTION_LABEL[parsed!.action.type] ?? parsed!.action.type}</span>{parsed!.action.summary ?? ""}</div>
                             {parsed!.action.instructions && <pre>{parsed!.action.instructions}</pre>}
