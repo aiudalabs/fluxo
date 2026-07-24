@@ -50,12 +50,12 @@ export function buildAssistantTools(opts: { projectId: string; rest: Rest }) {
       }),
 
       tool("get_run_status", "Estado del ÚLTIMO design-run: status, workflow, y si falló → el error + si fue transitorio o fatal + en qué fase se cortó + si es reanudable. Usalo para diagnosticar 'por qué se cortó el diseño'.", {}, async () => {
-        const [runs, phases] = await Promise.all([
-          rest<Array<{ id: string; status: string; workflow: string; error: string | null; error_kind: string | null }>>(`/design_runs?project_id=eq.${projectId}&select=id,status,workflow,error,error_kind&order=created_at.desc&limit=1`),
-          rest<Array<{ phase_id: string; status: string }>>(`/design_phases?project_id=eq.${projectId}&select=phase_id,status&order=ord`),
-        ]);
+        const runs = await rest<Array<{ id: string; status: string; workflow: string; error: string | null; error_kind: string | null }>>(`/design_runs?project_id=eq.${projectId}&select=id,status,workflow,error,error_kind&order=created_at.desc&limit=1`);
         const run = runs[0];
         if (!run) return textResult(JSON.stringify({ error: "no hay ningún design-run para este proyecto" }));
+        // Fases DE ESTE run (scopeadas por run_id, no project-wide: `ord` es por-run y un proyecto puede
+        // tener varios runs con los mismos ords → sin el run_id, stuck_phase apunta a otro run).
+        const phases = await rest<Array<{ phase_id: string; status: string }>>(`/design_phases?run_id=eq.${run.id}&select=phase_id,status&order=ord`);
         const stuckPhase = phases.find((p) => p.status !== "done")?.phase_id ?? null; // la fase donde se cortó
         // Reanudable = failed + de diseño (las ceremonias se re-planean solas, no van por /design/resume).
         const resumable = run.status === "failed" && !["sprint-planning", "sprint-review", "retro"].includes(run.workflow);
