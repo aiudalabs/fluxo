@@ -15,6 +15,7 @@ type Row = {
   label: string;           // "#12, #13" (build) · "Sprint Planning"/"Incremento"/"Diseño" (worker)
   kind: "build" | "design";
   usd: number; inTok: number; outTok: number; cacheRead: number; at: string;
+  est?: boolean;           // costo estimado del log (run cancelado/timeout), no autoritativo
 };
 
 // Nombre amable del workflow del run de worker (diseño/ceremonia).
@@ -26,7 +27,7 @@ const WF_LABEL: Record<string, string> = {
 const usd = (n: number) => `$${n.toFixed(2)}`;
 const tok = (n: number) => (n >= 1_000_000 ? `${(n / 1_000_000).toFixed(1)}M` : n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String(n));
 
-type RcRow = { run_id: string; issues: string | null; usd: number; input_tokens: number; output_tokens: number; cache_read_tokens: number; created_at: string };
+type RcRow = { run_id: string; issues: string | null; usd: number; input_tokens: number; output_tokens: number; cache_read_tokens: number; created_at: string; estimated?: boolean };
 type DpRow = { run_id: string; usd: number | null; input_tokens: number | null; output_tokens: number | null; cache_read_tokens: number | null };
 type DrRow = { id: string; workflow: string; created_at: string };
 
@@ -40,7 +41,7 @@ export default function Spend() {
     let cancelled = false;
     const load = async () => {
       const [{ data: rc, error: e1 }, { data: dp }, { data: dr }] = await Promise.all([
-        supabase.from("run_costs").select("run_id,issues,usd,input_tokens,output_tokens,cache_read_tokens,created_at").eq("project_id", projectId),
+        supabase.from("run_costs").select("run_id,issues,usd,input_tokens,output_tokens,cache_read_tokens,created_at,estimated").eq("project_id", projectId),
         supabase.from("design_phases").select("run_id,usd,input_tokens,output_tokens,cache_read_tokens").eq("project_id", projectId),
         supabase.from("design_runs").select("id,workflow,created_at").eq("project_id", projectId),
       ]);
@@ -53,7 +54,7 @@ export default function Spend() {
         label: r.issues ? `#${String(r.issues).replace(/\s/g, "").split(",").join(", #")}` : "build",
         kind: "build",
         usd: Number(r.usd) || 0, inTok: Number(r.input_tokens) || 0, outTok: Number(r.output_tokens) || 0,
-        cacheRead: Number(r.cache_read_tokens) || 0, at: r.created_at,
+        cacheRead: Number(r.cache_read_tokens) || 0, at: r.created_at, est: r.estimated ?? false,
       }));
 
       // 2) DISEÑO/CEREMONIAS (design_phases) — agregado por run (una fila por run de worker).
@@ -121,8 +122,11 @@ export default function Spend() {
                 <span className="mono" style={{ fontSize: 10.5, color: r.kind === "design" ? "var(--navy)" : "var(--ink4)" }}>
                   {r.kind === "design" ? "◆ worker" : "▤ build"}
                 </span>
-                <span style={{ fontSize: 12.5 }}>{r.label}</span>
-                <span style={{ fontWeight: 600 }}>{usd(r.usd)}</span>
+                <span style={{ fontSize: 12.5 }}>
+                  {r.label}
+                  {r.est && <span title="Costo estimado del log (run cancelado/timeout) — no autoritativo" style={{ marginLeft: 6, fontSize: 10, padding: "1px 5px", borderRadius: 5, background: "var(--bg2)", border: "1px solid var(--stroke)", color: "var(--ink4)" }}>~est</span>}
+                </span>
+                <span style={{ fontWeight: 600 }}>{r.est ? "~" : ""}{usd(r.usd)}</span>
                 <span style={{ color: "var(--ink3)", fontSize: 12 }}>{tok(r.inTok + r.outTok)}</span>
                 <span style={{ color: "var(--ink4)", fontSize: 11 }}>{r.at ? new Date(r.at).toLocaleString() : "—"}</span>
               </div>

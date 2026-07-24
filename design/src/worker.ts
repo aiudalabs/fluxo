@@ -24,6 +24,8 @@ import { candidates, storyPrompt, sprintPrompt, docsGuardOk, sprintToPlan, sprin
 import { AutoMerger, prNumFromUrl } from "./automerge.ts";
 import { Approver } from "./approve.ts";
 import { resolveProjectCapabilities, computeCapabilityGate } from "./capabilities.ts";
+import { usageFromActionLog } from "./costFromLog.ts";
+import { priceForModel, costUSD } from "./pricing.ts";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const mainScript = resolve(here, "main.ts");
@@ -366,6 +368,55 @@ async function reconcileCosts() {
   }
 }
 
+// ── 2d-bis) COSTO ESTIMADO de runs cancelados/timeout (F-spend) ────────────────────
+// El happy-path (reconcileCosts) solo ve runs que TERMINARON (dejaron el marcador fluxo:cost). Un run
+// cancelado/timeout gastó plata real pero no deja execution file → $0 invisible. Acá, por cada run de
+// claude.yml que terminó en cancelled/failure/timed_out y NO tiene fila en run_costs, bajamos el LOG
+// del job, sumamos los tokens del stream-json (dedup por message-id) y estimamos el USD con la tabla de
+// precios de LiteLLM. Se guarda con estimated=true. Idempotente: una vez guardado (aunque sea $0), no
+// se vuelve a bajar el log. Acotado a los últimos runs (per_page) para no barrer todo el historial.
+const ORPHAN_CONCLUSIONS = new Set(["cancelled", "failure", "timed_out"]);
+
+async function reconcileOrphanCosts() {
+  if (!app || dryRun) return;
+  const projects = await rest<Array<{ id: string; name: string; org: string | null; repo: string | null; tenant_id: string }>>(`/projects?select=id,name,org,repo,tenant_id&repo=not.is.null`);
+  for (const p of projects) {
+    if (!p.repo || !p.org) continue;
+    try {
+      const repo = GithubRepo.fromUrl(await repoTokenFor(p.org), p.repo);
+      const runs = await repo.listCompletedRuns("claude.yml", 20);
+      const orphans = runs.filter((r) => r.conclusion && ORPHAN_CONCLUSIONS.has(r.conclusion));
+      if (orphans.length === 0) continue;
+      // ¿cuáles ya tienen fila? (una query por proyecto, no por run).
+      const runIds = orphans.map((r) => String(r.id));
+      const existing = await rest<Array<{ run_id: string }>>(`/run_costs?project_id=eq.${p.id}&run_id=in.(${runIds.join(",")})&select=run_id`);
+      const seen = new Set(existing.map((e) => e.run_id));
+      let estimated = 0;
+      for (const run of orphans) {
+        if (seen.has(String(run.id))) continue;
+        const jobId = await repo.firstJobId(run.id);
+        const log = jobId ? await repo.jobLogText(jobId) : "";
+        const u = log ? usageFromActionLog(log) : { model: null, messages: 0, inputTokens: 0, outputTokens: 0, cacheWriteTokens: 0, cacheReadTokens: 0 };
+        const price = priceForModel(u.model);
+        const usd = price ? costUSD(u, price) : 0;
+        // Guardar SIEMPRE (aun $0 / modelo desconocido) para no re-bajar el log en cada tick.
+        const res = await fetch(`${base}/run_costs?on_conflict=project_id,run_id`, {
+          method: "POST",
+          headers: { ...svc, Prefer: "resolution=ignore-duplicates" },
+          body: JSON.stringify({
+            tenant_id: p.tenant_id, project_id: p.id, run_id: String(run.id), issues: null,
+            usd, input_tokens: u.inputTokens, output_tokens: u.outputTokens,
+            cache_read_tokens: u.cacheReadTokens, cache_write_tokens: u.cacheWriteTokens,
+            model: u.model, estimated: true,
+          }),
+        });
+        if (res.ok || res.status === 201) { estimated++; console.log(`  💸 ${p.name} run ${run.id} (${run.conclusion}): ~$${usd.toFixed(4)} estimado (${u.model ?? "modelo desconocido"}, ${u.messages} msgs)`); }
+      }
+      if (estimated) console.log(`💰 costos estimados ${p.name}: ${estimated} run(s) cancelado(s)/timeout costeado(s) del log`);
+    } catch (e) { console.error(`  costos-estimados ${p.name} falló: ${e instanceof Error ? e.message : e}`); }
+  }
+}
+
 // provisioningYamlFor: la última versión de docs/provisioning.yaml del proyecto desde el brain
 // (brain_events kind=artifact, project-wide, versionado — la MISMA fuente que el channel route del
 // console y el Studio). null si el diseño aún no la produjo (degrada: gate off).
@@ -509,6 +560,7 @@ async function tick() {
     // auto-merge los vea CLEAN en el próximo tick.
     try { await reconcileProjection(); } catch (e) { console.error("reconcileProjection:", e instanceof Error ? e.message : e); }
     try { await reconcileCosts(); } catch (e) { console.error("reconcileCosts:", e instanceof Error ? e.message : e); }
+    try { await reconcileOrphanCosts(); } catch (e) { console.error("reconcileOrphanCosts:", e instanceof Error ? e.message : e); }
     try { await reconcileApprovals(); } catch (e) { console.error("reconcileApprovals:", e instanceof Error ? e.message : e); }
     try { await reconcileAutoMerge(); } catch (e) { console.error("reconcileAutoMerge:", e instanceof Error ? e.message : e); }
     try { await reconcileBuild(); } catch (e) { console.error("reconcileBuild:", e instanceof Error ? e.message : e); }
@@ -523,6 +575,7 @@ async function tick() {
 const SCHEMA_PROBES: Array<{ table: string; column: string; migration: string }> = [
   { table: "increment_requests", column: "id", migration: "20260719140000_increment_requests.sql" },
   { table: "design_phases", column: "cache_read_tokens", migration: "20260719120000_design_phase_costs.sql" },
+  { table: "run_costs", column: "estimated", migration: "20260724120000_run_costs_estimated.sql" },
 ];
 async function preflightSchema(): Promise<void> {
   const missing: string[] = [];

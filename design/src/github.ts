@@ -87,6 +87,34 @@ export class GithubRepo {
     if (!res.ok) throw new Error(`POST workflow dispatch → ${res.status} ${await res.text()}`);
   }
 
+  // ── COSTO ESTIMADO de runs cancelados/timeout (F-spend) ─────────────────────
+  // listCompletedRuns: runs `completed` de un workflow con su conclusion (success/failure/cancelled/
+  // timed_out) + branch + created_at. Lo usa reconcileOrphanCosts para hallar los que terminaron sin
+  // execution file (cancel/timeout) y estimarles el costo del log.
+  async listCompletedRuns(workflowFile: string, perPage = 20): Promise<Array<{ id: number; conclusion: string | null; headBranch: string | null; createdAt: string }>> {
+    const res = await fetch(`${API}/repos/${this.owner}/${this.repo}/actions/workflows/${workflowFile}/runs?status=completed&per_page=${perPage}`, { headers: H(this.token) });
+    if (!res.ok) throw new Error(`GET workflows/${workflowFile}/runs → ${res.status} ${await res.text()}`);
+    const data = (await res.json()) as { workflow_runs?: Array<{ id: number; conclusion: string | null; head_branch: string | null; created_at: string }> };
+    return (data.workflow_runs ?? []).map((r) => ({ id: r.id, conclusion: r.conclusion, headBranch: r.head_branch, createdAt: r.created_at }));
+  }
+
+  // firstJobId: el id del primer job de un run (el job `claude` en nuestro claude.yml de un solo job).
+  async firstJobId(runId: number): Promise<number | null> {
+    const res = await fetch(`${API}/repos/${this.owner}/${this.repo}/actions/runs/${runId}/jobs?per_page=1`, { headers: H(this.token) });
+    if (!res.ok) throw new Error(`GET runs/${runId}/jobs → ${res.status} ${await res.text()}`);
+    const data = (await res.json()) as { jobs?: Array<{ id: number }> };
+    return data.jobs?.[0]?.id ?? null;
+  }
+
+  // jobLogText: el log de UN job como TEXTO PLANO (el endpoint de job redirige a texto, no a un zip
+  // como el de run). Node sigue el 302 solo. Devuelve "" si no hay log (borrado por retención, etc.).
+  async jobLogText(jobId: number): Promise<string> {
+    const res = await fetch(`${API}/repos/${this.owner}/${this.repo}/actions/jobs/${jobId}/logs`, { headers: H(this.token) });
+    if (res.status === 404 || res.status === 410) return "";
+    if (!res.ok) throw new Error(`GET jobs/${jobId}/logs → ${res.status} ${await res.text()}`);
+    return await res.text();
+  }
+
   // create: crea el repo bajo `owner`, detectando si es ORG (POST /orgs/{owner}/repos) o
   // CUENTA PERSONAL (POST /user/repos → va a la cuenta del token). Con el token OAuth del
   // usuario funciona en ambas; con el installation token solo en orgs con la App instalada.
