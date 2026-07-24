@@ -125,6 +125,28 @@ export default function Board() {
     finally { setBusy(false); void refreshCandidates(); }
   }, [busy, projectId, refreshCandidates, t]);
 
+  // onStop: DETENER una unidad running (o un "running" falso pegado). Confirma → POST /runs/cancel
+  // con la story KEY; el server EXPANDE a la unidad (sprint completo en sprint-mode) y resetea todo a
+  // backlog. Optimista via Realtime (la card vuelve sola a backlog). Si había >1 run vivo, el server
+  // no cancela ninguno (no cortar trabajo ajeno) y lo avisa. Mismo `busy` que el despacho (anti doble-click).
+  const onStop = useCallback(async (ticket: OrchestratorTicket) => {
+    if (busy) return;
+    if (!window.confirm(t("tickets.stop.confirmGeneric", { id: ticket.id }))) return;
+    setBusy(true);
+    try {
+      const tok = activeToken();
+      const res = await fetch(`/api/projects/${projectId}/runs/cancel`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...(tok ? { Authorization: `Bearer ${tok}` } : {}) },
+        body: JSON.stringify({ storyKey: ticket.id }),
+      });
+      if (!res.ok) { window.alert(t("tickets.stop.error")); return; }
+      const data = (await res.json()) as { liveRuns?: number; cancelledRuns?: number };
+      if ((data.liveRuns ?? 0) > 1 && (data.cancelledRuns ?? 0) === 0) window.alert(t("tickets.stop.multiRun", { n: data.liveRuns! }));
+    } catch { window.alert(t("tickets.stop.error")); }
+    finally { setBusy(false); }
+  }, [busy, projectId, t]);
+
   useEffect(() => {
     let cancelled = false;
     const load = async () => {
@@ -258,14 +280,14 @@ export default function Board() {
       ) : state === "error" ? (
         <div className="tickets-canvas pad"><div className="placeholder err">{t("common.error")}</div></div>
       ) : view === "tabla" ? (
-        <div className="tickets-canvas pad"><TicketsTable tickets={filtered} gates={gates} onOpenTicket={setOpenId} onOpenRun={() => {}} /></div>
+        <div className="tickets-canvas pad"><TicketsTable tickets={filtered} gates={gates} onOpenTicket={setOpenId} onOpenRun={() => {}} onStop={onStop} /></div>
       ) : view === "sprints" ? (
-        <div className="tickets-canvas pad"><SprintsView tickets={filtered} meta={sprintMeta} onOpenTicket={setOpenId} /></div>
+        <div className="tickets-canvas pad"><SprintsView tickets={filtered} meta={sprintMeta} onOpenTicket={setOpenId} onStop={onStop} /></div>
       ) : view === "grafo" ? (
         <div className="tickets-canvas"><DepGraph tickets={filtered} onOpenTicket={setOpenId} /></div>
       ) : (
         <div className="tickets-canvas">
-          <KanbanBoard tickets={filtered} gates={gates} candidates={candidates} capWaiting={capWaiting} onDispatch={onDispatch} onOpenTicket={setOpenId} onOpenRun={() => {}} />
+          <KanbanBoard tickets={filtered} gates={gates} candidates={candidates} capWaiting={capWaiting} onDispatch={onDispatch} onStop={onStop} onOpenTicket={setOpenId} onOpenRun={() => {}} />
         </div>
       )}
 
@@ -273,6 +295,7 @@ export default function Board() {
         ticket={openId ? displayTickets.find((tk) => tk.id === openId) ?? null : null}
         candidate={openId ? candidates.get(openId) : undefined}
         onDispatch={onDispatch}
+        onStop={onStop}
         onClose={() => setOpenId(null)}
         onOpenTicket={setOpenId}
       />
@@ -281,9 +304,10 @@ export default function Board() {
 }
 
 // ── Vista Tabla — lista densa: lane, sprint, deps, estado, PR, run (portada de v1) ──
-function TicketsTable({ tickets, gates, onOpenTicket, onOpenRun }: {
+function TicketsTable({ tickets, gates, onOpenTicket, onOpenRun, onStop }: {
   tickets: OrchestratorTicket[]; gates: Map<string, string[]>;
   onOpenTicket: (id: string) => void; onOpenRun: (id: string) => void;
+  onStop?: (tk: OrchestratorTicket) => void;
 }) {
   const t = useT();
   return (
@@ -314,10 +338,14 @@ function TicketsTable({ tickets, gates, onOpenTicket, onOpenRun }: {
                 <a className="kb-pr" href={tk.pr_url} target="_blank" rel="noreferrer" onClick={(e) => e.stopPropagation()}>PR ↗</a>
               ) : <span style={{ color: "var(--ink4)", fontSize: 12 }}>—</span>}
             </span>
-            <span>
+            <span style={{ display: "flex", alignItems: "center", gap: 6 }}>
               {tk.run_id ? (
                 <button className="kb-run" onClick={(e) => { e.stopPropagation(); onOpenRun(tk.run_id!); }}>{tk.run_id.slice(0, 10)}…</button>
               ) : <span style={{ color: "var(--ink4)", fontSize: 12 }}>—</span>}
+              {tk.status === "running" && onStop && (
+                <button className="btn ghost sm" title={t("tickets.stop.title")}
+                  onClick={(e) => { e.stopPropagation(); onStop(tk); }}>{t("tickets.stop.button")}</button>
+              )}
             </span>
           </div>
         );
@@ -337,8 +365,9 @@ function sprintState(statuses: TicketStatus[]): TicketStatus {
   }
   return "done";
 }
-function SprintsView({ tickets, meta, onOpenTicket }: {
+function SprintsView({ tickets, meta, onOpenTicket, onStop }: {
   tickets: OrchestratorTicket[]; meta: SprintMeta[]; onOpenTicket: (id: string) => void;
+  onStop?: (tk: OrchestratorTicket) => void;
 }) {
   const t = useT();
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
@@ -379,14 +408,24 @@ function SprintsView({ tickets, meta, onOpenTicket }: {
         const pct = g.stories.length ? Math.round((g.done / g.stories.length) * 100) : 0;
         return (
           <section key={g.id} className="sprint-card">
-            <button className="sprint-head" onClick={() => setCollapsed((c) => ({ ...c, [g.id]: open }))} aria-expanded={open}>
-              <span className="sprint-caret">{open ? "▾" : "▸"}</span>
-              <span className="sprint-id">{g.id}</span>
-              <span className="sprint-name">{g.name.replace(/^Sprint\s+\d+\s*[—-]\s*/, "")}</span>
-              <span className="sprint-bar"><span className={`sprint-fill st-${g.state}`} style={{ width: `${pct}%` }} /></span>
-              <span className="sprint-count">{g.done}/{g.stories.length}</span>
-              <span className={`sprint-tag st-${g.state}`}>{t(`tickets.statusLabel.${g.state}`)}</span>
-            </button>
+            <div style={{ display: "flex", alignItems: "stretch", gap: 6 }}>
+              <button className="sprint-head" style={{ flex: 1 }} onClick={() => setCollapsed((c) => ({ ...c, [g.id]: open }))} aria-expanded={open}>
+                <span className="sprint-caret">{open ? "▾" : "▸"}</span>
+                <span className="sprint-id">{g.id}</span>
+                <span className="sprint-name">{g.name.replace(/^Sprint\s+\d+\s*[—-]\s*/, "")}</span>
+                <span className="sprint-bar"><span className={`sprint-fill st-${g.state}`} style={{ width: `${pct}%` }} /></span>
+                <span className="sprint-count">{g.done}/{g.stories.length}</span>
+                <span className={`sprint-tag st-${g.state}`}>{t(`tickets.statusLabel.${g.state}`)}</span>
+              </button>
+              {/* ⏹ a nivel sprint: en sprint-mode detiene el sprint completo (el server expande la unidad
+                  desde cualquier story running); en story-mode detiene la story running clickeada. */}
+              {g.state === "running" && onStop && (
+                <button className="btn ghost sm" style={{ alignSelf: "center" }} title={t("tickets.stop.title")}
+                  onClick={() => { const r = g.stories.find((s) => s.status === "running"); if (r) onStop(r); }}>
+                  {t("tickets.stop.button")}
+                </button>
+              )}
+            </div>
             {open && (
               <div className="sprint-body">
                 {g.goal && <p className="sprint-goal">🎯 {g.goal}</p>}

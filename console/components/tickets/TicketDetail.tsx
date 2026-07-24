@@ -29,10 +29,11 @@ function acceptanceLines(accept?: string): string[] {
   return accept.split(/\r?\n/).map((l) => l.replace(/^\s*[-*•]\s*/, "").trim()).filter(Boolean);
 }
 
-export function TicketDetail({ ticket, candidate, onDispatch, onClose, onOpenTicket }: {
+export function TicketDetail({ ticket, candidate, onDispatch, onStop, onClose, onOpenTicket }: {
   ticket: OrchestratorTicket | null;
   candidate?: DispatchCandidate;
   onDispatch?: (c: DispatchCandidate) => void;
+  onStop?: (tk: OrchestratorTicket) => void;
   onClose: () => void;
   onOpenTicket: (id: string) => void;
 }) {
@@ -177,6 +178,14 @@ export function TicketDetail({ ticket, candidate, onDispatch, onClose, onOpenTic
                   <a className="btn primary" style={{ width: "100%", textAlign: "center" }} href={ticket.session_url} target="_blank" rel="noreferrer">
                     {t("tickets.detail.viewSession")}
                   </a>
+                )}
+                {/* Detener: para un run vivo o un "running" falso pegado. En sprint-mode el server
+                    detiene el sprint completo (todas sus stories running vuelven al backlog). */}
+                {ticket.status === "running" && onStop && (
+                  <button className="btn ghost" style={{ width: "100%" }} disabled={busy}
+                    onClick={() => onStop(ticket)} title={t("tickets.stop.title")}>
+                    {t("tickets.stop.button")}
+                  </button>
                 )}
                 {ticket.pr_url && (
                   <a className="btn ghost" style={{ width: "100%", textAlign: "center" }} href={ticket.pr_url} target="_blank" rel="noreferrer">
