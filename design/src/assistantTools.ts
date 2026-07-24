@@ -49,6 +49,19 @@ export function buildAssistantTools(opts: { projectId: string; rest: Rest }) {
         return textResult(JSON.stringify(rows));
       }),
 
+      tool("get_run_status", "Estado del ÚLTIMO design-run: status, workflow, y si falló → el error + si fue transitorio o fatal + en qué fase se cortó + si es reanudable. Usalo para diagnosticar 'por qué se cortó el diseño'.", {}, async () => {
+        const [runs, phases] = await Promise.all([
+          rest<Array<{ id: string; status: string; workflow: string; error: string | null; error_kind: string | null }>>(`/design_runs?project_id=eq.${projectId}&select=id,status,workflow,error,error_kind&order=created_at.desc&limit=1`),
+          rest<Array<{ phase_id: string; status: string }>>(`/design_phases?project_id=eq.${projectId}&select=phase_id,status&order=ord`),
+        ]);
+        const run = runs[0];
+        if (!run) return textResult(JSON.stringify({ error: "no hay ningún design-run para este proyecto" }));
+        const stuckPhase = phases.find((p) => p.status !== "done")?.phase_id ?? null; // la fase donde se cortó
+        // Reanudable = failed + de diseño (las ceremonias se re-planean solas, no van por /design/resume).
+        const resumable = run.status === "failed" && !["sprint-planning", "sprint-review", "retro"].includes(run.workflow);
+        return textResult(JSON.stringify({ status: run.status, workflow: run.workflow, error: run.error, error_kind: run.error_kind, stuck_phase: stuckPhase, resumable }));
+      }),
+
       tool("read_brain_doc", "Lee la ÚLTIMA versión de un documento de diseño del proyecto por su path (ej docs/BRIEF.md, docs/ARCHITECTURE.md). Si no existe, devuelve la lista de paths disponibles.", { path: z.string().describe("path del doc, ej docs/BRIEF.md") }, async ({ path }) => {
         const rows = await rest<Array<{ artifacts: Artifact[] | null }>>(`/design_phases?project_id=eq.${projectId}&status=eq.done&select=artifacts,updated_at&order=updated_at.asc`);
         const doc = resolveDoc(rows, path);
@@ -64,4 +77,5 @@ export const ASSISTANT_TOOL_IDS = [
   "mcp__fluxo__read_story",
   "mcp__fluxo__read_sprints",
   "mcp__fluxo__read_brain_doc",
+  "mcp__fluxo__get_run_status",
 ];

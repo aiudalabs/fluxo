@@ -41,5 +41,5 @@ test("buildAssistantTools: construye el MCP server sin tocar la red y expone los
   const server = buildAssistantTools({ projectId: "p1", rest });
   assert.ok(server); // se construye
   assert.equal(called, false); // construir NO dispara ninguna query
-  assert.deepEqual(ASSISTANT_TOOL_IDS, ["mcp__fluxo__read_backlog", "mcp__fluxo__read_story", "mcp__fluxo__read_sprints", "mcp__fluxo__read_brain_doc"]);
+  assert.deepEqual(ASSISTANT_TOOL_IDS, ["mcp__fluxo__read_backlog", "mcp__fluxo__read_story", "mcp__fluxo__read_sprints", "mcp__fluxo__read_brain_doc", "mcp__fluxo__get_run_status"]);
 });
