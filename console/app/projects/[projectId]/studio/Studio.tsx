@@ -359,16 +359,39 @@ export default function Studio() {
               <div className="docs-tree-empty">{t("studio.docs.empty.line1")}<br />{t("studio.docs.empty.line2")}</div>
             ) : (
               <nav>
-                {files.map((f) => {
-                  const sel = selPhase == null && active === f.path;
+                {(() => {
+                  // Los mockups (docs/mockups/*.html) son MUCHOS (uno por pantalla) → inundan el riel.
+                  // Los agrupamos bajo UN nodo colapsable "Mockups (N)", con index.html (el prototipo
+                  // navegable) primero. El resto de los docs se listan normal.
+                  const isMockup = (p: string) => /(^|\/)mockups\//.test(p);
+                  const DocBtn = (f: (typeof files)[number]) => {
+                    const sel = selPhase == null && active === f.path;
+                    return (
+                      <button key={f.path} className={`rail-doc${sel ? " on" : ""}`} onClick={() => pickDoc(f.path)}>
+                        <span className="pi">{meta(f.name).icon}</span>
+                        <span className="lbl">{f.name}</span>
+                        <span className="badge">✓</span>
+                      </button>
+                    );
+                  };
+                  const others = files.filter((f) => !isMockup(f.path));
+                  const mockups = files.filter((f) => isMockup(f.path))
+                    .sort((a, b) => (a.name === "index.html" ? -1 : b.name === "index.html" ? 1 : a.name.localeCompare(b.name)));
                   return (
-                    <button key={f.path} className={`rail-doc${sel ? " on" : ""}`} onClick={() => pickDoc(f.path)}>
-                      <span className="pi">{meta(f.name).icon}</span>
-                      <span className="lbl">{f.name}</span>
-                      <span className="badge">✓</span>
-                    </button>
+                    <>
+                      {others.map(DocBtn)}
+                      {mockups.length > 0 && (
+                        <details style={{ marginTop: 2 }}>
+                          <summary className="rail-doc" style={{ cursor: "pointer" }}>
+                            <span className="pi">▢</span>
+                            <span className="lbl">Mockups ({mockups.length})</span>
+                          </summary>
+                          <div style={{ paddingLeft: 12 }}>{mockups.map(DocBtn)}</div>
+                        </details>
+                      )}
+                    </>
                   );
-                })}
+                })()}
               </nav>
             )}
           </div>

@@ -25,6 +25,22 @@ export default function Agents() {
   const [runs, setRuns] = useState<Run[]>([]);
   const [state, setState] = useState<"loading" | "ready" | "error">("loading");
   const [approving, setApproving] = useState<Set<number>>(new Set());
+  const [stopping, setStopping] = useState<Set<string>>(new Set());
+
+  // Detener un build: cancela el run de Actions + resetea la story a backlog (para "running" real o
+  // el falso que quedó pegado cuando la Action falló). El realtime de stories recarga al cambiar.
+  const stop = async (storyKey: string) => {
+    setStopping((s) => new Set(s).add(storyKey));
+    try {
+      const tok = activeToken();
+      await fetch(`/api/projects/${projectId}/runs/cancel`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...(tok ? { Authorization: `Bearer ${tok}` } : {}) },
+        body: JSON.stringify({ storyKey }),
+      });
+    } catch { /* el realtime refleja el resultado */ }
+    finally { setStopping((s) => { const n = new Set(s); n.delete(storyKey); return n; }); }
+  };
 
   // Runs de GitHub: token de la sesión (los endpoints actúan como el usuario). Poll (sin webhook).
   const loadRuns = useCallback(async () => {
@@ -116,6 +132,10 @@ export default function Agents() {
                   {s.pr_url && (
                     <a className="kb-pr" href={s.pr_url} target="_blank" rel="noreferrer" title={t("agents.sessions.openPR")}>{t("agents.sessions.pr")} ↗</a>
                   )}
+                  <button className="btn ghost sm" disabled={stopping.has(s.key)} onClick={() => void stop(s.key)}
+                    title="Detener este build y volver la story al backlog">
+                    {stopping.has(s.key) ? "…" : "⏹ Detener"}
+                  </button>
                 </div>
               ))
             )}
