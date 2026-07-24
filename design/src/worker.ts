@@ -546,19 +546,28 @@ setInterval(() => { tokenByOrg.clear(); void tick(); }, intervalMs);
 async function buildStateSummary(projectId: string): Promise<{ name: string; summary: string } | null> {
   const [proj] = await rest<Array<{ name: string; repo: string | null }>>(`/projects?id=eq.${projectId}&select=name,repo`);
   if (!proj) return null;
-  const [sprints, stories, costs, phases, incs] = await Promise.all([
+  const [sprints, stories, costs, phases, incs, runs] = await Promise.all([
     rest<Array<{ key: string; title: string }>>(`/sprints?project_id=eq.${projectId}&select=key,title&order=position`),
     rest<Array<{ key: string; title: string; status: string; lane: string | null; pr_url: string | null }>>(`/stories?project_id=eq.${projectId}&select=key,title,status,lane,pr_url&order=key`),
     rest<Array<{ usd: number; issues: string | null }>>(`/run_costs?project_id=eq.${projectId}&select=usd,issues`),
     rest<Array<{ phase_id: string; status: string; usd: number | null }>>(`/design_phases?project_id=eq.${projectId}&select=phase_id,status,usd&order=ord`),
     rest<Array<{ instructions: string; status: string }>>(`/increment_requests?project_id=eq.${projectId}&select=instructions,status&order=created_at.desc&limit=5`),
+    rest<Array<{ status: string; workflow: string; error: string | null; error_kind: string | null }>>(`/design_runs?project_id=eq.${projectId}&select=status,workflow,error,error_kind&order=created_at.desc&limit=1`),
   ]);
   const byStatus = (s: string) => stories.filter((x) => x.status === s).length;
   const buildUsd = costs.reduce((a, c) => a + (c.usd ?? 0), 0);
   const designUsd = phases.reduce((a, p) => a + (p.usd ?? 0), 0);
+  const run = runs[0];
+  // El "por qué" de un diseño cortado (Addendum): el assistant lo usa para explicar y proponer resume.
+  const runLine = !run
+    ? "Último design-run: — (ninguno)"
+    : run.status === "failed"
+      ? `Último design-run: FAILED (${run.workflow}${run.error_kind ? `, ${run.error_kind}` : ""})${run.error ? ` — ${run.error.slice(0, 300)}` : ""}`
+      : `Último design-run: ${run.status} (${run.workflow})`;
   const lines = [
     `Proyecto: ${proj.name}${proj.repo ? ` · repo ${proj.repo}` : " · (sin repo aún)"}`,
     `Costo total: $${(buildUsd + designUsd).toFixed(2)} (build $${buildUsd.toFixed(2)}, diseño $${designUsd.toFixed(2)})`,
+    runLine,
     `Diseño: ${phases.length} fases (${phases.filter((p) => p.status === "done").length} done)`,
     `Sprints: ${sprints.map((s) => `${s.key} ${s.title}`).join(" · ") || "—"}`,
     `Stories: ${stories.length} total — backlog ${byStatus("backlog")}, running ${byStatus("running")}, review ${byStatus("review")}, done ${byStatus("done")}`,

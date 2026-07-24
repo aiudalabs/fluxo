@@ -24,6 +24,20 @@ function b64url(input: string | Buffer): string {
   return Buffer.from(input).toString("base64").replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
 }
 
+// 5xx transitorios de Cloudflare↔origen (incl. 525 SSL handshake) + rate-limit: HIPOS de infra, no
+// fallas del diseño. Fuente única para el retry del rest() y para clasificar el error de un run caído.
+export const TRANSIENT_HTTP = new Set([429, 500, 502, 503, 504, 520, 521, 522, 523, 524, 525, 527, 530]);
+
+// classifyRunError distingue un fallo TRANSITORIO (un blip de infra que agotó los reintentos → reanudar
+// tiene sentido) de uno FATAL (un error real del diseño). Lee el mensaje que tira rest(): o termina en
+// "(agotados los reintentos transitorios)", o incluye "→ <status> …" con el código HTTP.
+export function classifyRunError(message: string): "transient" | "fatal" {
+  if (/agotados los reintentos transitorios/i.test(message)) return "transient";
+  const m = message.match(/→\s*(\d{3})\b/);
+  if (m && TRANSIENT_HTTP.has(Number(m[1]))) return "transient";
+  return "fatal";
+}
+
 // mintTenantJwt mints an HS256 tenant JWT (role=authenticated, tenant claim) — the same
 // shape the console dev-shim and the Go writer mint, so RLS scopes to this tenant.
 export function mintTenantJwt(secret: string, tenant: string, ttlSeconds = 3600, nowSeconds?: number): string {
@@ -112,10 +126,6 @@ export class SupabaseDesignStore {
     };
   }
 
-  // 5xx transitorios de Cloudflare↔origen (incl. 525 SSL handshake) + rate-limit: son HIPOS de infra,
-  // NO fallas del diseño. Un run de varias fases aprobadas NO debe morir porque un read tuvo un blip.
-  private static readonly TRANSIENT = new Set([429, 500, 502, 503, 504, 520, 521, 522, 523, 524, 525, 527, 530]);
-
   private async rest(path: string, init: RequestInit & { prefer?: string }): Promise<Response> {
     const { prefer, ...rest } = init;
     let reminted = false;
@@ -126,7 +136,7 @@ export class SupabaseDesignStore {
       const res = await fetch(`${this.base}${path}`, { ...rest, headers: this.headers(prefer) });
       if (res.ok) return res;
       if (res.status === 401 && !reminted) { this.remint(); reminted = true; continue; }
-      if (SupabaseDesignStore.TRANSIENT.has(res.status) && attempt < 4) {
+      if (TRANSIENT_HTTP.has(res.status) && attempt < 4) {
         last = String(res.status);
         await new Promise((r) => setTimeout(r, 600 * Math.pow(2, attempt)));
         continue;
@@ -204,10 +214,16 @@ export class SupabaseDesignStore {
     return (await res.json()) as Array<{ gate_id: string; status: string; outcome: string | null }>;
   }
 
-  async setRunStatus(status: string): Promise<void> {
+  // setRunStatus persiste el estado del run. Si falló, guarda TAMBIÉN el error + si fue transitorio o
+  // fatal (para que el assistant/UI expliquen la causa y decidan si ofrecer "Reanudar"). Cualquier
+  // estado NO-failed limpia un error viejo (el run progresó → la causa anterior ya no aplica).
+  async setRunStatus(status: string, err?: { error: string; kind: "transient" | "fatal" }): Promise<void> {
+    const body: Record<string, unknown> = { status, updated_at: new Date().toISOString() };
+    if (status === "failed" && err) { body.error = err.error.slice(0, 2000); body.error_kind = err.kind; }
+    else if (status !== "failed") { body.error = null; body.error_kind = null; }
     await this.rest(`/design_runs?id=eq.${this.runId}`, {
       method: "PATCH",
-      body: JSON.stringify({ status, updated_at: new Date().toISOString() }),
+      body: JSON.stringify(body),
     });
   }
 

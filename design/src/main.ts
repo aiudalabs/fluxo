@@ -18,7 +18,7 @@ import { runDesign, resumeStartIndex, type ResumeState } from "./engine.ts";
 import { autoResolver } from "./autonomy.ts";
 import { recordOutput, type StepContext } from "./resolve.ts";
 import { makeSdkRunner } from "./sdkRunner.ts";
-import { SupabaseDesignStore } from "./supabase.ts";
+import { SupabaseDesignStore, classifyRunError } from "./supabase.ts";
 import { type GithubTarget } from "./handoff.ts";
 import { makeEffectExecutor } from "./effects.ts";
 import { GithubApp } from "./github.ts";
@@ -228,8 +228,12 @@ try {
   for (const [phase, n] of Object.entries(res.phaseRuns)) console.log(`  ${phase}: ${n} corrida(s)`);
 } catch (err) {
   clearInterval(heartbeat);
-  await store.setRunStatus("failed");
-  console.error(`\n✗ design run ${runId} falló:`, err instanceof Error ? err.message : err);
+  // Persistir el PORQUÉ (antes se perdía en stdout): mensaje + si fue transitorio (blip de infra que
+  // agotó reintentos → reanudable) o fatal. buildStateSummary/get_run_status lo leen para explicar.
+  const msg = err instanceof Error ? err.message : String(err);
+  const kind = classifyRunError(msg);
+  await store.setRunStatus("failed", { error: msg, kind });
+  console.error(`\n✗ design run ${runId} falló (${kind}):`, msg);
   process.exit(1);
 }
 
