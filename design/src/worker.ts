@@ -68,6 +68,8 @@ const STALE_MS = 90_000; // heartbeat vencido → el run está huérfano (proces
 // el trigger de diseño, sin sprint) — un run de ceremonia huérfano se marca failed y el reloj
 // (reconcileCeremonies) lo re-planea fresco sobre el sprint aún sin planear.
 const CEREMONY_WORKFLOWS = new Set(["sprint-planning", "sprint-review", "retro"]);
+// El secret del CANAL de build (no una capability del registry) — sin él la Action arranca y falla.
+const CHANNEL_SECRET = "CLAUDE_CODE_OAUTH_TOKEN";
 
 // spawnDesign lanza main.ts para un proyecto: diseño FRESCO (sin resumeRunId) o RESUME de un
 // run caído (con --resume=<runId>, Opción B). Al salir, quita el proyecto de `designing` para
@@ -435,6 +437,13 @@ async function reconcileBuild() {
     const byId = new Map(dstories.map((s) => [s.id, s]));
     let repo: GithubRepo | null = null;
     if (!dryRun) repo = GithubRepo.fromUrl(await repoTokenFor(p.org), p.repo);
+    // Gate del CANAL de build: no auto-despachar si falta el secret CLAUDE_CODE_OAUTH_TOKEN en el repo —
+    // la Action arrancaría y fallaría, y con la degradación agent:failed→backlog re-despacharía en LOOP.
+    // Fail-open ante null (no se pudo chequear) o dry-run (repo null).
+    if (repo && (await repo.secretPresent(CHANNEL_SECRET)) === false) {
+      console.log(`  ⏸ ${p.name}: falta el secret ${CHANNEL_SECRET} en el repo → no auto-despacho (canal no listo)`);
+      continue;
+    }
     const gate = await capabilityGateFor(p.id, dstories, repo);
     for (const s of dstories) { const needs = gate.needsByStoryId.get(s.id); if (needs) s.needsCapabilities = needs; }
 

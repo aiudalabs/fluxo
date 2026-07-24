@@ -13,7 +13,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { verifySessionJwt, getUserToken, admin } from "@/lib/server/githubAuth";
 import { loadDispatchContext, computeCandidates, loadCapabilityGate } from "@/lib/server/dispatchData";
-import { githubSecretProbe } from "@/lib/server/capabilitiesData";
+import { githubSecretProbe, CLAUDE_SECRET } from "@/lib/server/capabilitiesData";
 import { storyPrompt, sprintPrompt } from "../../../../../../design/src/dispatch.ts";
 
 const API = "https://api.github.com";
@@ -64,6 +64,13 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
   if (cand.members.length === 0) return NextResponse.json({ error: "candidato sin stories" }, { status: 409 });
 
   if (!token) return NextResponse.json({ error: "github no conectado" }, { status: 403 });
+
+  // Gate del CANAL de build: no disparar si el secret CLAUDE_CODE_OAUTH_TOKEN no está en el repo — si
+  // no, la Action arranca y falla de una (y la story queda "running"). El probe existía en Settings
+  // pero el despacho no lo consultaba. null (no se pudo chequear) = fail-open, como el gate de capabilities.
+  if ((await githubSecretProbe(slug, token)(CLAUDE_SECRET)) === false) {
+    return NextResponse.json({ error: "falta el secret CLAUDE_CODE_OAUTH_TOKEN en el repo — seteálo en Settings → Canal de build antes de despachar" }, { status: 409 });
+  }
 
   const prompt = cand.kind === "sprint" ? sprintPrompt(cand.title, cand.members) : storyPrompt(cand.members[0]);
   const issuesCsv = cand.issues.join(",");

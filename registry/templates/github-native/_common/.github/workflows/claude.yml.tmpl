@@ -130,6 +130,26 @@ jobs:
               --body "Trabajo rescatado automáticamente al terminar la sesión del agente (Rescue checkpoint). Revisar y completar." || true
           fi
 
+      # Si el run FALLÓ (p.ej. faltaba un secret, o el agente crasheó): marcá los issues con
+      # `agent:failed`. La proyección del conductor tiene un fast-path que ante ese label degrada la
+      # story a `backlog` al toque — sin esto, un fallo dejaba la story "running" pegada para siempre.
+      # (El despacho ya gatea por el secret del canal, así que backlog NO re-despacha en loop sin secret.)
+      - name: Mark issues failed
+        if: ${{ failure() && inputs.issues != '' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ISSUES: ${{ inputs.issues }}
+        run: |
+          gh label create "agent:failed" -c B60205 \
+            -d "El run del agente falló (aiuda-forge conductor)" \
+            -R "${{ github.repository }}" --force || true
+          IFS=',' read -ra NUMS <<< "$ISSUES"
+          for n in "${NUMS[@]}"; do
+            n="${n// /}"
+            [ -z "$n" ] && continue
+            gh issue edit "$n" --add-label "agent:failed" -R "${{ github.repository }}" || true
+          done
+
       # Soltar el candado de "corriendo": el run terminó (éxito, fallo o cancelación
       # limpia). La proyección del conductor ve el label ausente y deriva el estado
       # real del issue (backlog si no dejó PR, in_review si sí) — sin ancla trabada.
