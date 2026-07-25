@@ -19,6 +19,8 @@ export default defineConfig({
 			defaultLocale: 'es',
 			locales: { root: { label: 'Español', lang: 'es' } },
 			customCss: ['./src/styles/fluxo.css'],
+			// Zoom/pan de los diagramas mermaid (click → pantalla completa). Script en public/.
+			head: [{ tag: 'script', attrs: { src: '/mermaid-zoom.js', defer: true } }],
 			social: [{ icon: 'external', label: 'AIuda Labs', href: 'https://fluxo.aiudalabs.com' }],
 			sidebar: [
 				{ label: 'Introducción', slug: 'index' },

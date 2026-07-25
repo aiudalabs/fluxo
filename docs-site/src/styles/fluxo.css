@@ -64,9 +64,45 @@
 /* El título del sitio (logo textual) con el peso de marca. */
 .site-title { font-weight: 700; }
 
-/* Los diagramas mermaid: centrados y con aire, para que respiren en la página. */
-.mermaid, [data-mermaid] {
+/* Los diagramas mermaid: centrados, grandes y con aire; click para zoom a pantalla completa. */
+pre.mermaid {
 	display: flex;
 	justify-content: center;
 	margin: 1.5rem 0;
+	background: transparent;
+	border: 0;
+	padding: 0;
+	overflow-x: auto;
 }
+pre.mermaid[data-processed] svg {
+	max-width: 100%;
+	height: auto;
+	cursor: zoom-in;
+}
+
+/* Overlay de zoom/pan (mermaid-zoom.js). */
+.mmz-overlay {
+	position: fixed; inset: 0; z-index: 9999;
+	background: color-mix(in srgb, var(--sl-color-bg) 88%, #000);
+	backdrop-filter: blur(2px);
+	overflow: hidden; cursor: grab;
+}
+.mmz-overlay:active { cursor: grabbing; }
+.mmz-stage {
+	position: absolute; inset: 0;
+	display: flex; align-items: center; justify-content: center;
+}
+.mmz-stage svg { will-change: transform; }
+.mmz-hint {
+	position: fixed; bottom: 16px; left: 50%; transform: translateX(-50%);
+	font-family: var(--sl-font-mono); font-size: 12px; letter-spacing: .04em;
+	color: var(--sl-color-gray-2); background: var(--sl-color-bg-sidebar);
+	border: 1px solid var(--sl-color-hairline); border-radius: 999px; padding: 6px 14px;
+}
+.mmz-close {
+	position: fixed; top: 16px; right: 18px; z-index: 1;
+	width: 40px; height: 40px; border-radius: 50%; cursor: pointer;
+	border: 1px solid var(--sl-color-hairline); background: var(--sl-color-bg-sidebar);
+	color: var(--sl-color-white); font-size: 16px; line-height: 1;
+}
+.mmz-close:hover { border-color: var(--sl-color-accent); color: var(--sl-color-accent); }

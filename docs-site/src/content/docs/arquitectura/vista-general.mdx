@@ -28,40 +28,34 @@ nada crítico — solo lee (RLS) y dispara acciones que el worker/kernel re-deri
 
 ```mermaid
 graph TB
-  subgraph client["Cliente (agencia / dev-shop)"]
-    U["Usuario · Browser"]
-    GH["GitHub del cliente<br/>repos · Issues · Actions"]
+  U["Usuario · Browser"]
+  C["Console · Next.js<br/>board · studio · agentes · spend · preview"]
+  REG["registry/ · el método como data<br/>agents · workflows · skills · templates"]
+
+  subgraph worker["Worker · Node + Claude Agent SDK · tick 20s"]
+    DES["reconcileDesign / Increments / Ceremonies<br/>PLANO DISEÑO — juicio"]
+    DISP["reconcileBuild · despacho gateado"]
+    PROJ["reconcileProjection · GitHub = verdad"]
+    MERGE["reconcileApprovals · AutoMerge · gated"]
+    COST["reconcileCosts · OrphanCosts · costo"]
   end
 
-  subgraph plat["Fluxo · plataforma (AIuda Labs)"]
-    C["Console · Next.js<br/>board · studio · agentes · spend · preview"]
-    REG["registry/ · el método como data<br/>agents · workflows · skills · templates · providers"]
-
-    subgraph worker["Worker · Node + Claude Agent SDK (tick 20s)"]
-      DES["reconcileDesign / Increments / Ceremonies<br/>(PLANO DISEÑO — juicio)"]
-      DISP["reconcileBuild · despacho gateado"]
-      PROJ["reconcileProjection<br/>GitHub = verdad → estado"]
-      MERGE["reconcileApprovals · AutoMerge (gated)"]
-      COST["reconcileCosts · OrphanCosts<br/>(costo, incl. runs cancelados)"]
-      ASST["Assistant HTTP :8790 (co-piloto)"]
-    end
-  end
-
-  SB["Supabase (managed)<br/>Postgres + RLS + Realtime + Auth<br/>brain · stories · sprints · run_costs · design_phases"]
+  SB["Supabase managed<br/>Postgres + RLS + Realtime + Auth<br/>brain · stories · sprints · run_costs"]
+  GH["GitHub del cliente<br/>repos · Issues · Actions"]
 
   U -->|HTTPS| C
-  U -.->|login GitHub OAuth| GH
-  C -->|JWT del tenant · RLS| SB
+  U -.->|login OAuth| GH
+  C -->|JWT tenant · RLS| SB
   C -.->|Realtime| SB
-  C -->|▶ despacho manual| GH
+  C -->|despacho manual| GH
+  REG -.->|lee el método| DES
   DES -->|Claude Agent SDK| SB
-  DISP -->|workflow_dispatch claude.yml<br/>token del cliente · BYO| GH
-  GH -->|Action: agente Claude<br/>implementa · commitea · abre PR| GH
-  PROJ -->|lee labels / PR / assignee| GH
+  DISP -->|workflow_dispatch · BYO| GH
+  PROJ -->|labels / PR / assignee| GH
   MERGE -->|merge squash gated| GH
-  COST -->|marcador de costo / log del run| GH
-  worker -->|service_role · paths de sistema| SB
-  REG -.->|lee el método| worker
+  COST -->|marcador / log del run| GH
+  COST -->|service_role| SB
+  GH -->|Action: agente Claude<br/>implementa · abre PR| GH
 
   classDef plane fill:#fbe7de,stroke:#ec4a12,stroke-width:1px,color:#151219;
   classDef sub fill:#dceefb,stroke:#1e93d6,stroke-width:1px,color:#151219;
