@@ -1,0 +1,83 @@
+---
+title: Arquitectura — secuencia end-to-end
+description: El recorrido de un brief a un PR mergeado — quién hace qué, en qué orden, y dónde están los gates.
+---
+
+import { Aside } from '@astrojs/starlight/components';
+
+Este es el recorrido completo de una unidad de trabajo: del **brief** en español a un **PR mergeado** en
+el repo del cliente. Muestra los dos planos en el tiempo y dónde caen los **gates** (aprobación humana) y
+los ganchos de **costo** y **estado**.
+
+## El diagrama
+
+```mermaid
+sequenceDiagram
+  autonumber
+  actor U as Usuario (browser)
+  participant C as Console (Next.js)
+  participant W as Worker (Agent SDK)
+  participant SB as Supabase (brain · RLS)
+  participant GA as GitHub Actions (agente)
+
+  U->>C: Crea proyecto + brief (español)
+  C->>SB: Escribe el brief (JWT tenant · RLS)
+
+  rect rgba(236,74,18,0.06)
+    note over W,SB: PLANO DISEÑO (juicio · Claude Agent SDK · costo real)
+    W->>SB: reconcileDesign: PRD → modelo de datos → backlog → sprints
+    W->>SB: Escribe fases + costo (design_phases) + gates
+  end
+
+  U->>C: Revisa en el Studio y APRUEBA cada gate
+  C->>SB: Marca el gate aprobado
+
+  rect rgba(30,147,214,0.06)
+    note over C,GA: PLANO BUILD (ejecución · token del cliente · BYO · cero COGS)
+    alt Despacho manual
+      U->>C: ▶ Despachar (story o sprint)
+      C->>C: Re-deriva el candidato + gate del secret del canal
+      C->>GA: workflow_dispatch claude.yml (issues, prompt)
+    else Despacho automático (dispatch_mode:auto)
+      W->>GA: reconcileBuild: workflow_dispatch (si el canal está READY)
+    end
+    C->>SB: Marca la unidad running (money-safe, antes de disparar)
+    GA->>GA: Agente Claude: implementa · commitea · abre PR
+    GA->>GA: Labels agent:running / agent:failed
+  end
+
+  loop tick 20s
+    W->>GA: reconcileProjection: lee labels / PR / assignee
+    W->>SB: Deriva el estado real (running / review / backlog / done)
+    W->>GA: reconcileCosts: marcador fluxo:cost → run_costs
+    opt Run cancelado / timeout (sin execution file)
+      W->>GA: reconcileOrphanCosts: baja el log → estima el costo
+      W->>SB: run_costs (estimated=true)
+    end
+    W->>GA: reconcileApprovals: aprueba workflows seguros
+    W->>GA: reconcileAutoMerge: merge squash (gated: CI verde + review APPROVE)
+    W->>SB: Estado → done
+  end
+
+  SB-->>C: Realtime: el board se actualiza solo
+  C-->>U: Ve el progreso en vivo (board · agentes · spend)
+```
+
+## Notas del flujo
+
+- **Los gates son humanos.** El worker no avanza un sprint que no fue aprobado en el Studio; el despacho
+  no dispara si el canal de build no está READY (secret presente). El humano clickea; el kernel
+  **re-deriva** la verdad server-side — nunca confía en el cliente.
+- **Money-safe.** La unidad se marca `running` **antes** de disparar la Action → sale del set
+  despachable, nunca hay doble-run pago. Pasado el punto de no retorno, un fallo no revierte
+  (revertir re-despacharía).
+- **La proyección deriva de GitHub.** El estado en el brain no se "escribe a mano": se deriva de los
+  labels/PR/assignee que la Action deja. Un `agent:failed` degrada la story a `backlog` al toque.
+- **El costo nunca miente.** Los runs que terminan dejan un marcador `fluxo:cost`; los cancelados/timeout
+  se estiman del log del run (tokens del stream-json × tabla de precios) y se marcan `estimated`.
+
+<Aside type="caution" title="El plano BUILD cuesta plata">
+Cada `workflow_dispatch` dispara un agente Claude real en las Actions del cliente. Por eso todo el camino
+de despacho es determinista y gateado: identidad, aislamiento (RLS), máquina de estados y ruteo son
+código/config; solo el diseño, el código y la verificación de juicio son agentes.
+</Aside>

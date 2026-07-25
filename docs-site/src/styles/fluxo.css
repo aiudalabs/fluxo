@@ -1,0 +1,72 @@
+/* Theme de marca Fluxo sobre Starlight — coherencia con el console (mismos tokens y fuentes).
+   Fuente de verdad: console/app/globals.css. Accent = bermellón #ec4a12; títulos en Space Grotesk,
+   cuerpo en Inter. Starlight expone su theme como custom properties --sl-*; acá las reasignamos.
+   El default de Starlight es DARK (:root); el light va en :root[data-theme='light']. */
+
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
+
+:root {
+	--sl-font: 'Inter', system-ui, -apple-system, sans-serif;
+	--sl-font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, monospace;
+
+	/* Acento Fluxo (dark) — #ff5e2c con escala low→high para fondos, bordes y texto-acento. */
+	--sl-color-accent-low: #3a1608;
+	--sl-color-accent: #ff5e2c;
+	--sl-color-accent-high: #ffc7b0;
+
+	/* Neutrales (dark) — bg casi-negro violáceo del console (#09090c / #0c0b10 / #211f2b). */
+	--sl-color-white: #f5f4f8;
+	--sl-color-gray-1: #cfcdd6;
+	--sl-color-gray-2: #a6a3b2;
+	--sl-color-gray-3: #6d6a7a;
+	--sl-color-gray-4: #45424e;
+	--sl-color-gray-5: #211f2b;
+	--sl-color-gray-6: #16151c;
+	--sl-color-black: #09090c;
+	--sl-color-bg: #09090c;
+	--sl-color-bg-nav: rgba(12, 11, 16, 0.85);
+	--sl-color-bg-sidebar: #0c0b10;
+	--sl-color-hairline: rgba(255, 255, 255, 0.08);
+	--sl-color-hairline-shade: rgba(255, 255, 255, 0.05);
+}
+
+:root[data-theme='light'] {
+	/* Acento Fluxo (light) — #ec4a12. */
+	--sl-color-accent-low: #ffe3d7;
+	--sl-color-accent: #ec4a12;
+	--sl-color-accent-high: #7a2409;
+
+	/* Neutrales (light) — bg lavanda-gris del console (#f4f3f6 / #eeedf2 / #e4e2ea). */
+	--sl-color-white: #151219;
+	--sl-color-gray-1: #3a3742;
+	--sl-color-gray-2: #57545f;
+	--sl-color-gray-3: #8a8794;
+	--sl-color-gray-4: #b6b3bf;
+	--sl-color-gray-5: #e4e2ea;
+	--sl-color-gray-6: #eeedf2;
+	--sl-color-gray-7: #f4f3f6;
+	--sl-color-black: #ffffff;
+	--sl-color-bg: #f4f3f6;
+	--sl-color-bg-nav: rgba(244, 243, 246, 0.85);
+	--sl-color-bg-sidebar: #eeedf2;
+	--sl-color-hairline: rgba(21, 18, 25, 0.1);
+	--sl-color-hairline-shade: rgba(21, 18, 25, 0.06);
+}
+
+/* Títulos en Space Grotesk (los headings "Mission Control" del console), tracking apretado. */
+:is(h1, h2, h3, h4, h5),
+.site-title,
+.sl-markdown-content :is(h1, h2, h3, h4, h5) {
+	font-family: 'Space Grotesk', 'Inter', sans-serif;
+	letter-spacing: -0.015em;
+}
+
+/* El título del sitio (logo textual) con el peso de marca. */
+.site-title { font-weight: 700; }
+
+/* Los diagramas mermaid: centrados y con aire, para que respiren en la página. */
+.mermaid, [data-mermaid] {
+	display: flex;
+	justify-content: center;
+	margin: 1.5rem 0;
+}
