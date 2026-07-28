@@ -53,7 +53,11 @@ jobs:
           for n in "${NUMS[@]}"; do
             n="${n// /}"
             [ -z "$n" ] && continue
-            gh issue edit "$n" --add-label "agent:running" -R "${{ github.repository }}" || true
+            # --add agent:running Y --remove agent:failed: un run nuevo SUPERA el fallo anterior. Sin
+            # quitar agent:failed, un re-despacho tras un fallo dejaba los issues con AMBOS labels y la
+            # proyección (fast-path agent:failed → backlog, que gana sobre running) mantenía la story en
+            # backlog aunque el run estuviera vivo (bug del 2026-07-28 tras el falso positivo del watchdog).
+            gh issue edit "$n" --add-label "agent:running" --remove-label "agent:failed" -R "${{ github.repository }}" || true
           done
 
       - uses: actions/checkout@v4
