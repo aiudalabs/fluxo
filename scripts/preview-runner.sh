@@ -114,8 +114,102 @@ teardown() { # $1 = preview_id
   local pid="$1"
   local wd="$PREVIEW_DIR/$pid"
   [ -f "$wd/compose.yml" ] && docker compose -f "$wd/compose.yml" down -v >/dev/null 2>&1
+  # BYO (docs/15): el stack corre bajo el proyecto `fluxo-preview-<pid>` (app compose + edge override).
+  # `down` por nombre de proyecto usa labels → baja todo aunque no tengamos los -f a mano.
+  docker compose -p "fluxo-preview-$pid" down -v >/dev/null 2>&1
   [ -f "$wd/.port" ] && rm -f "$PREVIEW_DIR/.port-$(cat "$wd/.port" 2>/dev/null)" 2>/dev/null
   rm -rf "$wd" 2>/dev/null
+}
+
+# ── BYO (bring-your-own-compose) — el camino GENERAL (docs/15) ────────────────────────────────────
+# Si el repo trae su propio docker-compose.yml, la app SE AUTO-DESCRIBE: la corremos tal cual en vez de
+# una receta por-stack de Fluxo. Así previsualiza CUALQUIER app bien scaffoldeada (no solo react-supabase),
+# usando la MISMA fuente de verdad con la que se buildea. LIMITACIÓN de esta versión (a mover a un cluster
+# aparte — docs/15): corre en el VPS de prod y NO sanitiza el compose (asume scaffold limpio: sin
+# privileged/host-net/socket, con límites). El hardening (guard de compose + cluster efímero dedicado)
+# es el pending documentado en docs/15.
+
+# gen_env: escribe un .env efímero llenando CADA var del .env.example del repo. Objetivo: que la app
+# BOOTEE (los ${VAR:?required} no vacíos) y su /api/health de 200. Secrets → random; la URL pública →
+# la del preview; modes/emails → demo. No es para login real — es un preview NAVEGABLE, descartable.
+gen_env() { # $1=repodir  $2=port  $3=url
+  python3 - "$1/.env.example" "$2" "$3" <<'PY'
+import sys, os, secrets, re
+path, port, url = sys.argv[1], sys.argv[2], sys.argv[3]
+lines = open(path).read().splitlines() if os.path.exists(path) else []
+out = []
+for ln in lines:
+    m = re.match(r'^([A-Z][A-Z0-9_]*)=(.*)$', ln)
+    if not m:
+        continue
+    k, default = m.group(1), m.group(2)
+    if k == 'WEB_PORT' or k.endswith('_PORT'):        v = port if k == 'WEB_PORT' else (default or '')
+    elif k in ('NEXTAUTH_URL',) or k.endswith(('PUBLIC_URL',)) or k in ('APP_URL', 'BASE_URL'): v = url
+    elif k.endswith('_MODE'):                          v = default or 'mock'
+    elif k.endswith('_EMAIL'):                         v = 'demo@preview.fluxo.dev'
+    elif 'SMTP' in k and k.endswith('URL'):            v = 'smtp://localhost:1025'
+    elif k.endswith(('_PASSWORD', '_SECRET', '_HASH', '_KEY', '_TOKEN')): v = secrets.token_hex(24)
+    else:                                              v = default   # DATABASE_URL/REDIS_URL: internos → default
+    out.append('%s=%s' % (k, v))
+print('\n'.join(out))
+PY
+}
+
+# byo_preview: corre el compose PROPIO del repo + un edge Caddy (same-origin) en la red de ingress.
+byo_preview() { # $1=id  $2=pid  $3=wd  $4=repodir
+  local id="$1" pid="$2" wd="$3" repodir="$4"
+  local port; port=$(free_port); echo "$port" > "$wd/.port"; touch "$PREVIEW_DIR/.port-$port"
+  local url="https://preview-$pid.$PREVIEW_BASE_HOST"
+  log "BYO $id → compose propio del repo (puerto $port)"
+
+  # 1) .env efímero (llena los ${VAR:?required} del compose para que bootee).
+  if ! gen_env "$repodir" "$port" "$url" > "$repodir/.env" 2>"$wd/env.log"; then
+    set_status "$id" failed ",\"error\":$(jesc "no se pudo generar el .env del preview: $(tail -1 "$wd/env.log")")"; teardown "$pid"; return
+  fi
+
+  # 2) edge Caddy same-origin (app en /, y /api la sirve el mismo Next). Proxya a web:3000 por la red
+  #    de la app; se une a la red de ingress → el Caddy de prod lo alcanza POR NOMBRE (no por puerto de
+  #    host) y le da TLS+sslip. SIN `ports:`: la app ya publica web en WEB_PORT=$port (health check +
+  #    acceso directo); el edge solo necesita la red de ingress. Publicar el edge en $port chocaría con web.
+  printf ':80 {\n\treverse_proxy web:3000\n}\n' > "$wd/edge.Caddyfile"
+  cat > "$wd/edge-override.yml" <<EOF
+services:
+  edge:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    depends_on: [web]
+    volumes:
+      - "$wd/edge.Caddyfile:/etc/caddy/Caddyfile:ro"
+    networks: [default, fpingress]
+networks:
+  fpingress:
+    external: true
+    name: $INGRESS_NET
+EOF
+
+  # 3) levantar (proyecto fluxo-preview-<pid> → el edge queda como fluxo-preview-<pid>-edge-1, el
+  #    nombre que el Caddy de prod rutea). --build: la app trae Dockerfile(s) propios.
+  ensure_ingress
+  local proj="fluxo-preview-$pid"
+  if ! docker compose -p "$proj" -f "$repodir/docker-compose.yml" -f "$wd/edge-override.yml" --env-file "$repodir/.env" up -d --build >"$wd/up.log" 2>&1; then
+    set_status "$id" failed ",\"error\":$(jesc "docker compose up (BYO) falló: $(tail -3 "$wd/up.log" | tr '\n' ' ')")"; teardown "$pid"; return
+  fi
+
+  # 4) esperar /api/health=200 vía el edge. Hasta ~12 min (build de la imagen + migrate + boot).
+  local ok=""
+  for _ in $(seq 1 90); do
+    sleep 8
+    [ "$(curl -s -o /dev/null -w '%{http_code}' "http://127.0.0.1:$port/api/health" 2>/dev/null || echo 000)" = "200" ] && { ok=1; break; }
+  done
+  if [ -z "$ok" ]; then
+    set_status "$id" failed ",\"error\":$(jesc "la app (BYO) no respondió /api/health a tiempo — up.log: $(tail -2 "$wd/up.log" | tr '\n' ' ')")"; teardown "$pid"; return
+  fi
+
+  # 5) seed opcional del repo + LIVE
+  [ -f "$repodir/.fluxo/preview/seed.sh" ] && ( cd "$repodir" && API_BASE="$url/api" PREVIEW_ID="$pid" bash .fluxo/preview/seed.sh ) >"$wd/seed.log" 2>&1 || true
+  local exp; exp=$(date -u -d "+${PREVIEW_TTL_HOURS} hours" +%FT%TZ 2>/dev/null || date -u -v+${PREVIEW_TTL_HOURS}H +%FT%TZ)
+  set_status "$id" live ",\"preview_url\":$(jesc "$url"),\"expires_at\":\"$exp\""
+  log "LIVE $id (BYO) → $url (expira $exp)"
 }
 
 # ── procesar UN pedido ──────────────────────────────────────────────────────────────────────────
@@ -141,10 +235,8 @@ process_one() { # $1=id  $2=project_id  $3=ref
     set_status "$id" failed ",\"error\":$(jesc "stack inválido: $stack")"; return
   fi
 
-  local recipe="$REGISTRY_DIR/templates/github-native/$stack/.fluxo/preview"
-  if [ ! -f "$recipe/compose.yml.tmpl" ]; then
-    set_status "$id" failed ",\"error\":$(jesc "sin receta de preview para el stack $stack")"; return
-  fi
+  # (La resolución de receta se DIFIERE hasta después del clone: si el repo trae su propio
+  # docker-compose.yml va por BYO y no necesita receta — docs/15.)
 
   # Regenerar REEMPLAZA, no acumula: el pid es por-proyecto, así que el `teardown "$pid"` de abajo baja
   # el stack anterior del proyecto. Acá solo marco expiradas las filas activas previas de este proyecto
@@ -174,6 +266,19 @@ process_one() { # $1=id  $2=project_id  $3=ref
       local cerr; cerr=$(tail -2 "$wd/clone.log" | sed 's#x-access-token:[^@]*@#x-access-token:***@#g' | tr '\n' ' ')
       set_status "$id" failed ",\"error\":$(jesc "git clone falló: $cerr")"; teardown "$pid"; return
     fi
+  fi
+
+  # BYO (docs/15): si el repo trae su propio docker-compose.yml, corré ESO (la app se auto-describe) en
+  # vez de una receta por-stack. Es el camino GENERAL para cualquier app; la receta queda de fallback
+  # para repos sin compose (p.ej. react-supabase, que no trae Dockerfile).
+  if [ -f "$repodir/docker-compose.yml" ]; then
+    byo_preview "$id" "$pid" "$wd" "$repodir"; return
+  fi
+
+  # RECIPE path (fallback): el repo NO trae compose → usa la receta del stack.
+  local recipe="$REGISTRY_DIR/templates/github-native/$stack/.fluxo/preview"
+  if [ ! -f "$recipe/compose.yml.tmpl" ]; then
+    set_status "$id" failed ",\"error\":$(jesc "el repo no trae docker-compose.yml y no hay receta de preview para el stack $stack")"; teardown "$pid"; return
   fi
 
   # 3) emulación: la del repo (app-specific) si existe, si no la genérica del recipe
