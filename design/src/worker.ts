@@ -430,11 +430,11 @@ async function reconcileOrphanCosts() {
 // settings.watchdog (tuneables sin deploy). LIMITACIÓN v1: la señal de commits es a nivel repo, no
 // por-run; con 2+ runs concurrentes los commits de uno tapan la inactividad de otro (el techo duro
 // igual los corta). Fail-open: si la API falla, no se cancela nada.
-const WATCHDOG = { MAX_MIN: 120, STALE_MIN: 30, GRACE_MIN: 20, NO_COMMIT_MIN: 40 };
+const WATCHDOG = { MAX_MIN: 120, STALE_MIN: 45, GRACE_MIN: 20 };
 
 async function reconcileWatchdog() {
   if (!app || dryRun) return;
-  const projects = await rest<Array<{ id: string; name: string; org: string | null; repo: string | null; settings: { watchdog?: { max_min?: number; stale_min?: number; grace_min?: number; no_commit_min?: number } } | null }>>(`/projects?select=id,name,org,repo,settings&repo=not.is.null`);
+  const projects = await rest<Array<{ id: string; name: string; org: string | null; repo: string | null; settings: { watchdog?: { max_min?: number; stale_min?: number; grace_min?: number } } | null }>>(`/projects?select=id,name,org,repo,settings&repo=not.is.null`);
   const now = Date.now();
   for (const p of projects) {
     if (!p.repo || !p.org) continue;
@@ -443,19 +443,25 @@ async function reconcileWatchdog() {
       const live = await repo.listLiveRuns("claude.yml");
       if (live.length === 0) continue;
       const wd = p.settings?.watchdog ?? {};
-      const maxMin = wd.max_min ?? WATCHDOG.MAX_MIN, staleMin = wd.stale_min ?? WATCHDOG.STALE_MIN;
-      const graceMin = wd.grace_min ?? WATCHDOG.GRACE_MIN, noCommitMin = wd.no_commit_min ?? WATCHDOG.NO_COMMIT_MIN;
+      const maxMin = wd.max_min ?? WATCHDOG.MAX_MIN, staleMin = wd.stale_min ?? WATCHDOG.STALE_MIN, graceMin = wd.grace_min ?? WATCHDOG.GRACE_MIN;
       const newest = await repo.newestWorkBranchCommit();
-      const commitAgeMin = newest ? (now - newest.at) / 60000 : Infinity;
       for (const run of live) {
-        const ageMin = (now - new Date(run.startedAt).getTime()) / 60000;
+        const runStart = new Date(run.startedAt).getTime();
+        const ageMin = (now - runStart) / 60000;
+        // Progreso de ESTE run = un commit en una rama de trabajo POSTERIOR a su arranque. Un commit
+        // viejo (una rama de otro sprint ya mergeada) NO es señal de este run — se ignora. Fue el falso
+        // positivo del 2026-07-28: el watchdog medía staleness contra sprint/sp1-foundation (mergeada
+        // 4 días antes) y cancelaba runs sanos de SP2 a los 20m. Si el run aún no commiteó nada
+        // (postStart null), NO se cancela por inactividad — los agentes tardan en el primer commit
+        // (setup, lectura); el TECHO DURO cubre el cuelgue real sin arriesgar un falso positivo.
+        const postStart = newest && newest.at > runStart ? newest : null;
+        const commitAgeMin = postStart ? (now - postStart.at) / 60000 : null;
         let reason: string | null = null;
-        if (ageMin > maxMin) reason = `techo duro (${maxMin}m)`;
-        else if (newest && ageMin > graceMin && commitAgeMin > staleMin) reason = `sin commits nuevos hace ${Math.round(commitAgeMin)}m (rama ${newest.branch})`;
-        else if (!newest && ageMin > noCommitMin) reason = `sin ningún commit tras ${Math.round(ageMin)}m`;
+        if (ageMin > maxMin) reason = `techo duro (${maxMin}m sin terminar)`;
+        else if (commitAgeMin !== null && ageMin > graceMin && commitAgeMin > staleMin) reason = `sin commits nuevos hace ${Math.round(commitAgeMin)}m (rama ${postStart!.branch})`;
         if (!reason) continue;
         await repo.cancelRun(run.id);
-        console.log(`⏱ watchdog ${p.name}: run ${run.id} CANCELADO — ${reason}; edad del run ${Math.round(ageMin)}m`);
+        console.log(`⏱ watchdog ${p.name}: run ${run.id} CANCELADO — ${reason}; edad ${Math.round(ageMin)}m`);
       }
     } catch (e) { console.error(`  watchdog ${p.name} falló: ${e instanceof Error ? e.message : e}`); }
   }
