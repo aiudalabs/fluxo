@@ -30,7 +30,10 @@ jobs:
     # "Clear running label" — corren igual en la ventana de gracia, así que el
     # trabajo se rescata a un PR draft y el lock agent:running se libera. Sin esto,
     # el default de GitHub Actions es 6 h de cuelgue.
-    timeout-minutes: 45
+    # Backstop de tiempo (increment 2): el control PRIMARIO de corridas largas es el watchdog del
+    # conductor (cancela por inactividad de commits o por techo duro ~2h). Este timeout es solo la red
+    # por si el worker/watchdog está caído — generoso, pero por debajo del cap de 6h de GitHub.
+    timeout-minutes: 180
     steps:
       # Señal de "corriendo" observable en GitHub (la lee el conductor de
       # aiuda-forge para no degradar la story a backlog mientras este run trabaja):
@@ -135,7 +138,10 @@ jobs:
       # story a `backlog` al toque — sin esto, un fallo dejaba la story "running" pegada para siempre.
       # (El despacho ya gatea por el secret del canal, así que backlog NO re-despacha en loop sin secret.)
       - name: Mark issues failed
-        if: ${{ failure() && inputs.issues != '' }}
+        # failure() O cancelled(): un cancel lo dispara el watchdog del conductor cuando el run se
+        # colgó (o el humano con "Detener"). En ambos casos queremos que la story degrade YA a backlog
+        # vía el fast-path de la proyección (agent:failed), no que espere la histéresis.
+        if: ${{ (failure() || cancelled()) && inputs.issues != '' }}
         env:
           GH_TOKEN: ${{ github.token }}
           ISSUES: ${{ inputs.issues }}

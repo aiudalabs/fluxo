@@ -115,6 +115,49 @@ export class GithubRepo {
     return await res.text();
   }
 
+  // ── WATCHDOG de liveness (increment 2) ───────────────────────────────────────
+  // listLiveRuns: runs vivos (queued|in_progress) de un workflow, con su inicio (run_started_at) para
+  // medir la edad del run. Lo usa reconcileWatchdog para decidir si cancelar por techo duro / inactividad.
+  async listLiveRuns(workflowFile: string): Promise<Array<{ id: number; startedAt: string }>> {
+    const out: Array<{ id: number; startedAt: string }> = [];
+    for (const status of ["queued", "in_progress"]) {
+      const res = await fetch(`${API}/repos/${this.owner}/${this.repo}/actions/workflows/${workflowFile}/runs?status=${status}&per_page=50`, { headers: H(this.token) });
+      if (!res.ok) continue;
+      const data = (await res.json()) as { workflow_runs?: Array<{ id: number; run_started_at?: string; created_at: string }> };
+      for (const r of data.workflow_runs ?? []) out.push({ id: r.id, startedAt: r.run_started_at ?? r.created_at });
+    }
+    return out;
+  }
+
+  // cancelRun: cancela un run vivo (POST .../cancel). Best-effort; el run pasa a `cancelled` y la Action
+  // corre sus pasos always()/cancelled() (limpia agent:running, marca agent:failed → backlog).
+  async cancelRun(runId: number): Promise<void> {
+    const res = await fetch(`${API}/repos/${this.owner}/${this.repo}/actions/runs/${runId}/cancel`, { method: "POST", headers: H(this.token) });
+    if (!res.ok && res.status !== 409) throw new Error(`POST runs/${runId}/cancel → ${res.status} ${await res.text()}`);
+  }
+
+  // newestWorkBranchCommit: fecha del commit más reciente en una rama de TRABAJO (no la default) — la
+  // señal de "el agente sigue avanzando" del watchdog. Con commits incrementales una corrida sana la
+  // mantiene fresca; una colgada la deja envejecer. null si no hay ramas de trabajo. Acotado a 20 ramas.
+  async newestWorkBranchCommit(): Promise<{ branch: string; at: number } | null> {
+    const repoRes = await fetch(`${API}/repos/${this.owner}/${this.repo}`, { headers: H(this.token) });
+    const defaultBranch = repoRes.ok ? (((await repoRes.json()) as { default_branch?: string }).default_branch ?? "main") : "main";
+    const brRes = await fetch(`${API}/repos/${this.owner}/${this.repo}/branches?per_page=100`, { headers: H(this.token) });
+    if (!brRes.ok) return null;
+    const branches = ((await brRes.json()) as Array<{ name: string }>).filter((b) => b.name !== defaultBranch).slice(0, 20);
+    let best: { branch: string; at: number } | null = null;
+    for (const b of branches) {
+      const cRes = await fetch(`${API}/repos/${this.owner}/${this.repo}/commits?sha=${encodeURIComponent(b.name)}&per_page=1`, { headers: H(this.token) });
+      if (!cRes.ok) continue;
+      const arr = (await cRes.json()) as Array<{ commit?: { committer?: { date?: string } } }>;
+      const d = arr[0]?.commit?.committer?.date;
+      if (!d) continue;
+      const at = new Date(d).getTime();
+      if (!best || at > best.at) best = { branch: b.name, at };
+    }
+    return best;
+  }
+
   // create: crea el repo bajo `owner`, detectando si es ORG (POST /orgs/{owner}/repos) o
   // CUENTA PERSONAL (POST /user/repos → va a la cuenta del token). Con el token OAuth del
   // usuario funciona en ambas; con el installation token solo en orgs con la App instalada.

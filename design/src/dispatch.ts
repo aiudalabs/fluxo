@@ -228,6 +228,18 @@ export const HEADLESS_GUARD =
   "procesos en background que no esperes — en este runner no se ejecutan y la corrida termina sin trabajo. " +
   "Nada de fire-and-forget.";
 
+// INCREMENTAL_COMMIT — commiteá y pusheá a medida que avanzás (no todo al final). Dos razones, y la
+// segunda es un CONTRATO con el conductor: (1) si la sesión se corta (timeout, límite), el trabajo ya
+// hecho queda salvado en la rama; (2) el conductor detecta que SEGUÍS VIVO por tus commits — un
+// watchdog corta el run si no ve commits nuevos por mucho rato (asume que te colgaste). Por eso NO
+// dejes todo para un commit final: el silencio prolongado se lee como "colgado" y te cancelan.
+export const INCREMENTAL_COMMIT =
+  "COMMITEÁ Y PUSHEÁ INCREMENTALMENTE: después de completar CADA story (o cada bloque de trabajo con " +
+  "sus tests en verde) hacé `git add -A && git commit` y `git push` en tu rama ANTES de seguir — nunca " +
+  "dejes todo para el final. Esto salva el trabajo si la corrida se corta, y —clave— es la señal de que " +
+  "seguís trabajando: el conductor tiene un watchdog que cancela el run si no ve commits nuevos por un " +
+  "buen rato (lo interpreta como que te colgaste). Commits frecuentes = te dejan trabajar tranquilo.";
+
 // screenPointer: cuando la story construye una pantalla (screen_key presente), apunta al dev a
 // SU spec y SU mockup — no al genérico "leé docs/" (P8-C). El spec de la pantalla vive en
 // docs/UI_SCREENS.md y el mockup aprobado (lo que el art-director de ui-verify compara) en
@@ -246,6 +258,7 @@ export function storyPrompt(s: Pick<DStory, "key" | "title" | "body" | "acceptan
   const parts = [
     `Resolvé el issue #${n} (${s.key} — ${s.title}).`,
     `\n${HEADLESS_GUARD}`,
+    `\n${INCREMENTAL_COMMIT}`,
     s.body ? `\n${s.body.trim()}` : "",
     s.acceptance ? `\n## Criterios de aceptación\n${s.acceptance.trim()}` : "",
     screenPointer(s.screenKey),
@@ -269,6 +282,7 @@ export function sprintPrompt(
     "Trabajá cada story de abajo EN EL ORDEN DADO — están en orden de dependencias. " +
     "No abras ramas ni PRs separados por story.\n");
   b.push(HEADLESS_GUARD + "\n");
+  b.push(INCREMENTAL_COMMIT + "\n");
   b.push("Leé los docs de diseño en docs/ para el contexto.\n");
   b.push("Stories (en orden):\n");
   const closes: string[] = [];

@@ -417,6 +417,50 @@ async function reconcileOrphanCosts() {
   }
 }
 
+// ── 2e) WATCHDOG de liveness de builds (increment 2) ───────────────────────────────
+// GitHub no da el log en vivo (404 hasta que el job termina), así que la ÚNICA señal externa de "sigue
+// trabajando" es lo que el agente EMPUJA: sus commits. Con el prompt de commits incrementales, una
+// corrida sana pushea seguido; una colgada se queda muda. Por cada run vivo de claude.yml:
+//   · techo duro (max_min): cancelá si el run superó ~2h (backstop del cap de 6h de GitHub) — por-run,
+//     confiable (tenemos run_started_at).
+//   · inactividad de commits (stale_min): si HAY rama de trabajo y su último commit envejeció, o no hay
+//     NINGUNA rama tras una gracia larga (no_commit_min), cancelá — se colgó.
+// Al cancelar, la Action corre sus pasos cancelled(): limpia agent:running + marca agent:failed → la
+// proyección degrada la story a backlog, y reconcileOrphanCosts le estima el costo del log. Knobs por
+// settings.watchdog (tuneables sin deploy). LIMITACIÓN v1: la señal de commits es a nivel repo, no
+// por-run; con 2+ runs concurrentes los commits de uno tapan la inactividad de otro (el techo duro
+// igual los corta). Fail-open: si la API falla, no se cancela nada.
+const WATCHDOG = { MAX_MIN: 120, STALE_MIN: 30, GRACE_MIN: 20, NO_COMMIT_MIN: 40 };
+
+async function reconcileWatchdog() {
+  if (!app || dryRun) return;
+  const projects = await rest<Array<{ id: string; name: string; org: string | null; repo: string | null; settings: { watchdog?: { max_min?: number; stale_min?: number; grace_min?: number; no_commit_min?: number } } | null }>>(`/projects?select=id,name,org,repo,settings&repo=not.is.null`);
+  const now = Date.now();
+  for (const p of projects) {
+    if (!p.repo || !p.org) continue;
+    try {
+      const repo = GithubRepo.fromUrl(await repoTokenFor(p.org), p.repo);
+      const live = await repo.listLiveRuns("claude.yml");
+      if (live.length === 0) continue;
+      const wd = p.settings?.watchdog ?? {};
+      const maxMin = wd.max_min ?? WATCHDOG.MAX_MIN, staleMin = wd.stale_min ?? WATCHDOG.STALE_MIN;
+      const graceMin = wd.grace_min ?? WATCHDOG.GRACE_MIN, noCommitMin = wd.no_commit_min ?? WATCHDOG.NO_COMMIT_MIN;
+      const newest = await repo.newestWorkBranchCommit();
+      const commitAgeMin = newest ? (now - newest.at) / 60000 : Infinity;
+      for (const run of live) {
+        const ageMin = (now - new Date(run.startedAt).getTime()) / 60000;
+        let reason: string | null = null;
+        if (ageMin > maxMin) reason = `techo duro (${maxMin}m)`;
+        else if (newest && ageMin > graceMin && commitAgeMin > staleMin) reason = `sin commits nuevos hace ${Math.round(commitAgeMin)}m (rama ${newest.branch})`;
+        else if (!newest && ageMin > noCommitMin) reason = `sin ningún commit tras ${Math.round(ageMin)}m`;
+        if (!reason) continue;
+        await repo.cancelRun(run.id);
+        console.log(`⏱ watchdog ${p.name}: run ${run.id} CANCELADO — ${reason}; edad del run ${Math.round(ageMin)}m`);
+      }
+    } catch (e) { console.error(`  watchdog ${p.name} falló: ${e instanceof Error ? e.message : e}`); }
+  }
+}
+
 // provisioningYamlFor: la última versión de docs/provisioning.yaml del proyecto desde el brain
 // (brain_events kind=artifact, project-wide, versionado — la MISMA fuente que el channel route del
 // console y el Studio). null si el diseño aún no la produjo (degrada: gate off).
@@ -559,6 +603,7 @@ async function tick() {
     // (gated) → DESPACHAR. Aprobar antes de mergear: destraba el CI para que los checks corran y el
     // auto-merge los vea CLEAN en el próximo tick.
     try { await reconcileProjection(); } catch (e) { console.error("reconcileProjection:", e instanceof Error ? e.message : e); }
+    try { await reconcileWatchdog(); } catch (e) { console.error("reconcileWatchdog:", e instanceof Error ? e.message : e); }
     try { await reconcileCosts(); } catch (e) { console.error("reconcileCosts:", e instanceof Error ? e.message : e); }
     try { await reconcileOrphanCosts(); } catch (e) { console.error("reconcileOrphanCosts:", e instanceof Error ? e.message : e); }
     try { await reconcileApprovals(); } catch (e) { console.error("reconcileApprovals:", e instanceof Error ? e.message : e); }
