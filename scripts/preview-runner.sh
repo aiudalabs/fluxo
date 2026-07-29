@@ -144,6 +144,11 @@ for ln in lines:
         continue
     k, default = m.group(1), m.group(2)
     if k == 'WEB_PORT' or k.endswith('_PORT'):        v = port if k == 'WEB_PORT' else (default or '')
+    # Un preview es para EVALUAR: sembrar el demo poblado (salón + turnos + usuarios) con credenciales
+    # CONOCIDAS. Sin esto la app arranca vacía y sin login → "no la puedo probar" (bug del 2026-07-29).
+    elif k == 'SEED_DEMO':                             v = 'true'
+    elif k.startswith('DEMO_') and k.endswith('_PASSWORD'): v = 'FluxoDemo123!'   # conocida, NO random
+    elif k.startswith('DEMO_'):                        v = default   # slug/email demo del .env.example (conocidos)
     elif k in ('NEXTAUTH_URL',) or k.endswith(('PUBLIC_URL',)) or k in ('APP_URL', 'BASE_URL'): v = url
     elif k.endswith('_MODE'):                          v = default or 'mock'
     elif k.endswith('_EMAIL'):                         v = 'demo@preview.fluxo.dev'
@@ -151,6 +156,8 @@ for ln in lines:
     elif k.endswith(('_PASSWORD', '_SECRET', '_HASH', '_KEY', '_TOKEN')): v = secrets.token_hex(24)
     else:                                              v = default   # DATABASE_URL/REDIS_URL: internos → default
     out.append('%s=%s' % (k, v))
+# SEED_DEMO es imprescindible para un preview evaluable; forzarlo aunque el .env.example no lo liste.
+if not any(o.startswith('SEED_DEMO=') for o in out): out.append('SEED_DEMO=true')
 print('\n'.join(out))
 PY
 }
