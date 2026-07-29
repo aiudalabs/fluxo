@@ -156,11 +156,14 @@ test("cada workflow del scaffold es YAML válido y tiene jobs", () => {
   }
 });
 
-test("sin stack → solo _common (sin ui-verify ni .fluxo del stack)", () => {
+// El gate visual GENÉRICO vive en _common (BYO-compose): CUALQUIER proyecto — incluso sin stack o
+// con un stack sin template — recibe ui-verify. Único {{var}} = {{project_name}} (siempre resoluble),
+// así nunca queda sin resolver. El kill-switch es data (.fluxo/screen-routes.json.art_director).
+test("sin stack → _common trae el ui-verify GENÉRICO (no queda sin gate)", () => {
   const { files } = buildScaffold(registryDir, { project_name: "Demo" });
   const paths = new Set(files.map((f) => f.path));
   assert.ok(paths.has(".github/workflows/e2e-verify.yml"), "_common debe estar");
-  assert.ok(!paths.has(".github/workflows/ui-verify.yml"), "ui-verify es per-stack, no debería estar sin stack");
+  assert.ok(paths.has(".github/workflows/ui-verify.yml"), "el ui-verify genérico de _common debe emitirse aun sin stack");
 });
 
 // Fail-loud (2026-07-29): un stack declarado que NO existe como template degradaba a `_common` en
@@ -169,7 +172,9 @@ test("buildScaffold: stack inexistente → unknownStack + availableStacks (no si
   const bad = buildScaffold(registryDir, { project_name: "Demo", stack: "nextjs-postgres-prisma-docker" });
   assert.equal(bad.unknownStack, "nextjs-postgres-prisma-docker", "el stack sin template debe surface-arse");
   assert.ok(bad.availableStacks.includes("react-supabase"), "debe listar los stacks reales para corregir");
-  assert.ok(!new Set(bad.files.map((f) => f.path)).has(".github/workflows/ui-verify.yml"), "degradó a _common (sin ui-verify)");
+  // Antes: un stack desconocido degradaba a _common SIN ui-verify. Ahora _common trae el gate genérico
+  // → el proyecto degradado IGUAL recibe ui-verify (el hueco que reabría cada stack nuevo queda cerrado).
+  assert.ok(new Set(bad.files.map((f) => f.path)).has(".github/workflows/ui-verify.yml"), "el ui-verify genérico de _common cubre el stack desconocido");
   const ok = buildScaffold(registryDir, VARS); // VARS.stack = react-supabase (real)
   assert.equal(ok.unknownStack, null, "un stack real no debe marcar unknownStack");
 });
