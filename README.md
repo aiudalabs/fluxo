@@ -1,8 +1,8 @@
 # Fluxo
 
-**Fábrica de software gobernada.** Convierte el brief de un cliente (en español) en un **backlog gateado y
+**Fábrica de software gobernada.** Convierte el brief de un cliente en un **backlog gateado y
 trazable**, ejecuta el trabajo con **agentes de IA en el GitHub del propio cliente**, y guarda todo el
-conocimiento operativo en un **registro auditable** (el *brain*). Por **[AIuda Labs](https://fluxo.aiudalabs.com)**.
+conocimiento operativo en un **registro auditable** (el *brain*). Por **[Aiuda Labs](https://fluxo.aiudalabs.com)**.
 ICP: agencias y dev-shops boutique de LATAM.
 
 > No es un generador de código más: es una **fábrica** — método, gates, trazabilidad y costo, sobre un
