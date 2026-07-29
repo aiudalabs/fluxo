@@ -69,6 +69,11 @@ function walk(dir: string): string[] {
 export interface ScaffoldResult {
   files: Array<{ path: string; content: string }>;
   skipped: Array<{ path: string; missing: string[] }>;
+  // Fail-loud (2026-07-29): el proyecto pidió un stack que NO tiene template en el registry → se emitió
+  // SOLO `_common` (sin persona/instructions/ui-verify del stack → sin gate de calidad). Antes esto pasaba
+  // en silencio (`existsSync` false → continue). `unknownStack` != null → el handoff lo surface-a en el brain.
+  unknownStack: string | null;
+  availableStacks: string[];  // los stacks reales del registry (para nombrar la corrección)
 }
 
 // buildScaffold: emite `_common/**` + `<stack>/**` renderizados. `<stack>` gana ante una colisión de
@@ -98,5 +103,11 @@ export function buildScaffold(registryDir: string, vars: ScaffoldVars): Scaffold
 
   const files = [...byPath.entries()].map(([path, content]) => ({ path, content })).sort((a, b) => (a.path < b.path ? -1 : 1));
   const skips = [...skipped.entries()].map(([path, missing]) => ({ path, missing })).sort((a, b) => (a.path < b.path ? -1 : 1));
-  return { files, skipped: skips };
+  // Los stacks reales del registry (dirs bajo templates/github-native, menos _common).
+  const availableStacks = existsSync(base)
+    ? readdirSync(base).filter((d) => d !== "_common" && statSync(resolve(base, d)).isDirectory()).sort()
+    : [];
+  // El proyecto declaró un stack que no existe como template → solo se emitió `_common` (fail-loud).
+  const unknownStack = vars.stack && !existsSync(resolve(base, vars.stack)) ? vars.stack : null;
+  return { files, skipped: skips, unknownStack, availableStacks };
 }

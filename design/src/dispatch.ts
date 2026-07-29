@@ -248,23 +248,32 @@ export function screenPointer(screenKey?: string | null): string {
   if (!screenKey) return "";
   return (
     `\nEsta story construye la pantalla \`${screenKey}\`: su spec está en docs/UI_SCREENS.md ` +
-    `(la sección de la pantalla \`${screenKey}\`) y su mockup aprobado en docs/mockups/${screenKey}.html. ` +
-    `Construí la UI para que matchee ese mockup — el art-director la compara contra él.`
+    `(la sección \`${screenKey}\`), su mockup aprobado en docs/mockups/${screenKey}.html, y el design ` +
+    `system del proyecto en docs/DESIGN_SYSTEM.md. Replicá el mockup con FIDELIDAD y aplicá los tokens del ` +
+    `design system — el art-director compara tu pantalla contra el mockup y rebota el PR si diverge.`
   );
 }
 
-export function storyPrompt(s: Pick<DStory, "key" | "title" | "body" | "acceptance" | "issue" | "screenKey">): string {
+// uiFidelity: preamble de calidad visual (registry/prompts/ui-fidelity.md) que el CALLER lee y pasa. Se
+// inyecta SOLO si la story construye una pantalla (screenKey) — un proyecto sin UI no lo recibe. dispatch.ts
+// es puro: no lee el archivo, solo lo ensambla (el "qué" es data del registry, el "cómo" es este pegamento).
+export function storyPrompt(
+  s: Pick<DStory, "key" | "title" | "body" | "acceptance" | "issue" | "screenKey">,
+  uiFidelity?: string,
+): string {
   const n = s.issue;
   const parts = [
     `Resolvé el issue #${n} (${s.key} — ${s.title}).`,
     `\n${HEADLESS_GUARD}`,
     `\n${INCREMENTAL_COMMIT}`,
+    s.screenKey && uiFidelity ? `\n${uiFidelity.trim()}` : "",
     s.body ? `\n${s.body.trim()}` : "",
     s.acceptance ? `\n## Criterios de aceptación\n${s.acceptance.trim()}` : "",
     screenPointer(s.screenKey),
-    `\nImplementá EXACTAMENTE lo que especifican los criterios de aceptación — cada checkbox, nada más. ` +
-    `Escribí tests honestos que ejerciten cada criterio. Leé los docs de diseño en docs/ para el contexto. ` +
-    `Abrí un pull request cuya descripción incluya \`Closes #${n}\`.`,
+    `\nImplementá cada criterio de aceptación con tests honestos que lo ejerciten — no agregues features ` +
+    `fuera de alcance. ` +
+    (s.screenKey ? `La calidad visual NO es un extra: la pantalla debe verse como el mockup, no un wireframe funcional. ` : "") +
+    `Leé los docs de diseño en docs/ para el contexto. Abrí un pull request cuya descripción incluya \`Closes #${n}\`.`,
   ];
   return parts.filter(Boolean).join("\n");
 }
@@ -274,7 +283,9 @@ export function storyPrompt(s: Pick<DStory, "key" | "title" | "body" | "acceptan
 export function sprintPrompt(
   title: string,
   members: Array<Pick<DStory, "key" | "title" | "body" | "acceptance" | "issue" | "screenKey">>,
+  uiFidelity?: string,
 ): string {
+  const hasScreens = members.some((m) => m.screenKey);
   const b: string[] = [];
   b.push(`# Modo goal — implementá este SPRINT COMPLETO (${title}) en una sola pasada\n`);
   b.push(
@@ -283,6 +294,8 @@ export function sprintPrompt(
     "No abras ramas ni PRs separados por story.\n");
   b.push(HEADLESS_GUARD + "\n");
   b.push(INCREMENTAL_COMMIT + "\n");
+  // Preamble de fidelidad visual: solo si el sprint toca al menos una pantalla (data-driven, no ciego).
+  if (uiFidelity && hasScreens) b.push(uiFidelity.trim() + "\n");
   b.push("Leé los docs de diseño en docs/ para el contexto.\n");
   b.push("Stories (en orden):\n");
   const closes: string[] = [];
@@ -295,7 +308,8 @@ export function sprintPrompt(
     b.push("");
   }
   b.push(`La descripción del PR DEBE incluir: ${closes.join(", ")}.`);
-  b.push("Los criterios de aceptación de TODAS las stories deben pasar juntos; escribí tests honestos por criterio.");
+  b.push("Los criterios de aceptación de TODAS las stories deben pasar juntos; escribí tests honestos por criterio." +
+    (hasScreens ? " Y cada pantalla debe verse como su mockup — la fidelidad visual es parte de \"terminado\", igual que los tests." : ""));
   return b.join("\n");
 }
 

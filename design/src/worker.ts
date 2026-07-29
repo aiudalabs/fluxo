@@ -14,6 +14,7 @@
 
 import { spawn } from "node:child_process";
 import { createServer } from "node:http";
+import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, resolve } from "node:path";
 import { runAssistant, sseEvent, type ChatMsg } from "./assistant.ts";
@@ -30,6 +31,13 @@ import { priceForModel, costUSD } from "./pricing.ts";
 const here = dirname(fileURLToPath(import.meta.url));
 const mainScript = resolve(here, "main.ts");
 const registryDir = resolve(here, "..", "..", "registry");
+
+// Guía de fidelidad visual (DATA en el registry): se inyecta en el prompt de build para stories con
+// pantalla. Se lee una vez al arrancar; strip del comentario HTML de mantenimiento. Ausente → "" (no-op).
+const UI_FIDELITY = (() => {
+  try { return readFileSync(resolve(registryDir, "prompts", "ui-fidelity.md"), "utf8").replace(/^<!--[\s\S]*?-->\s*/, ""); }
+  catch { return ""; }
+})();
 
 const url = process.env.SUPABASE_URL;
 const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -561,7 +569,7 @@ async function reconcileBuild() {
       if (slots <= 0) break;
       const members = c.stories.map((id) => byId.get(id)!).filter(Boolean);
       if (members.length === 0) continue;
-      const prompt = c.kind === "sprint" ? sprintPrompt(c.title, members) : storyPrompt(members[0]);
+      const prompt = c.kind === "sprint" ? sprintPrompt(c.title, members, UI_FIDELITY) : storyPrompt(members[0], UI_FIDELITY);
       const issuesCsv = c.issues.join(",");
 
       // Canal por lane: hoy solo claude_action está cableado en v2 (copilot = permiso pendiente en

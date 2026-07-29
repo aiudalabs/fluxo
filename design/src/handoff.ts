@@ -197,7 +197,15 @@ async function publishToGithub(store: SupabaseDesignStore, workdir: string, gh: 
   // .fluxo/verify/**). Se construye acá (workdir con docs → stack + lanes). Los archivos que aún
   // necesitan una var sin resolver NO se emiten y se loguean (no shippear `{{placeholder}}`).
   const vars = resolveScaffoldVars(workdir, gh.projectName, stories);
-  const { files, skipped } = buildScaffold(gh.registryDir, vars);
+  const { files, skipped, unknownStack, availableStacks } = buildScaffold(gh.registryDir, vars);
+  // FAIL-LOUD (2026-07-29): el proyecto declaró un stack SIN template → solo se emitió `_common`, o sea
+  // SIN la persona de frontend, las instructions ni el gate `ui-verify` (calidad de UI sin verificar).
+  // Antes esto pasaba callado. Lo surface-amos en el brain para que se vea y se corrija (elegir un stack
+  // real de `available`, o crear ese template). NO abortamos: los archivos de `_common` + docs igual sirven.
+  if (unknownStack) {
+    console.log(`  ⛔ scaffold: stack «${unknownStack}» NO existe como template → solo _common (SIN ui-verify ni persona de frontend). Stacks reales: ${availableStacks.join(", ")}`);
+    await store.brainAppend("scaffold_unknown_stack", { declared: unknownStack, available: availableStacks, degraded_to: "_common" }, "engine:handoff");
+  }
   for (const f of files) {
     await repo.putFile(f.path, f.content, `scaffold: ${f.path}`);
   }

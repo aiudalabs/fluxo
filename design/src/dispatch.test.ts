@@ -306,3 +306,19 @@ test("sprintToRetro: sprint no revisado → null (la retro va después de review
 test("sprintToRetro: sprint ya con retro se saltea → el siguiente revisado", () => {
   assert.equal(sprintToRetro([spT("s1", "SP1", "2026-07-01", "2026-07-02"), spT("s2", "SP2", "2026-07-03")]), "SP2");
 });
+
+// Fix del método (2026-07-29): la guía de fidelidad visual (data del registry) se inyecta en el prompt
+// SOLO cuando la story construye una pantalla (screen_key). Un proyecto/story sin UI no la recibe.
+test("prompt: inyecta la guía de fidelidad SOLO con screen_key (data-driven, no ciego)", () => {
+  const FID = "REPLICÁ EL MOCKUP CON FIDELIDAD (marcador de prueba)";
+  const withScreen = { key: "S1", title: "t", body: "b", acceptance: "a", issue: 1, screenKey: "owner.dashboard" };
+  const noScreen = { key: "S2", title: "t", body: "b", acceptance: "a", issue: 2, screenKey: null };
+  // story mode
+  assert.ok(storyPrompt(withScreen, FID).includes(FID), "story con screen_key debe incluir la guía");
+  assert.ok(!storyPrompt(noScreen, FID).includes(FID), "story SIN screen_key NO debe incluirla");
+  // sprint mode: con al menos una pantalla la incluye; sin ninguna, no
+  assert.ok(sprintPrompt("Sprint", [withScreen], FID).includes(FID), "sprint con una pantalla debe incluir la guía");
+  assert.ok(!sprintPrompt("Sprint", [noScreen], FID).includes(FID), "sprint API-only NO debe incluirla");
+  // sin pasar la guía → nunca (retrocompat + caller sin el archivo)
+  assert.ok(!storyPrompt(withScreen).includes(FID));
+});

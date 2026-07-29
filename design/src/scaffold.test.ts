@@ -162,3 +162,14 @@ test("sin stack → solo _common (sin ui-verify ni .fluxo del stack)", () => {
   assert.ok(paths.has(".github/workflows/e2e-verify.yml"), "_common debe estar");
   assert.ok(!paths.has(".github/workflows/ui-verify.yml"), "ui-verify es per-stack, no debería estar sin stack");
 });
+
+// Fail-loud (2026-07-29): un stack declarado que NO existe como template degradaba a `_common` en
+// SILENCIO (sin ui-verify ni persona de frontend). Ahora se surface-a en el result.
+test("buildScaffold: stack inexistente → unknownStack + availableStacks (no silencio); stack real → null", () => {
+  const bad = buildScaffold(registryDir, { project_name: "Demo", stack: "nextjs-postgres-prisma-docker" });
+  assert.equal(bad.unknownStack, "nextjs-postgres-prisma-docker", "el stack sin template debe surface-arse");
+  assert.ok(bad.availableStacks.includes("react-supabase"), "debe listar los stacks reales para corregir");
+  assert.ok(!new Set(bad.files.map((f) => f.path)).has(".github/workflows/ui-verify.yml"), "degradó a _common (sin ui-verify)");
+  const ok = buildScaffold(registryDir, VARS); // VARS.stack = react-supabase (real)
+  assert.equal(ok.unknownStack, null, "un stack real no debe marcar unknownStack");
+});

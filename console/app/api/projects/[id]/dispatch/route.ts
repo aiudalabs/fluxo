@@ -10,11 +10,20 @@
 //      prompt del kernel (storyPrompt/sprintPrompt) + issues csv.
 //   5. Si el disparo falla → revierte a `backlog`. Si tuvo éxito → PUNTO DE NO RETORNO: session_url
 //      es best-effort y NO revierte (revertir re-despacharía = segundo run pago).
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { NextRequest, NextResponse } from "next/server";
 import { verifySessionJwt, getUserToken, admin } from "@/lib/server/githubAuth";
 import { loadDispatchContext, computeCandidates, loadCapabilityGate } from "@/lib/server/dispatchData";
-import { githubSecretProbe, CLAUDE_SECRET } from "@/lib/server/capabilitiesData";
+import { githubSecretProbe, CLAUDE_SECRET, registryDir } from "@/lib/server/capabilitiesData";
 import { storyPrompt, sprintPrompt } from "../../../../../../design/src/dispatch.ts";
+
+// Guía de fidelidad visual (DATA del registry) — misma que el worker. El despacho manual también debe
+// mandarle al agente la barra de calidad de UI. Ausente → "" (no-op). Strip del comentario HTML.
+function uiFidelity(): string {
+  try { return readFileSync(join(registryDir(), "prompts", "ui-fidelity.md"), "utf8").replace(/^<!--[\s\S]*?-->\s*/, ""); }
+  catch { return ""; }
+}
 
 const API = "https://api.github.com";
 
@@ -72,7 +81,8 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
     return NextResponse.json({ error: "falta el secret CLAUDE_CODE_OAUTH_TOKEN en el repo — seteálo en Settings → Canal de build antes de despachar" }, { status: 409 });
   }
 
-  const prompt = cand.kind === "sprint" ? sprintPrompt(cand.title, cand.members) : storyPrompt(cand.members[0]);
+  const uiFid = uiFidelity();
+  const prompt = cand.kind === "sprint" ? sprintPrompt(cand.title, cand.members, uiFid) : storyPrompt(cand.members[0], uiFid);
   const issuesCsv = cand.issues.join(",");
 
   // Marcá running ANTES de disparar (money-safe). Si el disparo falla, revertí a backlog.
