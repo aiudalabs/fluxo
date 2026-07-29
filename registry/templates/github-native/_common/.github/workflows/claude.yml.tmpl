@@ -64,6 +64,14 @@ jobs:
       - uses: anthropics/claude-code-action@v1
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          # Token de GitHub para el git/PR del agente. Sin esto, el action mintea un installation token
+          # de GitHub App que EXPIRA A LA 1 HORA (bug conocido anthropics/claude-code-action#716): en una
+          # corrida larga (>1h) el agente pierde las credenciales y no puede pushear → trabajo perdido.
+          # Con un PAT fine-grained (Contents+PR write) el push vive toda la corrida Y —bonus— dispara
+          # claude-review (un PR del bot/app-token no gatilla workflows; uno de PAT sí). OPCIONAL: si el
+          # secret no está, queda vacío y el action cae a su App token de 1h (comportamiento previo, ok
+          # para runs cortos). github_token es `required: false` en el action.
+          github_token: ${{ secrets.CLAUDE_GITHUB_PAT }}
           prompt: ${{ inputs.prompt }}
           # Visibilidad del agente en el log del run (el default esconde todo y
           # un run "success" sin PR es indepurable).
@@ -114,23 +122,27 @@ jobs:
           git config user.name "aiuda-forge conductor"
           git config user.email "conductor@users.noreply.github.com"
           BR=$(git rev-parse --abbrev-ref HEAD || echo HEAD)
-          DIRTY=$(git status --porcelain | head -1)
-          AHEAD=0
-          if [ "$BR" != "main" ] && [ "$BR" != "HEAD" ]; then
-            AHEAD=$(git rev-list --count origin/main..HEAD 2>/dev/null || echo 0)
-          fi
-          if [ -z "$DIRTY" ] && [ "$AHEAD" = "0" ]; then
-            echo "sin trabajo que rescatar"; exit 0
-          fi
-          if [ "$BR" = "main" ] || [ "$BR" = "HEAD" ]; then
-            BR="claude/rescue-${{ github.run_id }}"
-            git checkout -b "$BR"
-          fi
-          if [ -n "$DIRTY" ]; then
+          # 1) commitear cualquier trabajo sin commitear.
+          if [ -n "$(git status --porcelain | head -1)" ]; then
             git add -A
             git commit -m "checkpoint de rescate — fin de sesión del agente" || true
           fi
-          git push -u origin "$BR" || { echo "push falló"; exit 0; }
+          # 2) si quedamos en main/detached, mover los commits locales (si hay) a una rama de rescate.
+          #    OJO: en un clone shallow (fetch-depth 1) `origin/main..HEAD` puede NO resolver → el cálculo
+          #    de AHEAD daba 0 con commits locales reales y se perdía el trabajo (bug cazado 2026-07-28:
+          #    el token de 1h expiró, el agente no pudo pushear, y el rescate falló acá). Fetch de main
+          #    primero para que el ref exista.
+          if [ "$BR" = "main" ] || [ "$BR" = "HEAD" ]; then
+            git fetch --depth=1 origin main 2>/dev/null || true
+            AHEAD=$(git rev-list --count origin/main..HEAD 2>/dev/null || echo 0)
+            if [ "$AHEAD" = "0" ]; then echo "sin trabajo que rescatar (en main, sin commits locales)"; exit 0; fi
+            BR="claude/rescue-${{ github.run_id }}"
+            git checkout -b "$BR"
+          fi
+          # 3) PUSH SIEMPRE la rama de trabajo (best-effort). NO dependemos del AHEAD (frágil en shallow):
+          #    un push sin commits nuevos es un no-op; uno con commits SALVA lo que el agente no pudo
+          #    pushear (token de 1h expirado). El GH_TOKEN del rescate es el de Actions → vive toda la corrida.
+          git push -u origin "$BR" 2>&1 | tail -5 || { echo "push del rescate falló"; exit 0; }
           if ! gh pr list --head "$BR" --json number --jq length | grep -qv '^0$'; then
             gh pr create --draft --head "$BR" \
               --title "[WIP] rescate de sesión — $BR" \
