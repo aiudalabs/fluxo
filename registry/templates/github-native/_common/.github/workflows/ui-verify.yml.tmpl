@@ -239,7 +239,11 @@ jobs:
         uses: anthropics/claude-code-action@v1
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
-          claude_args: "--model claude-opus-4-8"
+          # --allowedTools: sin esto la action corre con permisos restringidos y DENIEGA Read/Write
+          # (permission_denials → el juez no puede leer las imágenes ni escribir verdict.txt → falso
+          # fail "verdict.txt ausente"). Whitelisteamos solo lo que el juez necesita (leer evidencia +
+          # escribir el veredicto). El PR comment lo postea el step siguiente por gh (no el modelo).
+          claude_args: "--model claude-opus-4-8 --allowedTools Read,Write,Glob,Grep"
           prompt: |
             You are the ART-DIRECTOR visual acceptance gate for {{project_name}}, judging
             the screen `${{ steps.artdir.outputs.key }}` of this pull request. You run a
@@ -267,29 +271,37 @@ jobs:
             placeholder / seeded text, and photo content. Do not gold-plate a close-enough
             screen — inventing a new nitpick each round is the failure mode you prevent.
 
-            ## Publish your verdict
-            Post ONE pull-request comment with your judgment via the GitHub tools available
-            to you, AND write the single word PASS or FAIL to the file
-            .art-director/verdict.txt with your Write tool — the next step reads that file
-            to set the check status.
-            - Substantially matches the mockup: comment a one-line confirmation, write PASS.
-            - Does NOT: comment a numbered list of at most 5 concrete differences, most
-              severe first, each naming what the mockup shows vs what the screenshot shows,
-              and write FAIL.
+            ## Publish your verdict — write .art-director/verdict.txt with your Write tool
+            Write your verdict to the file `.art-director/verdict.txt` (the next step reads it to
+            set the check status and to post it as a PR comment). Do NOT post comments yourself.
+            The file's FIRST line must be exactly `PASS` or `FAIL`. Then:
+            - PASS (substantially matches the mockup): first line `PASS`, then one line confirming.
+            - FAIL (does not): first line `FAIL`, then a numbered list of at most 5 concrete
+              differences, most severe first, each naming what the mockup shows vs what the
+              screenshot shows.
 
-            You do not edit code.
+            You do not edit code. Your only side effect is writing verdict.txt.
 
       - name: Art-director — aplicar el veredicto (FAIL => check rojo)
         if: ${{ steps.artdir.outputs.key != '' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR: ${{ github.event.pull_request.number }}
+          KEY: ${{ steps.artdir.outputs.key }}
         run: |
           set -euo pipefail
           V="$GITHUB_WORKSPACE/.art-director/verdict.txt"
           if [ ! -f "$V" ]; then
-            echo "::error::El art-director no dejó veredicto (verdict.txt ausente)."
+            echo "::error::El art-director no dejó veredicto (verdict.txt ausente — ¿permisos de tool?)."
             exit 1
           fi
-          verdict="$(tr -d '[:space:]' < "$V" | tr '[:lower:]' '[:upper:]')"
-          echo "Veredicto del art-director: $verdict"
-          [ "$verdict" = "PASS" ] && exit 0
-          echo "::error::Art-director FAIL para la pantalla '${{ steps.artdir.outputs.key }}': la UI no coincide con el mockup (ver el comment del PR)."
+          verdict="$(head -1 "$V" | tr -d '[:space:]' | tr '[:lower:]' '[:upper:]')"
+          echo "Veredicto del art-director ($KEY): $verdict"
+          echo "----- verdict.txt -----"; cat "$V"
+          # Posteamos el veredicto como comment del PR desde acá (gh con github.token), en vez de
+          # depender del tool de comment del modelo (que la action puede denegar).
+          { echo "### 🎨 Art-director · \`$KEY\` — **$verdict**"; echo; cat "$V"; } > /tmp/verdict-comment.md
+          gh pr comment "$PR" --body-file /tmp/verdict-comment.md 2>/dev/null || echo "(no pude postear el comment; el veredicto está en el log)"
+          [ "$verdict" = "PASS" ] && { echo "✅ la UI coincide con el mockup."; exit 0; }
+          echo "::error::Art-director FAIL para '$KEY': la UI no coincide con el mockup (ver el comment del PR)."
           exit 1
