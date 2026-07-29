@@ -104,6 +104,7 @@ export function TopBar({ currentProjectId }: { currentProjectId?: string }) {
           ) : (
             <div className="sh-mi" style={{ opacity: 0.5 }}><span className="grow">⚙ Settings (abrí un proyecto)</span></div>
           )}
+          {login && <Link className="sh-mi" href="/account/credentials" onClick={() => setOpen(null)}><span className="grow">🔐 Mis credenciales</span></Link>}
           {installUrl && <a className="sh-mi" href={installUrl} target="_blank" rel="noreferrer"><span className="grow">⬇ Instalar App en otra org</span></a>}
           {login && <>
             <div className="sh-mdiv" />
