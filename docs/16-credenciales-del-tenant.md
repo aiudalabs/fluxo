@@ -52,6 +52,28 @@ async): tras crear el repo, leer las credenciales del tenant (RPC service_role) 
 token. Requiere sembrar secrets desde el worker (crypto sealed-box con la public key del repo, o `gh` en
 la imagen del worker) — es el follow-up. Mientras, «Sincronizar a mis proyectos» lo cubre en un click.
 
+## El PAT de GitHub — permisos y alcance
+
+`CLAUDE_GITHUB_PAT` debe ser un **fine-grained PAT**. Como es credencial del TENANT (se siembra en TODOS
+tus repos), su **Repository access** tiene que cubrirlos a todos:
+
+```
+Repository access: All repositories   (o todos los repos de la org donde viven tus proyectos)
+Permissions:
+  Contents ........... Read and write   (obligatorio — clonar + pushear commits)
+  Pull requests ...... Read and write   (obligatorio — abrir/actualizar el PR)
+  Issues ............. Read and write   (recomendado — el agente comenta/cierra/etiqueta issues)
+  Metadata ........... Read             (automático en fine-grained; no se puede sacar)
+  Workflows .......... Read and write   (opcional — SOLO si un agente edita .github/workflows/*)
+```
+
+- **Contents + Pull requests** son el core. Sin ellos, el agente no puede pushear ni abrir PR.
+- **Issues** evita fallos silenciosos (el flujo de Fluxo referencia issues).
+- **Workflows** solo hace falta si el trabajo toca el CI (raro; pushear un cambio a un workflow falla sin
+  este permiso). Ante la duda, incluirlo — no agrega riesgo.
+- **All repositories** es lo coherente con el modelo tenant-level ("una vez y sirve para todo proyecto
+  futuro"). Con "Only select" hay que agregar cada repo nuevo al PAT a mano.
+
 ## Otros pendientes
 - [ ] Auto-seed en el scaffold del worker (proyecto nuevo → credenciales sin click).
 - [ ] Sumar las credenciales de capability (Firebase, etc.) al mismo modelo tenant-level (hoy siguen por-proyecto).
