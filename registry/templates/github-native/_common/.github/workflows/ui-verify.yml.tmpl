@@ -232,6 +232,9 @@ jobs:
         with:
           name: ui-verify-${{ steps.artdir.outputs.key }}
           path: ${{ github.workspace }}/.art-director/*.png
+          # upload-artifact@v4 EXCLUYE archivos ocultos por defecto; .art-director/ es oculto
+          # (dot-dir) → sin esto la evidencia visual (screenshot + mockup) nunca se sube.
+          include-hidden-files: true
           if-no-files-found: ignore
 
       - name: Art-director — veredicto visual (screenshot vs mockup)
