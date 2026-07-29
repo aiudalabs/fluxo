@@ -273,7 +273,17 @@ export function makeHandoff(store: SupabaseDesignStore, workdir: string, github?
         try {
           await publishToGithub(store, workdir, github, stories);
         } catch (e) {
-          console.error(`  ⚠ handoff GitHub omitido (el board ya se publicó): ${e instanceof Error ? e.message : e}`);
+          // FAIL-LOUD (2026-07-29): el tramo GitHub NO degrada en silencio. Antes CUALQUIER error
+          // (incluido un 401 de auth, o un installation token que no puede POST /user/repos en una
+          // cuenta personal) se tragaba como "el board ya se publicó" → el repo del cliente quedaba
+          // SIN issues/mockups y el run igual marcaba `done`. Consecuencia real (Salonara, 2026-07-29):
+          // 10 stories del incremento sin issue → external_ref null → NO despachables, sin que nadie
+          // se enterara. Ahora: brain event queryable + re-throw → el run queda FAILED, visible en el
+          // board, y el operador reintenta. Un handoff que no aterriza los issues NO es un éxito.
+          const msg = e instanceof Error ? e.message : String(e);
+          await store.brainAppend("handoff_github_failed", { error: msg }, "engine:handoff");
+          console.error(`  ✗ handoff GitHub FALLÓ — el board se publicó, pero el repo NO recibió docs/issues (stories NO despachables): ${msg}`);
+          throw new Error(`handoff GitHub falló: ${msg}`);
         }
       }
     },
