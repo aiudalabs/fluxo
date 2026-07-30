@@ -63,7 +63,7 @@ set +e
 docker run --rm --user 1000:1000 \
   -e CLAUDE_CODE_OAUTH_TOKEN="$CLAUDE_TOK" \
   -v "$WD:/work" -w /work "$AGENT_IMG" \
-  claude -p --output-format stream-json --verbose --permission-mode acceptEdits --model "$MODEL" "$PROMPT" \
+  claude -p --output-format stream-json --verbose --dangerously-skip-permissions --model "$MODEL" "$PROMPT" \
   > "$LOGF" 2>"$WD/../$LABEL.err"
 RC=$?
 set -e
