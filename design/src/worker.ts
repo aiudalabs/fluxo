@@ -206,8 +206,14 @@ interface Settings {
   planning_mode?: "ceremony" | "off";     // ceremony = un sprint no despacha hasta planearse
   review_mode?: "ceremony" | "off";        // ceremony = un sprint terminado se revisa antes de avanzar
   retro_mode?: "ceremony" | "off";         // ceremony = tras revisar, la retro puede editar el método
+  exec_env?: "github_actions" | "fluxo_engine"; // dónde corre el build (docs/17). default github_actions.
   lanes?: Record<string, { channel?: string; model?: string }>;
 }
+
+// ExecEnv fluxo_engine (docs/17): el build corre en docker propio (poller fluxo-agent-runner + build_jobs),
+// no en GitHub Actions. El worker IGNORA estos proyectos en los reconcilers basados en Actions (proyección,
+// despacho, watchdog) — el poller/console dueñan su ciclo. Merge→done queda como follow-up del poller.
+const isEngine = (s: { exec_env?: string } | null | undefined): boolean => s?.exec_env === "fluxo_engine";
 function policyFrom(settings: Settings): Policy {
   const modelByLane = new Map<string, string>();
   const channelByLane = new Map<string, string>();
@@ -268,9 +274,10 @@ const projector = new Projector({ write: projectExternalStatus, log: (m) => cons
 
 async function reconcileProjection() {
   if (!app) return;
-  const projects = await rest<Array<{ id: string; name: string; org: string | null; repo: string | null }>>(`/projects?select=id,name,org,repo&repo=not.is.null`);
+  const projects = await rest<Array<{ id: string; name: string; org: string | null; repo: string | null; settings: Settings | null }>>(`/projects?select=id,name,org,repo,settings&repo=not.is.null`);
   for (const p of projects) {
     if (!p.repo || !p.org) continue;
+    if (isEngine(p.settings)) continue; // ExecEnv fluxo_engine: el poller/console dueñan el ciclo (no proyectar vía Actions)
     const rows = await rest<Array<{ id: string; key: string; status: string; external_ref: string | null; pr_url: string | null }>>(
       `/stories?project_id=eq.${p.id}&select=id,key,status,external_ref,pr_url`,
     );
@@ -442,10 +449,11 @@ const WATCHDOG = { MAX_MIN: 120, STALE_MIN: 45, GRACE_MIN: 20 };
 
 async function reconcileWatchdog() {
   if (!app || dryRun) return;
-  const projects = await rest<Array<{ id: string; name: string; org: string | null; repo: string | null; settings: { watchdog?: { max_min?: number; stale_min?: number; grace_min?: number } } | null }>>(`/projects?select=id,name,org,repo,settings&repo=not.is.null`);
+  const projects = await rest<Array<{ id: string; name: string; org: string | null; repo: string | null; settings: { watchdog?: { max_min?: number; stale_min?: number; grace_min?: number }; exec_env?: string } | null }>>(`/projects?select=id,name,org,repo,settings&repo=not.is.null`);
   const now = Date.now();
   for (const p of projects) {
     if (!p.repo || !p.org) continue;
+    if (isEngine(p.settings)) continue; // ExecEnv fluxo_engine: sin runs de Actions que vigilar
     try {
       const repo = GithubRepo.fromUrl(await repoTokenFor(p.org), p.repo);
       const live = await repo.listLiveRuns("claude.yml");
@@ -503,6 +511,7 @@ async function reconcileBuild() {
   const projects = await rest<Array<{ id: string; name: string; org: string | null; repo: string | null; settings: Settings | null }>>(`/projects?select=id,name,org,repo,settings&repo=not.is.null`);
   for (const p of projects) {
     if (!p.repo || !p.org) continue;
+    if (isEngine(p.settings)) continue; // ExecEnv fluxo_engine: el build va por el poller/console (build_jobs), no a Actions
 
     // dispatch_mode "manual" = botón-only: la UI (POST /api/projects/[id]/dispatch, F6a) despacha;
     // el worker NO auto-despacha. "auto" = el worker despacha por tick. DEFAULT = "manual" (deuda-chica

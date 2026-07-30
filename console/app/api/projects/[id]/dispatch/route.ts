@@ -72,6 +72,28 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
   }
   if (cand.members.length === 0) return NextResponse.json({ error: "candidato sin stories" }, { status: 409 });
 
+  // ── ExecEnv fluxo_engine (docs/17) ─────────────────────────────────────────────────────────────
+  // Si el proyecto corre en el engine propio, NO disparamos GitHub Actions: encolamos un build_job que
+  // el poller host-level (fluxo-agent-runner) levanta y corre en docker con el token Pro/Max (cero
+  // Actions, cero API metered). No necesita el github token del usuario ni el secret del repo.
+  const { data: proj } = await admin().from("projects").select("settings").eq("id", id).single();
+  const execEnv = (proj?.settings as { exec_env?: string } | null)?.exec_env ?? "github_actions";
+  if (execEnv === "fluxo_engine") {
+    const uiFid = uiFidelity();
+    const enginePrompt = cand.kind === "sprint" ? sprintPrompt(cand.title, cand.members, uiFid) : storyPrompt(cand.members[0], uiFid);
+    const label = cand.kind === "sprint" ? `sprint-${cand.id}` : cand.members[0].key.toLowerCase();
+    for (const m of cand.members) await setStatus(m.id, "running"); // money-safe (sale del set despachable)
+    const { error } = await admin().from("build_jobs").insert({
+      tenant_id: session.tenant, project_id: id, label, prompt: enginePrompt,
+      issues: cand.issues.join(","), story_keys: cand.members.map((m) => m.key),
+    });
+    if (error) {
+      for (const m of cand.members) { try { await setStatus(m.id, "backlog"); } catch { /* best-effort */ } }
+      return NextResponse.json({ error: `no se pudo encolar el build en el engine: ${error.message}` }, { status: 502 });
+    }
+    return NextResponse.json({ dispatched: true, execEnv: "fluxo_engine", kind: cand.kind, id: cand.id, issues: cand.issues });
+  }
+
   if (!token) return NextResponse.json({ error: "github no conectado" }, { status: 403 });
 
   // Gate del CANAL de build: no disparar si el secret CLAUDE_CODE_OAUTH_TOKEN no está en el repo — si
