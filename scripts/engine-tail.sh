@@ -36,7 +36,7 @@ for ln in lines:
                 else: events.append("· "+n)
     elif t=="result":
         turns=o.get("num_turns",turns); cost=o.get("total_cost_usd",cost)
-log="\n".join(events[-25:])
+log="\n".join(events[-600:])  # historial completo (acotado a 600 eventos para no explotar la fila)
 prog={"turns":turns,"bash":bash,"edits":edits,"reads":reads,"cost":round(cost,4),"last":last_text[:200]}
 print(json.dumps({"log":log,"progress":prog}))
 PY
@@ -61,7 +61,9 @@ while true; do
     # lo reconcilie (kill, reboot, poller caído). Lo marcamos failed + revertimos las stories a backlog.
     if ! pgrep -f "agent-runner.sh.*$LABEL" >/dev/null 2>&1; then
       AGE=$(( $(date +%s) - $(stat -c %Y "$S" 2>/dev/null || echo 0) ))
-      if [ "$AGE" -gt 180 ]; then
+      # 600s: el poller reconcilia en segundos al terminar el runner; el watchdog es solo backstop
+      # para builds VERDADERAMENTE huérfanos (poller caído/reboot). No debe correrle la carrera al poller.
+      if [ "$AGE" -gt 600 ]; then
         curl -s "${H[@]}" -X PATCH "$B/build_jobs?id=eq.$ID" -d '{"status":"failed","error":"el proceso del build murió sin reconciliar (engine-tail watchdog)","updated_at":"now()"}' >/dev/null || true
         for k in ${KEYS//,/ }; do revert_story "$k" "$PROJ"; done
         echo "[engine-tail] ⚠ build $LABEL huérfano (sin proceso, stream ${AGE}s viejo) → failed + stories a backlog"

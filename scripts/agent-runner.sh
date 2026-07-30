@@ -13,6 +13,10 @@
 #   ISSUES_CSV  "88" o "87,88,90" — para el "Closes #N" del PR
 #   MODEL       claude-opus-4-8 (default)
 set -euo pipefail
+# Bajo systemd (el poller) HOME puede no estar → `git config --global` (safe.directory) no aplicaría y
+# git como root sobre el repo del agente (uid 1000) fallaría con "dubious ownership" → los push mueren
+# en silencio (commitea local pero no pushea). Forzamos HOME para que la config global valga.
+export HOME=/root
 
 PROJECT_ID="${1:?PROJECT_ID}"; PROMPT_FILE="${2:?PROMPT_FILE}"; LABEL="${3:?LABEL}"
 ISSUES_CSV="${4:-}"; MODEL="${5:-claude-opus-4-8}"
@@ -74,10 +78,12 @@ AGENT_PID=$!
 # (el agente hizo un commit), pusheamos esa rama. Pocos pushes, semánticos, sin perder trabajo.
 LASTPUSHED=""
 while kill -0 "$AGENT_PID" 2>/dev/null; do
-  HEAD="$(git -C "$WD" rev-parse HEAD 2>/dev/null || true)"
+  HEAD="$(git -C "$WD" -c safe.directory="$WD" rev-parse HEAD 2>/dev/null || true)"
   if [ -n "$HEAD" ] && [ "$HEAD" != "$LASTPUSHED" ]; then
-    if git -C "$WD" -c http.extraheader="$AUTHHDR" push origin "$BRANCH" >/dev/null 2>&1; then
+    if git -C "$WD" -c safe.directory="$WD" -c http.extraheader="$AUTHHDR" push "https://github.com/$SLUG.git" "$BRANCH" 2>"$WD/../$LABEL.push.err"; then
       LASTPUSHED="$HEAD"; log "↑ push incremental (commit ${HEAD:0:8})"
+    else
+      log "⚠ push incremental falló: $(tail -1 "$WD/../$LABEL.push.err" 2>/dev/null)"
     fi
   fi
   sleep 15
