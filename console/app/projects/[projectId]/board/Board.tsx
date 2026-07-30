@@ -85,6 +85,11 @@ export default function Board() {
   // bloquean. El board pinta "⧗ esperando capability: X" en vez de un ▶ que llevaría a un stub.
   const [capWaiting, setCapWaiting] = useState<Map<string, string[]>>(new Map());
   const [busy, setBusy] = useState(false);
+  // Nueva story de autor humano (directo al backlog): título + cuerpo (el prompt/spec).
+  const [nsOpen, setNsOpen] = useState(false);
+  const [nsTitle, setNsTitle] = useState("");
+  const [nsBody, setNsBody] = useState("");
+  const [nsBusy, setNsBusy] = useState(false);
 
   // refreshCandidates: corre el kernel candidates() server-side (GET /candidates, DB-only). Se
   // llama al cargar y tras cada cambio (Realtime) → el botón desaparece cuando la unidad ya no
@@ -124,6 +129,27 @@ export default function Board() {
     } catch { window.alert(t("tickets.dispatch.error")); }
     finally { setBusy(false); void refreshCandidates(); }
   }, [busy, projectId, refreshCandidates, t]);
+
+  // createStory: agrega una story de autor humano DIRECTO al backlog (POST /stories → crea issue +
+  // la inserta sin deps → queda ready). Realtime la trae a la board; refreshCandidates la vuelve
+  // despachable. El ▶ la lanza al motor que tenga el proyecto (Actions o fluxo_engine).
+  const createStory = useCallback(async () => {
+    if (nsBusy || !nsTitle.trim()) return;
+    setNsBusy(true);
+    try {
+      const tok = activeToken();
+      const res = await fetch(`/api/projects/${projectId}/stories`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...(tok ? { Authorization: `Bearer ${tok}` } : {}) },
+        body: JSON.stringify({ title: nsTitle.trim(), body: nsBody.trim() }),
+      });
+      const d = await res.json().catch(() => ({}));
+      if (!res.ok) { window.alert(d.error ?? "no se pudo crear la story"); return; }
+      setNsTitle(""); setNsBody(""); setNsOpen(false);
+      void refreshCandidates();
+    } catch { window.alert("no se pudo crear la story"); }
+    finally { setNsBusy(false); }
+  }, [nsBusy, nsTitle, nsBody, projectId, refreshCandidates]);
 
   // onStop: DETENER una unidad running (o un "running" falso pegado). Confirma → POST /runs/cancel
   // con la story KEY; el server EXPANDE a la unidad (sprint completo en sprint-mode) y resetea todo a
@@ -270,10 +296,28 @@ export default function Board() {
           </button>
         )}
         <span className="sp" style={{ flex: 1 }} />
+        <button className="btn sm primary" onClick={() => setNsOpen((v) => !v)} title="Agregar una story directo al backlog">
+          ＋ Nueva story
+        </button>
         <span className="tickets-count">
           {hasFilter ? `${filtered.length}/${tickets.length}` : tickets.length}
         </span>
       </div>
+
+      {nsOpen && (
+        <div className="tickets-toolbar" style={{ flexDirection: "column", alignItems: "stretch", gap: 8, background: "var(--bg2)", borderRadius: 10, padding: 12, margin: "0 0 8px" }}>
+          <input className="inp" placeholder="Título de la story (ej. Rediseño integral de la UI a MD3)" value={nsTitle} onChange={(e) => setNsTitle(e.target.value)} />
+          <textarea className="inp" style={{ minHeight: 140, resize: "vertical", fontFamily: "inherit" }} placeholder="Cuerpo / prompt: qué querés que haga el agente. Es el spec que recibe (pegá acá el prompt)." value={nsBody} onChange={(e) => setNsBody(e.target.value)} />
+          <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+            <button className="btn primary" disabled={nsBusy || !nsTitle.trim()} onClick={createStory}>
+              {nsBusy ? "Creando…" : "Crear en el backlog"}
+            </button>
+            <button className="btn ghost" onClick={() => setNsOpen(false)}>Cancelar</button>
+            <span className="sp" style={{ flex: 1 }} />
+            <span className="c" style={{ fontSize: 12, opacity: 0.7 }}>Sin dependencias → queda lista para lanzar con ▶ (al motor del proyecto).</span>
+          </div>
+        </div>
+      )}
 
       {state === "loading" ? (
         <div className="tickets-canvas pad"><div className="placeholder"><span className="spin" /></div></div>

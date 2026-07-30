@@ -15,6 +15,7 @@ import { sessionToken } from "@/lib/supabaseClient";
 interface LaneCfg { channel?: string; model?: string }
 interface ProjSettings {
   channel?: "claude_action" | "copilot";
+  exec_env?: "github_actions" | "fluxo_engine";  // docs/17: dónde corre el build (Actions BYO | engine en el VPS)
   merge_mode?: "manual" | "auto";
   dispatch_mode?: "auto" | "manual";
   execution_unit?: "sprint" | "story";
@@ -32,7 +33,7 @@ interface ProjSettings {
 // proyecto sin setting NO auto-despacha agentes pagos), max_concurrency → 3 (MAX). Si la UI muestra un
 // default distinto al que el motor asume ante el campo ausente, MIENTE (bug: mostraba "Sprint" mientras
 // el motor corría "story"). dispatch_mode se incluye acá para que Guardar lo PERSISTA (no lo borre).
-const DEFAULTS: ProjSettings = { channel: "claude_action", merge_mode: "manual", dispatch_mode: "manual", execution_unit: "story", max_concurrency: 3, workflow_approval: "manual", gate_autonomy: "manual", planning_mode: "off", review_mode: "off", retro_mode: "off", workflow: "design", lanes: {} };
+const DEFAULTS: ProjSettings = { channel: "claude_action", exec_env: "github_actions", merge_mode: "manual", dispatch_mode: "manual", execution_unit: "story", max_concurrency: 3, workflow_approval: "manual", gate_autonomy: "manual", planning_mode: "off", review_mode: "off", retro_mode: "off", workflow: "design", lanes: {} };
 const MODELS = ["auto", "claude-opus-4-8", "claude-sonnet-5", "claude-haiku-4-5-20251001"];
 
 interface ChannelInfo { id: string; available: boolean; reason: string; secretsPermMissing: boolean }
@@ -198,6 +199,14 @@ export default function Settings() {
             <option value="claude_action">Claude Code Action</option>
             <option value="copilot">GitHub Copilot (próximamente)</option>
           </select>
+        </div>
+        <div className="stg-field">
+          <label>Motor de build (dónde corre el agente)</label>
+          <select value={settings.exec_env ?? "github_actions"} onChange={(e) => patch({ exec_env: e.target.value as ProjSettings["exec_env"] })}>
+            <option value="github_actions">GitHub Actions — en tu repo (BYO, cero COGS)</option>
+            <option value="fluxo_engine">Fluxo Engine — docker en el VPS (token Pro/Max, sin Actions)</option>
+          </select>
+          <p className="stg-fine">Con «Fluxo Engine», el ▶ del board encola el build en el VPS (no dispara GitHub Actions).</p>
         </div>
 
         {/* Integraciones / Capabilities — las integraciones externas BYO que el stack del proyecto
