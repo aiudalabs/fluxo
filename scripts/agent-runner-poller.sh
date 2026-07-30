@@ -44,11 +44,15 @@ while true; do
   RC=$?
   set -e
   PR="$(printf '%s' "$OUT" | sed -nE 's/.*PR=([0-9]+).*/\1/p' | tail -1)"
+  COST="$(printf '%s' "$OUT" | sed -nE 's/.*COST=([0-9.]+).*/\1/p' | tail -1)"; COST="${COST:-0}"
+  TENANT="$(printf '%s' "$JOB" | python3 -c 'import json,sys;print(json.load(sys.stdin)[0]["tenant_id"])' 2>/dev/null)"
   if [ "$RC" = "0" ] && [ -n "$PR" ]; then
     PRURL="https://github.com/$(curl -s "${H[@]}" "$B/projects?id=eq.$PROJECT&select=repo" | python3 -c 'import json,sys,re;u=json.load(sys.stdin)[0]["repo"];print(re.sub(r".*github.com/([^/]+/[^/.]+).*",r"\1",u))')/pull/$PR"
-    curl -s "${H[@]}" -X PATCH "$B/build_jobs?id=eq.$ID" -d "{\"status\":\"done\",\"pr_url\":\"$PRURL\",\"updated_at\":\"now()\"}" >/dev/null
+    curl -s "${H[@]}" -X PATCH "$B/build_jobs?id=eq.$ID" -d "{\"status\":\"done\",\"pr_url\":\"$PRURL\",\"cost_usd\":$COST,\"updated_at\":\"now()\"}" >/dev/null
+    # costo → run_costs (misma tabla que la vista Spend), idempotente por (project, run_id)
+    curl -s "${H[@]}" -H "Prefer: resolution=ignore-duplicates" -X POST "$B/run_costs?on_conflict=project_id,run_id" -d "{\"tenant_id\":\"$TENANT\",\"project_id\":\"$PROJECT\",\"run_id\":\"engine:$ID\",\"issues\":\"$ISSUES\",\"usd\":$COST}" >/dev/null
     for k in "${KEYS[@]}"; do set_story "$k" "$PROJECT" review "$PRURL"; done
-    log "✓ job $ID done → PR $PRURL"
+    log "✓ job $ID done → PR $PRURL (cost \$$COST)"
   else
     ERR="$(printf '%s' "$OUT" | tail -3 | tr '\n' ' ' | sed 's/"/'"'"'/g')"
     curl -s "${H[@]}" -X PATCH "$B/build_jobs?id=eq.$ID" -d "{\"status\":\"failed\",\"error\":\"rc=$RC $ERR\",\"updated_at\":\"now()\"}" >/dev/null

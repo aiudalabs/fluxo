@@ -14,6 +14,7 @@ import { useCallback, useEffect, useState } from "react";
 import { useProject } from "@/lib/project";
 import { activeToken } from "@/lib/supabaseClient";
 import { useT } from "@/lib/i18n";
+import EngineBuilds from "@/components/EngineBuilds";
 
 type Story = { id: string; key: string; title: string; status: string; session_url: string | null; pr_url: string | null };
 type Run = { id: number; name: string; title: string; html_url: string; branch: string; event: string; created_at: string };
@@ -116,6 +117,8 @@ export default function Agents() {
         <div className="tickets-canvas pad"><div className="placeholder err">{t("agents.error")}</div></div>
       ) : (
         <div className="tickets-canvas pad" style={{ display: "flex", flexDirection: "column", gap: 22 }}>
+          {/* ── Motor Fluxo · builds en el VPS con log en vivo (docs/17) ────── */}
+          <EngineBuilds />
           {/* ── Panel 1 · Sesiones activas ─────────────────────────────────── */}
           <Panel title={t("agents.sessions.title")} count={t("agents.sessions.count", { n: sessions.length })}>
             {sessions.length === 0 ? (
