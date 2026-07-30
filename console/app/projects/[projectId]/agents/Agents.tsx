@@ -10,11 +10,11 @@
 // Data en vivo: Realtime de Supabase para las stories (RLS-scoped, igual que el board); poll para
 // los runs de GitHub (no hay webhook en v2 todavía — poll primero, golden rule del plan).
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useProject } from "@/lib/project";
 import { activeToken } from "@/lib/supabaseClient";
 import { useT } from "@/lib/i18n";
-import EngineBuilds from "@/components/EngineBuilds";
+import EngineBuilds, { useBuildJobs } from "@/components/EngineBuilds";
 
 type Story = { id: string; key: string; title: string; status: string; session_url: string | null; pr_url: string | null };
 type Run = { id: number; name: string; title: string; html_url: string; branch: string; event: string; created_at: string };
@@ -93,7 +93,13 @@ export default function Agents() {
     finally { setApproving((s) => { const n = new Set(s); n.delete(runId); return n; }); }
   }, [approving, projectId]);
 
-  const sessions = stories.filter((s) => s.status === "running");
+  // Las stories que corren en el ENGINE se muestran en «Motor Fluxo» (con su log + Detener), NO acá
+  // también — para no duplicar la task. Excluimos las que tienen un build_job activo.
+  const buildJobs = useBuildJobs();
+  const engineKeys = useMemo(() => new Set(
+    buildJobs.filter((j) => j.status === "running" || j.status === "cancelling").flatMap((j) => j.story_keys ?? []),
+  ), [buildJobs]);
+  const sessions = stories.filter((s) => s.status === "running" && !engineKeys.has(s.key));
   // Cola de PRs: stories en review con PR, deduplicadas por pr_url (sprint = 1 PR cierra N issues).
   const prByUrl = new Map<string, Story[]>();
   for (const s of stories) {

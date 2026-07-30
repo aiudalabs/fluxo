@@ -50,9 +50,18 @@ revert_story() {
 
 echo "[engine-tail] arriba (interval=${INTERVAL}s)"
 while true; do
-  JOBS="$(curl -s "${H[@]}" "$B/build_jobs?status=eq.running&select=id,label,project_id,story_keys")"
-  echo "$JOBS" | python3 -c 'import json,sys;[print(j["id"]+"\t"+j["label"]+"\t"+j["project_id"]+"\t"+",".join(j.get("story_keys") or [])) for j in json.load(sys.stdin)]' 2>/dev/null | while IFS=$'\t' read -r ID LABEL PROJ KEYS; do
+  JOBS="$(curl -s "${H[@]}" "$B/build_jobs?status=in.(running,cancelling)&select=id,label,project_id,story_keys,status")"
+  echo "$JOBS" | python3 -c 'import json,sys;[print(j["id"]+"\t"+j["label"]+"\t"+j["project_id"]+"\t"+",".join(j.get("story_keys") or [])+"\t"+j.get("status","")) for j in json.load(sys.stdin)]' 2>/dev/null | while IFS=$'\t' read -r ID LABEL PROJ KEYS ST; do
     [ -z "$ID" ] && continue
+    # ── DETENER: el console marcó 'cancelling' → matamos el proceso + container del agente, failed + revert.
+    if [ "$ST" = "cancelling" ]; then
+      pkill -9 -f "agent-runner.sh.*$LABEL" 2>/dev/null || true
+      docker kill $(docker ps -q --filter ancestor=fluxo-agent:local) 2>/dev/null || true
+      curl -s "${H[@]}" -X PATCH "$B/build_jobs?id=eq.$ID" -d '{"status":"failed","error":"detenido por el usuario","updated_at":"now()"}' >/dev/null || true
+      for k in ${KEYS//,/ }; do revert_story "$k" "$PROJ"; done
+      echo "[engine-tail] ⏹ build $LABEL detenido por el usuario → failed + stories a backlog"
+      continue
+    fi
     S="$(ls -t "$RUNS/${LABEL}"*.stream.json 2>/dev/null | head -1)"
     [ -z "$S" ] && S="$RUNS/${LABEL}.stream.json"
     PATCH="$(parse_stream "$S")"

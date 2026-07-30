@@ -18,6 +18,7 @@
 import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import { useProject } from "@/lib/project";
+import EngineBuilds from "@/components/EngineBuilds";
 import type { DispatchCandidate, OrchestratorTicket } from "@/lib/types";
 import { LaneChip } from "@/components/tickets/LaneChip";
 import { AGENT_LOST_TOKEN, statusToken } from "@/lib/statusToken";
@@ -112,6 +113,8 @@ export function TicketDetail({ ticket, candidate, onDispatch, onStop, onClose, o
             </div>
 
             <div className="db">
+              {/* Log del build del engine para esta story (docs/17) — la misma task, sus logs, en el board. */}
+              <EngineBuilds only={ticket.id} />
               {(ticket.owner || ticket.repo) && (
                 <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", marginBottom: 14 }}>
                   {ticket.owner && <LaneChip lane={ticket.owner} title={t("tickets.detail.laneTitle")} />}
