@@ -176,11 +176,11 @@ export default function Settings() {
 
       {/* 1 · Canal de build */}
       <section className="stg-card">
-        <div className="stg-card-h"><h2>🔑 Canal de build</h2><span>Quién escribe el código: Claude Code Action o Copilot, corriendo en las Actions de tu repo.</span></div>
+        <div className="stg-card-h"><h2>🔑 Canal de build</h2><span>Quién escribe el código: Claude Code o Copilot. Dónde corre lo elegís abajo en «Motor de build».</span></div>
         <div className="stg-chan">
           <div className="stg-chan-row">
             <span className={`stg-dot ${claude?.available ? "on" : "off"}`} />
-            <b>Claude Code Action</b>
+            <b>Claude Code</b>
             <span className="stg-chan-reason">{claude?.reason ?? "verificando…"}</span>
           </div>
           {claude?.secretsPermMissing && probe?.permissionsUrl && (
@@ -196,7 +196,7 @@ export default function Settings() {
         <div className="stg-field">
           <label>Canal por defecto</label>
           <select value={settings.channel} onChange={(e) => patch({ channel: e.target.value as ProjSettings["channel"] })}>
-            <option value="claude_action">Claude Code Action</option>
+            <option value="claude_action">Claude Code</option>
             <option value="copilot">GitHub Copilot (próximamente)</option>
           </select>
         </div>
