@@ -5,7 +5,7 @@
 // build_jobs.log/progress; Realtime lo trae). Detener REAL: marca cancel → el tailer mata el proceso.
 // `only` limita a un build_job (para reusar en el board sobre una story puntual).
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useId, useMemo, useState } from "react";
 import { useProject } from "@/lib/project";
 import { activeToken } from "@/lib/supabaseClient";
 
@@ -19,6 +19,8 @@ const DOT: Record<string, string> = { running: "#0e8a16", done: "#5319e7", faile
 
 export function useBuildJobs() {
   const { projectId, supabase } = useProject();
+  const uid = useId(); // canal ÚNICO por instancia del hook (Agents + EngineBuilds lo usan a la vez →
+                       // dos canales con el mismo nombre rompían Realtime con una excepción de cliente).
   const [jobs, setJobs] = useState<BuildJob[]>([]);
   useEffect(() => {
     let dead = false;
@@ -29,18 +31,18 @@ export function useBuildJobs() {
       if (!dead) setJobs((data as BuildJob[]) ?? []);
     };
     void load();
-    const ch = supabase.channel(`engine-builds:${projectId}`)
+    const ch = supabase.channel(`engine-builds:${projectId}:${uid}`)
       .on("postgres_changes", { event: "*", schema: "public", table: "build_jobs", filter: `project_id=eq.${projectId}` }, () => void load())
       .subscribe();
     const poll = setInterval(() => void load(), 5000);
     return () => { dead = true; clearInterval(poll); void supabase.removeChannel(ch); };
-  }, [projectId, supabase]);
+  }, [projectId, supabase, uid]);
   return jobs;
 }
 
 function BuildCard({ j, projectId }: { j: BuildJob; projectId: string }) {
   const running = j.status === "running";
-  const [open, setOpen] = useState(running);
+  const [open, setOpen] = useState(false); // siempre colapsado por defecto (clic para abrir el log)
   const [stopping, setStopping] = useState(false);
   const p = j.progress ?? {};
   const cost = j.cost_usd ?? p.cost;
