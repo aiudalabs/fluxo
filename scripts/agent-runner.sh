@@ -22,6 +22,7 @@ PROJECT_ID="${1:?PROJECT_ID}"; PROMPT_FILE="${2:?PROMPT_FILE}"; LABEL="${3:?LABE
 ISSUES_CSV="${4:-}"; MODEL="${5:-claude-opus-4-8}"
 ENVF="${ENVF:-/opt/fluxo/deploy/.env.prod}"
 AGENT_IMG="${AGENT_IMG:-fluxo-agent:local}"
+AGENT_DIR="${AGENT_DIR:-/opt/fluxo/agent}"  # Dockerfile de la imagen del agente (para rebuild-si-falta)
 WORKROOT="${WORKROOT:-/opt/fluxo/runs}"
 
 log(){ echo "[$(printf '%(%H:%M:%S)T')] $*"; }
@@ -66,6 +67,15 @@ NOTA (runner fluxo_engine): estás en un container aislado sobre la rama $BRANCH
 LOGF="$WD/../$LABEL.stream.json"
 # git como root sobre un repo que el agente (uid 1000) commitea → evitar "dubious ownership".
 git config --global --add safe.directory "$WD" 2>/dev/null || true
+# Imagen del agente: si un `docker prune` (o presión de disco) la borró, `docker run` intentaría hacer PULL
+# de un registry inexistente → falla con rc=2 y el build muere de arranque (nos pasó con u-gaps1). Rebuildeala
+# local si falta, ANTES de correr — es idempotente y barato (capas cacheadas).
+if ! docker image inspect "$AGENT_IMG" >/dev/null 2>&1; then
+  log "imagen $AGENT_IMG ausente (¿prune?) — rebuildeando desde $AGENT_DIR…"
+  docker build -t "$AGENT_IMG" "$AGENT_DIR" >"$WD/../$LABEL.imgbuild.log" 2>&1 \
+    || { echo "no pude rebuildear $AGENT_IMG (ver $LABEL.imgbuild.log)"; exit 1; }
+  log "imagen $AGENT_IMG reconstruida"
+fi
 log "corriendo el agente en $AGENT_IMG (network=egress pendiente F3; por ahora default)…"
 set +e
 docker run --rm --user 1000:1000 \
