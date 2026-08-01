@@ -65,7 +65,7 @@ if (!pres.ok) {
   console.error(`no pude leer el proyecto: ${pres.status} ${await pres.text()}`);
   process.exit(1);
 }
-const [project] = (await pres.json()) as Array<{ tenant_id: string; name: string; description: string | null; org: string | null; owner_id: string | null; repo: string | null; settings: { gate_autonomy?: "manual" | "auto_if_safe" } | null }>;
+const [project] = (await pres.json()) as Array<{ tenant_id: string; name: string; description: string | null; org: string | null; owner_id: string | null; repo: string | null; settings: { gate_autonomy?: "manual" | "auto_if_safe"; stack?: string } | null }>;
 
 // Token OAuth del dueño (para crear el repo COMO él — cuenta personal u org). Lo lee por
 // owner_id de github_tokens (service_role). Sin él, el handoff cae al installation token.
@@ -131,7 +131,12 @@ if (sprintArg) {
     retro: `docs/RETRO-${sprintArg}.md`,
   };
 } else {
-  trigger = { instructions: idea, project_id: projectId, repo: "" };
+  // stack: la elección del humano (settings.stack) o "auto" si no eligió → llega a los agentes de
+  // diseño (principles/architect vía $trigger.stack en design.yaml). Un stack concreto ANCLA el
+  // diseño; "auto" deja que el architect elija de la lista cerrada — nunca inventa uno inexistente.
+  const stack = typeof project.settings?.stack === "string" && project.settings.stack.trim()
+    ? project.settings.stack.trim() : "auto";
+  trigger = { instructions: idea, project_id: projectId, repo: "", stack };
 }
 
 // 3) Cargar el workflow + sembrar las fases (todas las de tipo design, en orden).

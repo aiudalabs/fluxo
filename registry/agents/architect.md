@@ -16,6 +16,27 @@ architecture that development agents can implement without ambiguity.
 The PRD is in the `prd` input. If `feedback` is present, a previous arch doc was rejected —
 address every point precisely.
 
+The `stack` input carries the technology stack CHOSEN for this project. It is a **closed list** —
+never invent a value outside it:
+
+- `aiuda-flutter-firebase` — Flutter (mobile) + Firebase.
+- `react-supabase` — React + Vite + Supabase (Postgres).
+- `python-fastapi-react` — Python/FastAPI backend + React frontend.
+- `auto` — the human did NOT choose; YOU pick the best fit for the PRD **from that same list**.
+
+**Stack rules (non-negotiable — this kills the hallucinated-stack bug):**
+
+1. If `stack` is a concrete value (not `auto`), **build ON it**: every technology choice in §1 must
+   be consistent with it. Do NOT swap it for another stack, even if you think one is "better".
+2. If `stack` is `auto`, **choose exactly one id from the closed list** above and justify it in §4.
+3. The `stack:` field you write in `docs/provisioning.yaml` (below) MUST equal the chosen id —
+   the concrete input, or the value you auto-picked from the enum. NEVER write a stack that is not
+   one of `aiuda-flutter-firebase` / `react-supabase` / `python-fastapi-react`. A made-up stack
+   (e.g. `nextjs-postgres-prisma-docker`) has no template in Fluxo → the scaffold degrades to the
+   stack-agnostic `_common` and the project silently loses its stack-specific quality gates
+   (`ui-verify`, the frontend persona). The constitution already locked the stack — read it and stay
+   consistent.
+
 ## How you work
 
 1. **Read the PRD in full before writing anything.** Architecture is a response to

@@ -14,6 +14,7 @@
 
 import { readFileSync, existsSync, readdirSync, statSync } from "node:fs";
 import { resolve, join, relative } from "node:path";
+import { knownStackIds } from "./capabilities.ts";
 
 // Las vars del contrato de templates (registry/templates/github-native/README.md §Template variables).
 // Solo se sustituye una var cuyo valor esté DEFINIDO; una var sin resolver deja el `{{...}}` en el
@@ -73,7 +74,7 @@ export interface ScaffoldResult {
   // SOLO `_common` (sin persona/instructions/ui-verify del stack → sin gate de calidad). Antes esto pasaba
   // en silencio (`existsSync` false → continue). `unknownStack` != null → el handoff lo surface-a en el brain.
   unknownStack: string | null;
-  availableStacks: string[];  // los stacks reales del registry (para nombrar la corrección)
+  availableStacks: string[];  // los stacks reales del registry (registry/stacks/*.yaml) — para nombrar la corrección
 }
 
 // buildScaffold: emite `_common/**` + `<stack>/**` renderizados. `<stack>` gana ante una colisión de
@@ -103,11 +104,11 @@ export function buildScaffold(registryDir: string, vars: ScaffoldVars): Scaffold
 
   const files = [...byPath.entries()].map(([path, content]) => ({ path, content })).sort((a, b) => (a.path < b.path ? -1 : 1));
   const skips = [...skipped.entries()].map(([path, missing]) => ({ path, missing })).sort((a, b) => (a.path < b.path ? -1 : 1));
-  // Los stacks reales del registry (dirs bajo templates/github-native, menos _common).
-  const availableStacks = existsSync(base)
-    ? readdirSync(base).filter((d) => d !== "_common" && statSync(resolve(base, d)).isDirectory()).sort()
-    : [];
-  // El proyecto declaró un stack que no existe como template → solo se emitió `_common` (fail-loud).
-  const unknownStack = vars.stack && !existsSync(resolve(base, vars.stack)) ? vars.stack : null;
+  // AUTORIDAD del "stack real" = registry/stacks/*.yaml (el stack como concepto de primera clase),
+  // NO la mera existencia de un dir de template. Así un `stack:` alucinado por el architect
+  // (ej. `nextjs-postgres-prisma-docker`, el bug de Salonara) FALLA RUIDOSO en vez de degradar a
+  // `_common` en silencio — el handoff surface-a `scaffold_unknown_stack` en el brain.
+  const availableStacks = knownStackIds(registryDir).sort();
+  const unknownStack = vars.stack && !availableStacks.includes(vars.stack) ? vars.stack : null;
   return { files, skipped: skips, unknownStack, availableStacks };
 }
