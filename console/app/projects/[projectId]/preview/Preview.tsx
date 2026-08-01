@@ -9,6 +9,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useProject } from "@/lib/project";
 import { useLocale } from "@/lib/locale";
+import { activeToken } from "@/lib/supabaseClient";
 
 type Preview = { id: string; ref: string | null; status: string; preview_url: string | null; error: string | null; expires_at: string | null; created_at: string };
 const ACTIVE = new Set(["pending", "building", "live"]);
@@ -20,6 +21,18 @@ export default function Preview() {
   const [ref, setRef] = useState("");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  const [branches, setBranches] = useState<string[]>([]);
+  const [defaultBranch, setDefaultBranch] = useState("main");
+
+  // Ramas reales del repo → dropdown (para elegir la rama de un build del engine y verla antes de mergear).
+  useEffect(() => {
+    let dead = false;
+    const tok = activeToken();
+    void fetch(`/api/projects/${projectId}/branches`, { headers: tok ? { Authorization: `Bearer ${tok}` } : {} })
+      .then((r) => r.json()).then((d) => { if (!dead) { setBranches(d.branches ?? []); setDefaultBranch(d.defaultBranch ?? "main"); } })
+      .catch(() => {});
+    return () => { dead = true; };
+  }, [projectId]);
 
   useEffect(() => {
     let dead = false;
@@ -79,10 +92,13 @@ export default function Preview() {
         <div style={{ border: "1px solid var(--stroke)", background: "var(--panel)", borderRadius: 12, padding: 16, display: "flex", gap: 12, flexWrap: "wrap", alignItems: "flex-end" }}>
           <label style={{ display: "flex", flexDirection: "column", gap: 4, flex: 1, minWidth: 220 }}>
             <span className="eyebrow acc">{t("preview.refLabel")}</span>
-            <input
-              value={ref} onChange={(e) => setRef(e.target.value)} placeholder={t("preview.refPlaceholder")}
+            <select
+              value={ref} onChange={(e) => setRef(e.target.value)}
               style={{ padding: "9px 12px", borderRadius: 8, border: "1px solid var(--stroke)", background: "var(--bg2)", color: "var(--text)", fontSize: 13, fontFamily: "inherit" }}
-            />
+            >
+              <option value="">{defaultBranch} (default)</option>
+              {branches.filter((b) => b !== defaultBranch).map((b) => <option key={b} value={b}>{b}</option>)}
+            </select>
           </label>
           <button className="btn" disabled={inFlight || !project} onClick={generate}>
             {inFlight ? "…" : latest ? t("preview.regenerate") : t("preview.generate")}

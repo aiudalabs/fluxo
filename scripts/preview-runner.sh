@@ -267,12 +267,12 @@ process_one() { # $1=id  $2=project_id  $3=ref
   esac
   local repodir="$wd/repo"
   if ! git clone --depth 1 ${ref:+--branch "$ref"} "$clone_url" "$repodir" >"$wd/clone.log" 2>&1; then
-    # ref puede no ser una rama (o repo privado): reintenta sin --branch
-    if ! git clone --depth 1 "$clone_url" "$repodir" >>"$wd/clone.log" 2>&1; then
-      # redactá el token si git lo eco en la URL del error (no filtrarlo a la DB)
-      local cerr; cerr=$(tail -2 "$wd/clone.log" | sed 's#x-access-token:[^@]*@#x-access-token:***@#g' | tr '\n' ' ')
-      set_status "$id" failed ",\"error\":$(jesc "git clone falló: $cerr")"; teardown "$pid"; return
-    fi
+    # FAIL-LOUD: NO caemos a main en silencio. Antes reintentábamos sin --branch, así que una rama mal
+    # tipeada/borrada previsualizaba main igual → el usuario "escoge una rama y ve el main" (bug reportado).
+    # Ahora falla con un mensaje claro; el dropdown de ramas del console evita el typo en primer lugar.
+    local cerr; cerr=$(tail -2 "$wd/clone.log" | sed 's#x-access-token:[^@]*@#x-access-token:***@#g' | tr '\n' ' ')
+    local hint=""; [ -n "$ref" ] && hint="la rama '$ref' no existe en el repo (o el clone falló); "
+    set_status "$id" failed ",\"error\":$(jesc "${hint}git clone falló: $cerr")"; teardown "$pid"; return
   fi
 
   # BYO (docs/15): si el repo trae su propio docker-compose.yml, corré ESO (la app se auto-describe) en
