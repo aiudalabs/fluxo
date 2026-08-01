@@ -26,6 +26,7 @@ interface ProjSettings {
   review_mode?: "off" | "ceremony";    // ceremony = un sprint terminado se revisa antes de avanzar
   retro_mode?: "off" | "ceremony";     // ceremony = tras revisar, la retro puede editar el método
   workflow?: "design" | "demo-design";  // P5-3: workflow de diseño (fresh only; el worker lo lee de acá)
+  stack?: string;  // la receta tecnológica elegida ("auto" = Fluxo elige). La ANCLA el architect en el diseño.
   lanes?: Record<string, LaneCfg>;
 }
 // Los defaults DEBEN espejar los del motor (design/src/worker.ts policyFrom + el gate de dispatch):
@@ -33,9 +34,10 @@ interface ProjSettings {
 // proyecto sin setting NO auto-despacha agentes pagos), max_concurrency → 3 (MAX). Si la UI muestra un
 // default distinto al que el motor asume ante el campo ausente, MIENTE (bug: mostraba "Sprint" mientras
 // el motor corría "story"). dispatch_mode se incluye acá para que Guardar lo PERSISTA (no lo borre).
-const DEFAULTS: ProjSettings = { channel: "claude_action", exec_env: "github_actions", merge_mode: "manual", dispatch_mode: "manual", execution_unit: "story", max_concurrency: 3, workflow_approval: "manual", gate_autonomy: "manual", planning_mode: "off", review_mode: "off", retro_mode: "off", workflow: "design", lanes: {} };
+const DEFAULTS: ProjSettings = { channel: "claude_action", exec_env: "github_actions", merge_mode: "manual", dispatch_mode: "manual", execution_unit: "story", max_concurrency: 3, workflow_approval: "manual", gate_autonomy: "manual", planning_mode: "off", review_mode: "off", retro_mode: "off", workflow: "design", stack: "auto", lanes: {} };
 const MODELS = ["auto", "claude-opus-4-8", "claude-sonnet-5", "claude-haiku-4-5-20251001"];
 
+interface StackInfo { id: string; label: string; description: string }
 interface ChannelInfo { id: string; available: boolean; reason: string; secretsPermMissing: boolean }
 // Capability del proyecto (Firebase, Vercel…): data del registry resuelta server-side. status: "ready"
 // = el Actions secret está presente (🟢) · "missing" = falta (⚪) · "n/a" = la capability no pide secret.
@@ -73,10 +75,15 @@ export default function Settings() {
     { id: "design", name: "Completo", phases: [] },
     { id: "demo-design", name: "Lean (demos)", phases: [] },
   ]);
+  // Stacks reales del registry (id + label + description) para el selector de stack del proyecto.
+  const [stacks, setStacks] = useState<StackInfo[]>([]);
   useEffect(() => {
     let dead = false;
     void fetch("/api/workflows").then((r) => r.json()).then((d) => {
       if (!dead && Array.isArray(d.workflows) && d.workflows.length) setWfOpts(d.workflows);
+    }).catch(() => {});
+    void fetch("/api/registry").then((r) => r.json()).then((d) => {
+      if (!dead && Array.isArray(d.stacks)) setStacks(d.stacks);
     }).catch(() => {});
     return () => { dead = true; };
   }, []);
@@ -242,6 +249,25 @@ export default function Settings() {
             {!project?.repo && <p className="stg-fine">El repo se crea al publicar el backlog; después podés sembrar los secrets.</p>}
           </div>
         )}
+      </section>
+
+      {/* 1b · Stack del proyecto — la receta tecnológica con la que Fluxo construye. "Auto" deja que
+          el architect elija según el brief; fijar uno lo ANCLA (mata la alucinación de stack inexistente). */}
+      <section className="stg-card">
+        <div className="stg-card-h"><h2>🧱 Stack</h2><span>La receta tecnológica con la que Fluxo construye: lenguaje, framework y backend, más la CI y los agentes que siembra en tu repo.</span></div>
+        <div className="stg-field">
+          <label>Stack del proyecto</label>
+          <select value={settings.stack ?? "auto"} onChange={(e) => patch({ stack: e.target.value })}>
+            <option value="auto">Auto (Fluxo elige según el brief)</option>
+            {stacks.map((s) => <option key={s.id} value={s.id}>{s.label}</option>)}
+          </select>
+          {(settings.stack ?? "auto") !== "auto" && stacks.find((s) => s.id === settings.stack)?.description && (
+            <p className="stg-fine">{stacks.find((s) => s.id === settings.stack)!.description}</p>
+          )}
+          {(settings.stack ?? "auto") === "auto" && (
+            <p className="stg-fine">Con «Auto», el agente de arquitectura elige el stack de la lista soportada al diseñar.</p>
+          )}
+        </div>
       </section>
 
       {/* 2 · Autonomía / merge */}

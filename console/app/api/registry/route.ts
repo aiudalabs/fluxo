@@ -6,6 +6,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { promises as fs } from "fs";
 import path from "path";
+// El stack como concepto de primera clase: la lista de stacks + el tag `stacks` por artefacto salen
+// del MÉTODO (registry/), resueltos por el kernel puro de design/src (una sola fuente de verdad —
+// golden rule #1). El console solo los expone.
+import { listStacks, artifactStacks } from "../../../../design/src/capabilities.ts";
 
 // En dev el registry vive un nivel arriba del cwd del console (../registry). En el contenedor se
 // fija por REGISTRY_DIR (el Dockerfile copia registry/ y lo apunta), porque el layout monorepo no
@@ -76,22 +80,26 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ kind: "templates", path: rel, content });
   }
 
-  // Catálogo: por cada kind, la lista de items con un resumen (role/primera línea) + modelo.
-  const catalog: Record<string, Array<{ id: string; summary: string | null; model: string | null; wired?: boolean }>> = {};
+  // Catálogo: por cada kind, la lista de items con un resumen (role/primera línea) + modelo + los
+  // stacks a los que pertenece (`stacks:` del yaml; los artefactos sin el campo son COMPARTIDOS → ["*"]).
+  const catalog: Record<string, Array<{ id: string; summary: string | null; model: string | null; stacks: string[]; wired?: boolean }>> = {};
   for (const k of KINDS) {
     const files = await listDir(path.join(ROOT, k));
     const ids = [...new Set(files.filter((f) => /\.(ya?ml|md)$/.test(f)).map((f) => f.replace(/\.(ya?ml|md)$/, "")))].sort();
-    const items: Array<{ id: string; summary: string | null; model: string | null; wired?: boolean }> = [];
+    const items: Array<{ id: string; summary: string | null; model: string | null; stacks: string[]; wired?: boolean }> = [];
     for (const iid of ids) {
       const y = (await readOr(path.join(ROOT, k, `${iid}.yaml`))) ?? (await readOr(path.join(ROOT, k, `${iid}.yml`)));
       const md = await readOr(path.join(ROOT, k, `${iid}.md`));
       const summary = line(y, /^role:\s*(.+)$/m) ?? line(md, /^#\s*(.+)$/m) ?? line(y, /^description:\s*(.+)$/m) ?? line(y, /^#\s*(.+)$/m);
       // Solo los workflows llevan estado de cableado (H1); el resto no aplica.
       const wired = k === "workflows" ? WIRED_WORKFLOWS.has(iid) : undefined;
-      items.push({ id: iid, summary, model: line(y, /^model:\s*(.+)$/m), ...(wired !== undefined ? { wired } : {}) });
+      items.push({ id: iid, summary, model: line(y, /^model:\s*(.+)$/m), stacks: artifactStacks(y), ...(wired !== undefined ? { wired } : {}) });
     }
     catalog[k] = items;
   }
   const templates = await walk(path.join(ROOT, "templates", "github-native"), path.join(ROOT, "templates", "github-native")).catch(() => []);
-  return NextResponse.json({ catalog, templates });
+  // Los stacks reales del registry (id + label + description) — para el selector de "Proyecto nuevo",
+  // Settings y los chips de filtro del Registry.
+  const stacks = listStacks(ROOT);
+  return NextResponse.json({ catalog, templates, stacks });
 }

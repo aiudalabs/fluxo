@@ -12,10 +12,16 @@ export async function POST(req: NextRequest) {
   const session = auth?.startsWith("Bearer ") ? verifySessionJwt(auth.slice(7)) : null;
   if (!session) return NextResponse.json({ error: "no session" }, { status: 401 });
 
-  const body = (await req.json().catch(() => ({}))) as { name?: string; description?: string; org?: string };
+  const body = (await req.json().catch(() => ({}))) as { name?: string; description?: string; org?: string; stack?: string };
   const name = (body.name ?? "").trim();
   const description = (body.description ?? "").trim();
   const org = (body.org ?? "").trim();
+  // stack elegido en "Proyecto nuevo": "auto"/vacío = Fluxo elige (no se persiste — la ausencia ES
+  // auto, y el motor lee settings.stack ?? "auto"). Un stack concreto se guarda en settings.stack; el
+  // architect lo ANCLA (mata la alucinación de stack inexistente). No validamos contra el registry acá
+  // (el fail-loud del scaffold es la red de seguridad); el selector solo ofrece stacks reales.
+  const stack = (body.stack ?? "").trim();
+  const settings = stack && stack !== "auto" ? { stack } : {};
   if (!name || !org) return NextResponse.json({ error: "faltan name/org" }, { status: 400 });
 
   // (1) GitHub conectado. (2) App instalada en `org` — re-consultado en GitHub (autoritativo).
@@ -32,7 +38,7 @@ export async function POST(req: NextRequest) {
   // insert directo, pero acá es un insert service_role, así que hay que setearlos explícitos.
   const { data, error } = await admin()
     .from("projects")
-    .insert({ name, description: description || null, org, owner_id: session.sub, tenant_id: session.tenant })
+    .insert({ name, description: description || null, org, owner_id: session.sub, tenant_id: session.tenant, settings })
     .select("id")
     .single();
   if (error || !data) return NextResponse.json({ error: error?.message ?? "insert failed" }, { status: 502 });

@@ -16,6 +16,7 @@ import { Logo } from "@/components/Logo";
 import { ThemeToggle } from "@/components/shell/ThemeToggle";
 
 interface Installation { login: string; type: "User" | "Organization"; avatarUrl: string; }
+interface Stack { id: string; label: string; description: string; }
 
 function slugify(s: string): string {
   return s.toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "")
@@ -40,6 +41,17 @@ export default function NewProjectPage() {
   const [insts, setInsts] = useState<Installation[] | null>(null);
   const [installUrl, setInstallUrl] = useState("");
   const [org, setOrg] = useState<string>("");
+  // Stack: la receta tecnológica con la que Fluxo construye. "auto" (default) = Fluxo elige según el
+  // brief; o el humano fija uno (lo ANCLA el architect → mata la alucinación de stack inexistente).
+  const [stacks, setStacks] = useState<Stack[]>([]);
+  const [stack, setStack] = useState<string>("auto");
+  const [stackHelp, setStackHelp] = useState(false);
+
+  useEffect(() => {
+    void fetch("/api/registry").then((r) => r.json()).then((d) => {
+      if (Array.isArray(d.stacks)) setStacks(d.stacks);
+    }).catch(() => {});
+  }, []);
 
   function loadInstallations() {
     const s = sessionToken();
@@ -73,7 +85,7 @@ export default function NewProjectPage() {
     const res = await fetch("/api/projects", {
       method: "POST",
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${s}` },
-      body: JSON.stringify({ name: finalName, description: trimmedIdea, org }),
+      body: JSON.stringify({ name: finalName, description: trimmedIdea, org, stack }),
     });
     const d = await res.json().catch(() => ({}));
     if (!res.ok) {
@@ -118,6 +130,26 @@ export default function NewProjectPage() {
             <input className="entry-name-inp entry-inp-block"
               value={projectName} onChange={(e) => setProjectName(e.target.value)}
               placeholder={t("studio.entry.projectNamePlaceholder")} spellCheck={false} />
+            <div className="entry-stack">
+              <div className="entry-stack-lbl">
+                <span>Stack</span>
+                <button type="button" className="entry-stack-help-btn" onClick={() => setStackHelp((v) => !v)}>¿Qué es un stack?</button>
+              </div>
+              <select className="entry-stack-sel" value={stack} onChange={(e) => setStack(e.target.value)}>
+                <option value="auto">Auto (Fluxo elige según el brief)</option>
+                {stacks.map((s) => <option key={s.id} value={s.id}>{s.label}</option>)}
+              </select>
+              {stackHelp && (
+                <p className="entry-stack-help">
+                  El stack es la receta tecnológica con la que Fluxo construye tu app (lenguaje, framework y
+                  backend, más la CI y los agentes que siembra en tu repo). <b>Auto</b> deja que Fluxo elija el
+                  más adecuado a tu idea; o elegí uno vos.
+                </p>
+              )}
+              {stack !== "auto" && stacks.find((s) => s.id === stack)?.description && (
+                <p className="entry-stack-desc">{stacks.find((s) => s.id === stack)!.description}</p>
+              )}
+            </div>
             <div className="entry-row">
               <div className="entry-name">
                 {insts === null ? (
