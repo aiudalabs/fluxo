@@ -6,5 +6,9 @@
 # necesita este stack (registry/capabilities/<id>.yaml). Lo consume el onboarding self-serve
 # (checklist + semáforos 🟢) y el gate capability-aware (frontera humana; ver docs/06 D8, docs/11 P6-2b).
 id: aiuda-flutter-firebase
+# label/description: el stack como cosa SELECCIONABLE (data para la UI — selector de "Proyecto
+# nuevo", Settings y los chips de filtro del Registry). Español criollo, una línea.
+label: Flutter + Firebase
+description: Apps móviles iOS/Android con backend Firebase.
 capabilities:
   - firebase

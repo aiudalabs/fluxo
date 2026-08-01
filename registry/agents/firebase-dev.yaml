@@ -1,5 +1,7 @@
 id: firebase-dev
 version: 1.0.0
+# stacks: lane -dev stack-específica (backend Firebase del stack Flutter). Sin `stacks:` = compartido.
+stacks: [aiuda-flutter-firebase]
 model: claude-sonnet-4-6
 skills:
   - acceptance-self-audit

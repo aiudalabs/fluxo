@@ -1,5 +1,8 @@
 id: react-dev
 version: 1.0.0
+# stacks: lane -dev de frontend React — la usan DOS stacks (web de react-supabase y el frontend de
+# python-fastapi-react). Sin `stacks:` = compartido.
+stacks: [react-supabase, python-fastapi-react]
 model: claude-sonnet-4-6
 skills:
   - acceptance-self-audit

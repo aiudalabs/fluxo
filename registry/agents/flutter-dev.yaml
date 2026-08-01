@@ -1,5 +1,8 @@
 id: flutter-dev
 version: 1.0.0
+# stacks: este agent es stack-específico (lane -dev del stack Flutter). Los artefactos SIN `stacks:`
+# son COMPARTIDOS (tratados como ["*"], visibles para todo stack). Filtra el Registry por stack.
+stacks: [aiuda-flutter-firebase]
 model: claude-sonnet-4-6
 skills:
   - acceptance-self-audit

@@ -1,5 +1,7 @@
 id: python-dev
 version: 1.0.0
+# stacks: lane -dev stack-específica (backend Python/FastAPI). Sin `stacks:` = compartido.
+stacks: [python-fastapi-react]
 model: claude-sonnet-4-6
 skills:
   - acceptance-self-audit
