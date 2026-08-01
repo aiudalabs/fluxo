@@ -182,6 +182,27 @@ test("storyPrompt: apunta al issue y pide Closes #N", () => {
   assert.match(p, /Criterios de aceptación/);
 });
 
+test("guard por ExecEnv: engine permite orquestar subagentes; Actions los prohíbe; ambos vetan background", () => {
+  const s = { key: "S-1", title: "UI", body: "b", acceptance: "a", issue: 9 };
+  const eng = storyPrompt(s, undefined, true);
+  const act = storyPrompt(s, undefined, false);
+  // engine → ORDENA orquestar (imperativo, no solo "podés"), SIN la prohibición
+  assert.match(eng, /Task\/Agent/);
+  assert.match(eng, /DEBÉS|ORQUESTÁ/); // reproduce /goal: invoca, no solo permite
+  assert.match(eng, /audit→fix|auditor/i);
+  assert.ok(!/NO delegues a subagentes/i.test(eng), "engine NO debe prohibir subagentes");
+  // Actions → prohibición explícita
+  assert.match(act, /NO delegues a subagentes/i);
+  // ambos → el único límite de la efimeralidad: nada de background fire-and-forget
+  assert.match(eng, /background/i);
+  assert.match(act, /background/i);
+  // default (sin flag) = Actions (conservador)
+  assert.match(storyPrompt(s), /NO delegues a subagentes/i);
+  // idem sprintPrompt
+  assert.match(sprintPrompt("Sp", [s], undefined, true), /Task\/Agent|orquestar|subagentes/i);
+  assert.match(sprintPrompt("Sp", [s], undefined, false), /NO delegues a subagentes/i);
+});
+
 test("sprintPrompt: goal-mode, una rama/PR, Closes de TODAS", () => {
   const p = sprintPrompt("Sprint 1", [
     { key: "S1-01", title: "A", body: "ba", acceptance: "aa", issue: 11 },

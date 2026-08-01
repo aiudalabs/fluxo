@@ -27,12 +27,15 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ id: string 
     screenKey: r.screen_key,
   });
 
+  // El preview refleja el guard REAL según el motor del proyecto (engine permite subagentes, Actions no).
+  const engine = (context.settings as { exec_env?: string }).exec_env === "fluxo_engine";
+
   // Por story: solo las espejadas a un issue (sin issue no hay despacho).
   const stories = context.storyRows
     .filter((r) => issueNumOf(r.external_ref) != null)
     .slice()
     .sort((a, b) => a.key.localeCompare(b.key))
-    .map((r) => ({ key: r.key, title: r.title, status: r.status, sprint: r.sprint_id, prompt: storyPrompt(pick(r)) }));
+    .map((r) => ({ key: r.key, title: r.title, status: r.status, sprint: r.sprint_id, prompt: storyPrompt(pick(r), undefined, engine) }));
 
   // Por sprint: agrupa por sprint_id, ordena por key, arma el sprintPrompt goal-mode.
   const metaById = new Map(context.sprintRows.map((s) => [s.id, { key: s.key, title: s.title ?? "" }]));
@@ -49,7 +52,7 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ id: string 
         .sort((a, b) => a.key.localeCompare(b.key))
         .map(pick);
       const title = meta?.title || meta?.key || sid;
-      return { key: meta?.key ?? sid, title: meta?.title ?? "", storyKeys: members.map((m) => m.key), prompt: members.length ? sprintPrompt(title, members) : "" };
+      return { key: meta?.key ?? sid, title: meta?.title ?? "", storyKeys: members.map((m) => m.key), prompt: members.length ? sprintPrompt(title, members, undefined, engine) : "" };
     })
     .sort((a, b) => a.key.localeCompare(b.key));
 

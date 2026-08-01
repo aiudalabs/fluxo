@@ -80,7 +80,9 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
   const execEnv = (proj?.settings as { exec_env?: string } | null)?.exec_env ?? "github_actions";
   if (execEnv === "fluxo_engine") {
     const uiFid = uiFidelity();
-    const enginePrompt = cand.kind === "sprint" ? sprintPrompt(cand.title, cand.members, uiFid) : storyPrompt(cand.members[0], uiFid);
+    // engine=true → ENGINE_GUARD: el `claude -p` crudo del VPS puede orquestar subagentes (a diferencia de
+    // claude-code-action). Le damos licencia de fan-out (auditores/fixers, loops audit→fix) — ver dispatch.ts.
+    const enginePrompt = cand.kind === "sprint" ? sprintPrompt(cand.title, cand.members, uiFid, true) : storyPrompt(cand.members[0], uiFid, true);
     const label = cand.kind === "sprint" ? `sprint-${cand.id}` : cand.members[0].key.toLowerCase();
     for (const m of cand.members) await setStatus(m.id, "running"); // money-safe (sale del set despachable)
     const { error } = await admin().from("build_jobs").insert({

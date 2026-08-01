@@ -216,17 +216,36 @@ export function candidates(
 
 // ── Prompts ────────────────────────────────────────────────────────────────────
 // storyPrompt: apunta a UN issue (su body ya lleva el spec + ACs del handoff). v1 buildPrompt story.
-// HEADLESS_GUARD — guard de ejecución en runner efímero (L-AUTO-5). En claude-code-action el agente
-// corre headless SIN sub-agentes ni procesos en background: si delega a un subagente (tool Agent/Task)
-// o lanza un build/proceso "en background" y no lo espera, la action termina SIN trabajo y la story
-// queda trabada (fue el bug que nos trajo de v1: "APK en background → action terminó"; reapareció con
-// un spawn de subagente). El enforcement DURO vive en claude.yml (`--disallowedTools Task` +
-// rescate que señaliza `agent:failed` en run vacío → requeue inmediato); esto es el cinturón por prompt.
-export const HEADLESS_GUARD =
-  "IMPORTANTE — runner headless efímero: trabajá VOS DIRECTAMENTE en esta sesión (leé, editá, testeá, " +
-  "commiteá y abrí el PR acá mismo). NO delegues a subagentes (no uses el tool Agent/Task) ni lances " +
-  "procesos en background que no esperes — en este runner no se ejecutan y la corrida termina sin trabajo. " +
-  "Nada de fire-and-forget.";
+// Guards de ejecución en runner efímero (L-AUTO-5), PARTIDOS por ExecEnv. El `if` que los elige está en
+// story/sprintPrompt (param `engine`). Por qué se parten (y no es por la máquina — una action y nuestro
+// contenedor son igual de efímeros):
+//  · COMMON_GUARD — el ÚNICO límite que impone la efimeralidad, y aplica a AMBOS paths: un proceso en
+//    background que no esperás muere cuando la corrida termina y la máquina se destruye (fue el bug
+//    "APK en background → terminó sin trabajo"). Los subagentes NO caen acá: son SINCRÓNICOS (el padre
+//    los espera y terminan antes de que `claude` retorne).
+//  · ACTION_GUARD (claude-code-action) — su WRAPPER (no la máquina) no orquesta bien subagentes: la action
+//    terminaba vacía al spawnear uno. Por eso además prohíbe delegar. Enforcement duro en claude.yml
+//    (`--disallowedTools Task`); esto es el cinturón por prompt.
+//  · ENGINE_GUARD (fluxo_engine) — corre `claude -p` CRUDO (el mismo binario que local, sin wrapper): los
+//    subagentes funcionan. Reproduce el `/goal` local: no ALCANZA con permitir subagentes (permitir ≠ invocar
+//    — con "podés" el agente los hace lineal). Le ORDENAMOS orquestar CUANDO el objetivo se descompone en
+//    partes independientes (features/áreas/pantallas): un subagente por parte + un auditor por parte
+//    (audit→fix). Cambio chico y atómico ⇒ lineal. Único límite operativo: COMMON_GUARD.
+export const COMMON_GUARD =
+  "Runner efímero: NO lances procesos en background que no esperes (un build/servidor con `&` que no " +
+  "aguardás no llega a correr — la máquina se destruye al terminar). Todo el trabajo (commits + PR) ocurre " +
+  "en ESTA corrida. Nada de fire-and-forget.";
+export const ACTION_GUARD =
+  "IMPORTANTE — trabajá VOS DIRECTAMENTE en esta sesión (leé, editá, testeá, commiteá y abrí el PR acá " +
+  "mismo). NO delegues a subagentes (no uses el tool Agent/Task). " + COMMON_GUARD;
+export const ENGINE_GUARD =
+  "IMPORTANTE — ORQUESTÁ, no trabajes lineal cuando el objetivo se descompone. Tenés el tool Task/Agent y " +
+  "DEBÉS usarlo si el objetivo tiene VARIAS partes independientes (varias features, varias áreas o varias " +
+  "pantallas): 1) descomponé el objetivo en esas partes; 2) lanzá UN subagente por parte que la implemente y " +
+  "la testee; 3) lanzá un subagente AUDITOR por parte que revise la calidad y devuelva correcciones (loop " +
+  "audit→fix hasta que quede de nivel producto). Corré los subagentes en paralelo donde se pueda y esperá a " +
+  "que cada uno termine (son sincrónicos). Reservá el trabajo lineal (vos mismo, sin delegar) SOLO para un " +
+  "cambio chico y atómico. No te quedes en el mínimo funcional: perseguí el objetivo a fondo. " + COMMON_GUARD;
 
 // INCREMENTAL_COMMIT — commiteá y pusheá a medida que avanzás (no todo al final). Dos razones, y la
 // segunda es un CONTRATO con el conductor: (1) si la sesión se corta (timeout, límite), el trabajo ya
@@ -260,11 +279,12 @@ export function screenPointer(screenKey?: string | null): string {
 export function storyPrompt(
   s: Pick<DStory, "key" | "title" | "body" | "acceptance" | "issue" | "screenKey">,
   uiFidelity?: string,
+  engine = false, // fluxo_engine → ENGINE_GUARD (permite orquestar subagentes); default (Actions) → ACTION_GUARD
 ): string {
   const n = s.issue;
   const parts = [
     `Resolvé el issue #${n} (${s.key} — ${s.title}).`,
-    `\n${HEADLESS_GUARD}`,
+    `\n${engine ? ENGINE_GUARD : ACTION_GUARD}`,
     `\n${INCREMENTAL_COMMIT}`,
     s.screenKey && uiFidelity ? `\n${uiFidelity.trim()}` : "",
     s.body ? `\n${s.body.trim()}` : "",
@@ -284,6 +304,7 @@ export function sprintPrompt(
   title: string,
   members: Array<Pick<DStory, "key" | "title" | "body" | "acceptance" | "issue" | "screenKey">>,
   uiFidelity?: string,
+  engine = false, // ver storyPrompt
 ): string {
   const hasScreens = members.some((m) => m.screenKey);
   const b: string[] = [];
@@ -292,7 +313,7 @@ export function sprintPrompt(
     "Estás implementando un SPRINT ENTERO en un solo run, en una sola rama, que se convierte en UN pull request. " +
     "Trabajá cada story de abajo EN EL ORDEN DADO — están en orden de dependencias. " +
     "No abras ramas ni PRs separados por story.\n");
-  b.push(HEADLESS_GUARD + "\n");
+  b.push((engine ? ENGINE_GUARD : ACTION_GUARD) + "\n");
   b.push(INCREMENTAL_COMMIT + "\n");
   // Preamble de fidelidad visual: solo si el sprint toca al menos una pantalla (data-driven, no ciego).
   if (uiFidelity && hasScreens) b.push(uiFidelity.trim() + "\n");
