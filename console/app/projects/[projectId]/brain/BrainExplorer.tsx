@@ -12,7 +12,8 @@ import { type BrainEvent } from "@/lib/supabaseClient";
 import { useProject } from "@/lib/project";
 import { useLocale } from "@/lib/locale";
 
-const KIND_COLOR: Record<string, string> = { decision: "#a371f7", gate_answer: "#3fb950", rejected_design: "#f85149", provenance: "#58a6ff" };
+// Tono por tipo de evento: clase (no color literal) → el par container/on-container del sistema.
+const KIND_TONE: Record<string, string> = { decision: "k-decision", gate_answer: "k-gate_answer", rejected_design: "k-rejected_design", provenance: "k-provenance" };
 type P = Record<string, unknown>;
 const str = (v: unknown) => (v == null ? "" : String(v));
 
@@ -137,12 +138,12 @@ export default function BrainExplorer() {
   const setSort = (col: "when" | "dur" | "cost") => { if (col === sortCol) setSortDir((d) => (d === "desc" ? "asc" : "desc")); else { setSortCol(col); setSortDir("desc"); } };
   const arrow = (col: string) => (sortCol === col ? (sortDir === "desc" ? " ↓" : " ↑") : "");
 
-  if (status === "loading") return <p style={{ color: "var(--muted)" }}>{t("common.loading")}</p>;
-  if (status === "error") return <p style={{ color: "#f85149" }}>{t("brain.readError", { msg: error })}</p>;
+  if (status === "loading") return <p className="brainx-msg">{t("common.loading")}</p>;
+  if (status === "error") return <p className="brainx-msg bad">{t("brain.readError", { msg: error })}</p>;
 
   return (
-    <div style={{ margin: "1rem 0" }}>
-      <div style={{ display: "flex", flexWrap: "wrap", gap: 10, marginBottom: 14 }}>
+    <div className="brainx">
+      <div className="brainx-stats">
         <Stat label="Costo total" value={fmtUsd(totals.total)} accent />
         <Stat label="Diseño" value={fmtUsd(totals.design)} />
         <Stat label="Build" value={fmtUsd(totals.build)} />
@@ -150,30 +151,30 @@ export default function BrainExplorer() {
         <Stat label="Trazas" value={String(totals.n)} />
       </div>
 
-      <div style={{ display: "flex", gap: 4, marginBottom: 12 }}>
-        <button className={`btn ghost sm${tab === "traces" ? " on" : ""}`} onClick={() => setTab("traces")}>Trazas ({traces.length})</button>
-        <button className={`btn ghost sm${tab === "events" ? " on" : ""}`} onClick={() => setTab("events")}>Eventos ({events.length})</button>
+      <div className="brainx-tabs">
+        <button className={`brainx-tab${tab === "traces" ? " on" : ""}`} onClick={() => setTab("traces")}>Trazas ({traces.length})</button>
+        <button className={`brainx-tab${tab === "events" ? " on" : ""}`} onClick={() => setTab("events")}>Eventos ({events.length})</button>
       </div>
 
-      {tab === "events" ? <Events events={events} t={t} /> : traces.length === 0 ? <p style={{ color: "var(--muted)" }}>{t("brain.empty")}</p> : (
-        <div style={{ border: "1px solid var(--stroke)", borderRadius: 10, overflow: "hidden" }}>
+      {tab === "events" ? <Events events={events} t={t} /> : traces.length === 0 ? <p className="brainx-msg">{t("brain.empty")}</p> : (
+        <div className="brainx-table">
           {/* Header de la tabla (ordenable) */}
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 90px 120px 90px 90px 90px", gap: 8, padding: "8px 14px", background: "var(--bg2)", fontSize: 11, textTransform: "uppercase", letterSpacing: 0.4, color: "var(--muted)" }}>
-            <span>Traza</span><span>Tipo</span>
-            <button onClick={() => setSort("when")} style={thBtn}>Cuándo{arrow("when")}</button>
-            <button onClick={() => setSort("dur")} style={thBtn}>Duración{arrow("dur")}</button>
-            <button onClick={() => setSort("cost")} style={thBtn}>Costo{arrow("cost")}</button>
-            <span style={{ textAlign: "right" }}>Tokens</span>
+          <div className="brainx-grid brainx-thead">
+            <span className="brainx-th">Traza</span><span className="brainx-th">Tipo</span>
+            <button className="brainx-th" onClick={() => setSort("when")}>Cuándo{arrow("when")}</button>
+            <button className="brainx-th" onClick={() => setSort("dur")}>Duración{arrow("dur")}</button>
+            <button className="brainx-th" onClick={() => setSort("cost")}>Costo{arrow("cost")}</button>
+            <span className="brainx-th end">Tokens</span>
           </div>
           {sorted.map((tr) => (
             <div key={tr.id}>
-              <div onClick={() => setOpenId(openId === tr.id ? null : tr.id)} style={{ display: "grid", gridTemplateColumns: "1fr 90px 120px 90px 90px 90px", gap: 8, padding: "10px 14px", alignItems: "center", fontSize: 13, cursor: "pointer", borderTop: "1px solid var(--stroke)", background: openId === tr.id ? "var(--accent-soft)" : "transparent" }}>
-                <span style={{ display: "flex", alignItems: "center", gap: 8, overflow: "hidden" }}><StatusDot status={tr.status} /><span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{tr.name}</span></span>
-                <span style={{ fontSize: 11, color: "var(--muted)", border: "1px solid var(--stroke)", borderRadius: 999, padding: "1px 8px", justifySelf: "start" }}>{tr.type}</span>
-                <span style={{ color: "var(--muted)", fontSize: 12 }}>{fmtWhen(tr.whenMs)}</span>
-                <span style={{ fontVariantNumeric: "tabular-nums", color: "var(--muted)" }}>{tr.type === "design" ? fmtDur(tr.durMs) : "—"}</span>
-                <span style={{ fontVariantNumeric: "tabular-nums", fontWeight: 600 }}>{fmtUsd(tr.cost)}</span>
-                <span style={{ textAlign: "right", color: "var(--muted)", fontSize: 12 }}>{fmtTok(tr.inTok)}/{fmtTok(tr.outTok)}</span>
+              <div className={`brainx-grid brainx-tr${openId === tr.id ? " open" : ""}`} onClick={() => setOpenId(openId === tr.id ? null : tr.id)}>
+                <span className="brainx-name"><StatusDot status={tr.status} /><span>{tr.name}</span></span>
+                <span className="brainx-type">{tr.type}</span>
+                <span className="brainx-when">{fmtWhen(tr.whenMs)}</span>
+                <span className="brainx-num">{tr.type === "design" ? fmtDur(tr.durMs) : "—"}</span>
+                <span className="brainx-num strong">{fmtUsd(tr.cost)}</span>
+                <span className="brainx-num end">{fmtTok(tr.inTok)}/{fmtTok(tr.outTok)}</span>
               </div>
               {openId === tr.id && <TraceDetail trace={tr} onArtifact={setArtifact} />}
             </div>
@@ -189,28 +190,28 @@ export default function BrainExplorer() {
 // ── Detalle: waterfall de spans, cada uno linkeado ────────────────────────────────
 function TraceDetail({ trace, onArtifact }: { trace: Trace; onArtifact: (a: Artifact) => void }) {
   return (
-    <div style={{ padding: "6px 14px 14px 32px", borderTop: "1px solid var(--stroke)", background: "var(--panel)" }}>
-      {trace.spans.length === 0 && <p style={{ color: "var(--muted)", fontSize: 12 }}>Sin spans.</p>}
+    <div className="brainx-detail">
+      {trace.spans.length === 0 && <p className="brainx-msg">Sin spans.</p>}
       {trace.spans.map((s) => {
         const leftPct = trace.durMs > 0 ? ((s.startMs - trace.whenMs) / trace.durMs) * 100 : 0;
         const widthPct = trace.durMs > 0 ? Math.max(2, ((s.endMs - s.startMs) / trace.durMs) * 100) : 0;
         const clickable = !!s.artifact || !!s.href;
         return (
-          <div key={s.id} style={{ padding: "5px 0", borderBottom: "1px solid var(--stroke)" }}>
-            <div onClick={() => { if (s.artifact) onArtifact(s.artifact); else if (s.href) window.open(s.href, "_blank"); }}
-              style={{ display: "flex", alignItems: "center", gap: 10, fontSize: 12.5, cursor: clickable ? "pointer" : "default" }}>
+          <div key={s.id} className="brainx-span">
+            <div className={`brainx-span-row${clickable ? " click" : ""}`}
+              onClick={() => { if (s.artifact) onArtifact(s.artifact); else if (s.href) window.open(s.href, "_blank"); }}>
               <StatusDot status={s.status} />
-              <span style={{ minWidth: 150, fontWeight: 600, color: clickable ? "var(--accent)" : "var(--text)" }}>{s.name}{clickable ? " ↗" : ""}</span>
+              <span className="brainx-span-name">{s.name}{clickable ? " ↗" : ""}</span>
               {trace.type === "design" && (
-                <span style={{ flex: 1, position: "relative", height: 8, background: "var(--bg2)", borderRadius: 999, minWidth: 60 }}>
-                  <span style={{ position: "absolute", left: `${leftPct}%`, width: `${widthPct}%`, height: "100%", background: "var(--accent)", borderRadius: 999 }} />
+                <span className="brainx-bar">
+                  <span style={{ left: `${leftPct}%`, width: `${widthPct}%` }} />
                 </span>
               )}
-              {trace.type === "design" && <span style={{ color: "var(--muted)", minWidth: 52, textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{fmtDur(s.endMs - s.startMs)}</span>}
-              <span style={{ minWidth: 60, textAlign: "right", color: s.cost == null ? "var(--muted)" : "var(--text)", fontVariantNumeric: "tabular-nums" }}>{fmtUsd(s.cost)}</span>
-              {trace.type === "build" && <span style={{ marginLeft: "auto", color: "var(--muted)", fontSize: 12 }}>{s.status}</span>}
+              {trace.type === "design" && <span className="brainx-num end brainx-span-dur">{fmtDur(s.endMs - s.startMs)}</span>}
+              <span className={`brainx-num end brainx-span-cost${s.cost == null ? "" : " strong"}`}>{fmtUsd(s.cost)}</span>
+              {trace.type === "build" && <span className="brainx-meta push">{s.status}</span>}
             </div>
-            {s.note && <div style={{ marginLeft: 20, marginTop: 3, paddingLeft: 8, borderLeft: "2px solid #3fb950", fontSize: 11.5, color: "var(--muted)" }}>{s.note}</div>}
+            {s.note && <div className="brainx-note">{s.note}</div>}
           </div>
         );
       })}
@@ -220,11 +221,11 @@ function TraceDetail({ trace, onArtifact }: { trace: Trace; onArtifact: (a: Arti
 
 function ArtifactDrawer({ artifact, onClose }: { artifact: Artifact; onClose: () => void }) {
   return (
-    <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.45)", zIndex: 1000, display: "flex", justifyContent: "flex-end" }}>
-      <div onClick={(e) => e.stopPropagation()} style={{ width: "min(760px, 92vw)", height: "100%", background: "var(--panel)", borderLeft: "1px solid var(--stroke)", padding: 18, overflow: "auto" }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 12 }}>
-          <strong style={{ fontSize: 13 }}>{artifact.path}</strong>
-          <button className="btn ghost sm" style={{ marginLeft: "auto" }} onClick={onClose}>Cerrar ✕</button>
+    <div className="brainx-scrim" onClick={onClose}>
+      <div className="brainx-drawer" onClick={(e) => e.stopPropagation()}>
+        <div className="brainx-drawer-head">
+          <strong className="brainx-drawer-path">{artifact.path}</strong>
+          <button className="btn ghost sm" onClick={onClose}>Cerrar ✕</button>
         </div>
         <DocView content={artifact.content} path={artifact.path} kind={artifact.kind} />
       </div>
@@ -232,41 +233,40 @@ function ArtifactDrawer({ artifact, onClose }: { artifact: Artifact; onClose: ()
   );
 }
 
+const DOT_TONE: Record<string, string> = { done: "ok", merged: "ok", running: "run", review: "run", failed: "bad" };
 function StatusDot({ status }: { status: string }) {
-  const c = status === "done" || status === "merged" ? "#3fb950" : status === "running" || status === "review" ? "#d29922" : status === "failed" ? "#f85149" : "var(--muted)";
-  return <span title={status} style={{ width: 8, height: 8, borderRadius: 999, background: c, display: "inline-block", flexShrink: 0 }} />;
+  return <span title={status} className={`brainx-dot${DOT_TONE[status] ? ` ${DOT_TONE[status]}` : ""}`} />;
 }
 function Stat({ label, value, accent }: { label: string; value: string; accent?: boolean }) {
   return (
-    <div style={{ border: `1px solid ${accent ? "var(--accent-line)" : "var(--stroke)"}`, background: "var(--panel)", borderRadius: 10, padding: "8px 14px", minWidth: 100 }}>
-      <div style={{ fontSize: 11, color: "var(--muted)", textTransform: "uppercase", letterSpacing: 0.4 }}>{label}</div>
-      <div style={{ fontSize: 18, fontWeight: 700, color: accent ? "var(--accent)" : "var(--text)", fontVariantNumeric: "tabular-nums" }}>{value}</div>
+    <div className={`brainx-stat${accent ? " accent" : ""}`}>
+      <div className="brainx-stat-l">{label}</div>
+      <div className="brainx-stat-v">{value}</div>
     </div>
   );
 }
-const thBtn: React.CSSProperties = { cursor: "pointer", background: "transparent", border: "none", color: "var(--muted)", fontSize: 11, textTransform: "uppercase", letterSpacing: 0.4, textAlign: "left", padding: 0 };
 
 // ── Eventos (log append-only — auditoría, se conserva) ────────────────────────────
 function Events({ events, t }: { events: BrainEvent[]; t: (k: string, v?: Record<string, string | number>) => string }) {
   const [filter, setFilter] = useState<string>("all");
   const kinds = useMemo(() => Array.from(new Set(events.map((e) => e.kind))).sort(), [events]);
   const shown = useMemo(() => (filter === "all" ? events : events.filter((e) => e.kind === filter)), [events, filter]);
-  if (events.length === 0) return <p style={{ color: "var(--muted)" }}>{t("brain.empty")}</p>;
+  if (events.length === 0) return <p className="brainx-msg">{t("brain.empty")}</p>;
   return (
     <div>
-      <div style={{ display: "flex", flexWrap: "wrap", gap: 6, alignItems: "center", marginBottom: 12 }}>
-        <Chip label={`${t("brain.all")} (${events.length})`} active={filter === "all"} color="var(--accent)" onClick={() => setFilter("all")} />
-        {kinds.map((k) => <Chip key={k} label={`${t(`kind.${k}`)} (${events.filter((e) => e.kind === k).length})`} active={filter === k} color={KIND_COLOR[k] ?? "var(--muted)"} onClick={() => setFilter(k)} />)}
+      <div className="brainx-filters">
+        <Chip label={`${t("brain.all")} (${events.length})`} active={filter === "all"} tone="" onClick={() => setFilter("all")} />
+        {kinds.map((k) => <Chip key={k} label={`${t(`kind.${k}`)} (${events.filter((e) => e.kind === k).length})`} active={filter === k} tone={KIND_TONE[k] ?? ""} onClick={() => setFilter(k)} />)}
       </div>
-      <ul style={{ listStyle: "none", padding: 0, margin: 0 }}>
+      <ul className="brainx-events">
         {shown.map((e) => (
-          <li key={e.id} style={{ border: "1px solid var(--stroke)", background: "var(--panel)", borderRadius: 8, padding: "0.75rem 1rem", marginBottom: 8 }}>
-            <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-              <span style={{ fontSize: 12, fontWeight: 600, color: KIND_COLOR[e.kind] ?? "var(--text)", border: `1px solid ${KIND_COLOR[e.kind] ?? "var(--stroke)"}`, borderRadius: 999, padding: "1px 8px" }}>{t(`kind.${e.kind}`)}</span>
-              <span style={{ color: "var(--muted)", fontSize: 12 }}>{e.actor}</span>
-              <span style={{ marginLeft: "auto", color: "var(--muted)", fontSize: 12 }}>{new Date(e.ts).toLocaleString()}</span>
+          <li key={e.id} className="brainx-event">
+            <div className="brainx-event-head">
+              <span className={`brainx-kind ${KIND_TONE[e.kind] ?? ""}`}>{t(`kind.${e.kind}`)}</span>
+              <span className="brainx-meta">{e.actor}</span>
+              <span className="brainx-meta push">{new Date(e.ts).toLocaleString()}</span>
             </div>
-            <div style={{ marginTop: 6 }}><EventBody kind={e.kind} payload={e.payload} /></div>
+            <EventBody kind={e.kind} payload={e.payload} />
           </li>
         ))}
       </ul>
@@ -276,18 +276,17 @@ function Events({ events, t }: { events: BrainEvent[]; t: (k: string, v?: Record
 
 function EventBody({ kind, payload }: { kind: string; payload: P }) {
   const { t } = useLocale();
-  if (kind === "decision") return (<>{payload.title != null && <strong style={{ fontSize: 13 }}>{str(payload.title)}</strong>}{payload.decision != null && <p style={bodyP}>{str(payload.decision)}</p>}{payload.rationale != null && <p style={{ ...bodyP, color: "var(--muted)" }}>{t("brain.why", { v: str(payload.rationale) })}</p>}</>);
+  if (kind === "decision") return (<>{payload.title != null && <strong className="brainx-event-title">{str(payload.title)}</strong>}{payload.decision != null && <p className="brainx-p">{str(payload.decision)}</p>}{payload.rationale != null && <p className="brainx-p dim">{t("brain.why", { v: str(payload.rationale) })}</p>}</>);
   if (kind === "gate_answer") {
     const answered = Array.isArray(payload.answered) ? (payload.answered as Array<{ q: string; a: string }>) : [];
     const ok = str(payload.outcome).startsWith("approv");
-    return (<><strong style={{ fontSize: 13 }}>{str(payload.gate)} — <span style={{ color: ok ? "#3fb950" : "#d29922" }}>{str(payload.outcome)}</span></strong>{payload.feedback != null && str(payload.feedback) && <p style={bodyP}>{str(payload.feedback)}</p>}{answered.map((qa, i) => (<p key={i} style={{ ...bodyP, color: "var(--muted)" }}><strong>{qa.q}</strong> → {qa.a}</p>))}</>);
+    return (<><strong className="brainx-event-title">{str(payload.gate)} — <span className={ok ? "brainx-ok" : "brainx-warn"}>{str(payload.outcome)}</span></strong>{payload.feedback != null && str(payload.feedback) && <p className="brainx-p">{str(payload.feedback)}</p>}{answered.map((qa, i) => (<p key={i} className="brainx-p dim"><strong>{qa.q}</strong> → {qa.a}</p>))}</>);
   }
-  if (kind === "rejected_design") return (<><strong style={{ fontSize: 13 }}>{str(payload.what)}</strong>{payload.why_rejected != null && <p style={bodyP}>{t("brain.whyNot", { v: str(payload.why_rejected) })}</p>}</>);
-  if (kind === "provenance") return <p style={bodyP}>{[str(payload.requirement), str(payload.issue), str(payload.pr)].filter(Boolean).join(" → ")}</p>;
+  if (kind === "rejected_design") return (<><strong className="brainx-event-title">{str(payload.what)}</strong>{payload.why_rejected != null && <p className="brainx-p">{t("brain.whyNot", { v: str(payload.why_rejected) })}</p>}</>);
+  if (kind === "provenance") return <p className="brainx-p">{[str(payload.requirement), str(payload.issue), str(payload.pr)].filter(Boolean).join(" → ")}</p>;
   return <DocView content={JSON.stringify(payload, null, 2)} path="event.json" />;
 }
 
-function Chip({ label, active, color, onClick }: { label: string; active: boolean; color: string; onClick: () => void }) {
-  return <button onClick={onClick} style={{ cursor: "pointer", fontSize: 12, borderRadius: 999, padding: "3px 10px", border: `1px solid ${active ? color : "var(--stroke)"}`, background: active ? color : "transparent", color: active ? "#0d1117" : "var(--muted)" }}>{label}</button>;
+function Chip({ label, active, tone, onClick }: { label: string; active: boolean; tone: string; onClick: () => void }) {
+  return <button className={`chip${active ? " on" : ""}${tone ? ` ${tone}` : ""}`} onClick={onClick}>{label}</button>;
 }
-const bodyP: React.CSSProperties = { margin: "3px 0 0", fontSize: 13, color: "var(--text)", lineHeight: 1.5 };

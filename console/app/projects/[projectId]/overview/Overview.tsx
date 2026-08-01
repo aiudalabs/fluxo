@@ -215,7 +215,7 @@ export default function Overview() {
         </Link>
       )}
 
-      {project?.repo && <div style={{ marginBottom: 18 }}><IncrementRequest /></div>}
+      {project?.repo && <div className="ov-inc"><IncrementRequest /></div>}
 
       <div className="stats">
         <div className="stat">
@@ -224,12 +224,12 @@ export default function Overview() {
         </div>
         <div className="stat">
           <div className="eyebrow">{t("overview.kpi.running")}</div>
-          <div className="n serif" style={{ color: "var(--navy)" }}>{stats.running}</div>
+          <div className="n serif ov-kpi-info">{stats.running}</div>
           <div className="sub">{t("overview.kpi.running.sub")}</div>
         </div>
         <div className="stat">
           <div className="eyebrow">{t("overview.kpi.inReview")}</div>
-          <div className="n serif" style={{ color: "var(--amber)" }}>{stats.inReview}</div>
+          <div className="n serif ov-kpi-warn">{stats.inReview}</div>
           <div className="sub">{t("overview.kpi.inReview.sub")}</div>
         </div>
         <div className="stat">

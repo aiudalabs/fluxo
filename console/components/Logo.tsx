@@ -1,6 +1,6 @@
 // Marca Fluxo: "{ Fluxo }" (estilo código, el producto) sobre "by <aiuda/> labs" (quién
 // lo hace). El sub-logo <aiuda/> labs mantiene su estilo (doc 15): `<` `/>` accent peso 400,
-// `ai` accent 900, `uda` ink 900, `labs` gris 500.
+// `ai` accent, `uda` ink (ambos heredan el 700 de .logo — MD3 no usa 800/900), `labs` gris 500.
 // "{ Fluxo }" es un link al inicio; "<aiuda/> labs" abre aiudalabs.com en pestaña nueva.
 
 import Link from "next/link";

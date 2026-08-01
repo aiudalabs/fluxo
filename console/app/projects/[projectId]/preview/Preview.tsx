@@ -87,75 +87,70 @@ export default function Preview() {
         <span className="c">{t("preview.subtitle")}</span>
       </div>
 
-      <div style={{ display: "flex", flexDirection: "column", gap: 16, maxWidth: 1100 }}>
+      <div className="pv-stack">
         {/* Control: rama/sprint opcional + generar/regenerar */}
-        <div style={{ border: "1px solid var(--stroke)", background: "var(--panel)", borderRadius: 12, padding: 16, display: "flex", gap: 12, flexWrap: "wrap", alignItems: "flex-end" }}>
-          <label style={{ display: "flex", flexDirection: "column", gap: 4, flex: 1, minWidth: 220 }}>
+        <div className="pv-panel pv-control">
+          <label className="pv-field">
             <span className="eyebrow acc">{t("preview.refLabel")}</span>
-            <select
-              value={ref} onChange={(e) => setRef(e.target.value)}
-              style={{ padding: "9px 12px", borderRadius: 8, border: "1px solid var(--stroke)", background: "var(--bg2)", color: "var(--text)", fontSize: 13, fontFamily: "inherit" }}
-            >
+            <select className="pv-select" value={ref} onChange={(e) => setRef(e.target.value)}>
               <option value="">{defaultBranch} (default)</option>
               {branches.filter((b) => b !== defaultBranch).map((b) => <option key={b} value={b}>{b}</option>)}
             </select>
           </label>
-          <button className="btn" disabled={inFlight || !project} onClick={generate}>
+          <button className="btn primary" disabled={inFlight || !project} onClick={generate}>
             {inFlight ? "…" : latest ? t("preview.regenerate") : t("preview.generate")}
           </button>
         </div>
 
-        {err && <p style={{ fontSize: 12.5, color: "var(--danger)" }}>{err}</p>}
+        {err && <p className="pv-err">{err}</p>}
 
         {/* Estado */}
         {building && (
-          <div style={{ border: "1px solid var(--stroke)", background: "var(--panel)", borderRadius: 12, padding: 20, display: "flex", alignItems: "center", gap: 12 }}>
+          <div className="pv-panel pv-state">
             <span className="spin" />
-            <span style={{ fontSize: 13, color: "var(--muted)" }}>
+            <span className="pv-state-tx">
               {t(status === "pending" ? "preview.status.pending" : "preview.status.building")}
             </span>
           </div>
         )}
 
         {status === "failed" && (
-          <div style={{ border: "1px solid var(--danger)", background: "var(--panel)", borderRadius: 12, padding: 16 }}>
-            <div style={{ fontWeight: 600, fontSize: 13, color: "var(--danger)", marginBottom: 4 }}>{t("preview.status.failed")}</div>
-            <div style={{ fontSize: 12.5, color: "var(--muted)", fontFamily: "var(--mono, monospace)" }}>{latest?.error ?? "—"}</div>
+          <div className="pv-panel fail">
+            <div className="pv-fail-t">{t("preview.status.failed")}</div>
+            <div className="pv-fail-m">{latest?.error ?? "—"}</div>
           </div>
         )}
 
         {status === "expired" && (
-          <div style={{ border: "1px solid var(--stroke)", background: "var(--panel)", borderRadius: 12, padding: 16, fontSize: 13, color: "var(--muted)" }}>
-            {t("preview.status.expired")}
-          </div>
+          <div className="pv-panel"><span className="pv-state-tx">{t("preview.status.expired")}</span></div>
         )}
 
         {live && (
-          <div style={{ border: "1px solid var(--emerald)", background: "var(--panel)", borderRadius: 12, overflow: "hidden" }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "12px 16px", borderBottom: "1px solid var(--stroke)", flexWrap: "wrap" }}>
-              <span style={{ width: 9, height: 9, borderRadius: 999, background: "var(--emerald)", flexShrink: 0 }} />
-              <span style={{ fontWeight: 600, fontSize: 13 }}>{t("preview.status.live")}</span>
-              <a href={latest!.preview_url!} target="_blank" rel="noreferrer" style={{ fontSize: 12.5, color: "var(--muted)", fontFamily: "var(--mono, monospace)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: 360 }}>
+          <div className="pv-live">
+            <div className="pv-live-bar">
+              <span className="pv-dot" />
+              <span className="pv-live-t">{t("preview.status.live")}</span>
+              <a className="pv-url" href={latest!.preview_url!} target="_blank" rel="noreferrer">
                 {latest!.preview_url}
               </a>
-              <span style={{ flex: 1 }} />
-              {expiresLabel && <span style={{ fontSize: 11, color: "var(--muted)" }}>{expiresLabel}</span>}
-              <a className="btn" href={latest!.preview_url!} target="_blank" rel="noreferrer">{t("preview.open")}</a>
+              <span className="pv-spacer" />
+              {expiresLabel && <span className="pv-exp">{expiresLabel}</span>}
+              <a className="btn tonal" href={latest!.preview_url!} target="_blank" rel="noreferrer">{t("preview.open")}</a>
             </div>
             {/* La app embebida. Algunas apps setean X-Frame-Options y no se dejan enmarcar → el link de
                 arriba es el camino seguro; el iframe es el "en vivo" cuando la app lo permite. */}
-            <iframe src={latest!.preview_url!} title={t("preview.title")} style={{ width: "100%", height: 560, border: 0, background: "var(--bg2)" }} />
+            <iframe className="pv-frame" src={latest!.preview_url!} title={t("preview.title")} />
           </div>
         )}
 
         {!latest && !building && (
-          <div style={{ border: "1px dashed var(--stroke)", borderRadius: 12, padding: 24, textAlign: "center" }}>
-            <div style={{ fontSize: 13.5, fontWeight: 600, marginBottom: 6 }}>{t("preview.empty")}</div>
-            <div style={{ fontSize: 12.5, color: "var(--muted)", maxWidth: 460, margin: "0 auto" }}>{t("preview.emptyHint")}</div>
+          <div className="pv-empty">
+            <div className="pv-empty-t">{t("preview.empty")}</div>
+            <div className="pv-empty-s">{t("preview.emptyHint")}</div>
           </div>
         )}
 
-        <p style={{ fontSize: 11.5, color: "var(--muted)", lineHeight: 1.5 }}>{t("preview.disclaimer")}</p>
+        <p className="pv-note">{t("preview.disclaimer")}</p>
       </div>
     </div>
   );

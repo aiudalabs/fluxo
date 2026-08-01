@@ -66,7 +66,7 @@ export default function ProjectsPage() {
         </div>
 
         {loading ? (
-          <p style={{ color: "var(--ink4)" }}>Cargando…</p>
+          <p className="dash-loading">Cargando…</p>
         ) : projects.length === 0 ? (
           <div className="pcard newp" style={{ maxWidth: 340 }}>
             <Link href="/new" style={{ textDecoration: "none", color: "inherit" }}>＋ Creá tu primer proyecto</Link>
@@ -91,15 +91,15 @@ function Card({ p, st, designing, gate }: { p: Project; st?: Stat; designing: bo
   if (total > 0) {
     pill = { cls: "run", label: "Building" };
     foot = `${done}/${total} stories${(st?.running ?? 0) > 0 ? ` · ${st!.running} corriendo` : ""}${(st?.review ?? 0) > 0 ? ` · ${st!.review} en review` : ""}`;
-    barColor = "var(--emerald)";
+    barColor = "var(--md-success)";
   } else if (designing) {
     pill = gate ? { cls: "wait", label: "Gate" } : { cls: "des", label: "Diseñando" };
     foot = gate ? "esperando tu decisión" : "generando el diseño";
-    barColor = "var(--accent)";
+    barColor = "var(--md-primary)";
   } else {
     pill = { cls: "idle", label: "Nuevo" };
     foot = "sin backlog aún";
-    barColor = "var(--ink4)";
+    barColor = "var(--md-outline)";
   }
   return (
     <Link href={`/projects/${p.id}/overview`} className="pcard">

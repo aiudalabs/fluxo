@@ -90,10 +90,10 @@ export function DocView({ content, path, kind }: { content: string; path: string
   if (isHtml) {
     return (
       <iframe
+        className="artifact-frame"
         title={path || "mockup"}
         srcDoc={content}
         sandbox="allow-scripts allow-popups"
-        style={{ width: "100%", height: "82vh", minHeight: 600, border: "1px solid var(--stroke)", borderRadius: 12, background: "#fff", display: "block" }}
       />
     );
   }

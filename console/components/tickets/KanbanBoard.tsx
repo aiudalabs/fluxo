@@ -188,9 +188,7 @@ function KanbanColumn({ status, tickets, gates, capWaiting, candidates, onDispat
   return (
     <div className="kb-col">
       <button className="kb-col-head" onClick={onToggle} title={t("tickets.kanban.collapse")}>
-        <span className={`pill ${tok.pill}`} style={{ fontSize: 10.5, padding: "3px 9px" }}>
-          {t(`tickets.col.${status}`)}
-        </span>
+        <span className={`pill ${tok.pill}`}>{t(`tickets.col.${status}`)}</span>
         <span className="kb-count" style={{ color: tok.color }}>
           {tickets.length}
         </span>

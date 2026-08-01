@@ -113,7 +113,7 @@ export default function Agents() {
       <div className="tickets-head">
         <h2>{t("agents.title")}</h2>
         <span className="c">{t("agents.desc")}</span>
-        <span className="sp" style={{ flex: 1 }} />
+        <span className="sp" />
         <button className="btn ghost sm" onClick={() => { void loadRuns(); }}>{t("agents.refresh")}</button>
       </div>
 
@@ -122,7 +122,7 @@ export default function Agents() {
       ) : state === "error" ? (
         <div className="tickets-canvas pad"><div className="placeholder err">{t("agents.error")}</div></div>
       ) : (
-        <div className="tickets-canvas pad" style={{ display: "flex", flexDirection: "column", gap: 22 }}>
+        <div className="tickets-canvas pad ag-stack">
           {/* ── Motor Fluxo · builds en el VPS con log en vivo (docs/17) ────── */}
           <EngineBuilds />
           {/* ── Panel 1 · Sesiones activas ─────────────────────────────────── */}
@@ -131,17 +131,17 @@ export default function Agents() {
               <Empty text={t("agents.sessions.empty")} />
             ) : (
               sessions.map((s) => (
-                <div key={s.id} className="agent-row" style={rowStyle}>
-                  <span className="pill run_" style={{ fontSize: 10.5 }}>{s.key}</span>
-                  <span style={ttlStyle}>{s.title}</span>
-                  <span className="sp" style={{ flex: 1 }} />
+                <div key={s.id} className="ag-row">
+                  <span className="pill run_">{s.key}</span>
+                  <span className="ag-ttl">{s.title}</span>
+                  <span className="sp" />
                   {s.session_url && (
                     <a className="kb-pr" href={s.session_url} target="_blank" rel="noreferrer" title={t("agents.sessions.openSession")}>{t("agents.sessions.session")} ↗</a>
                   )}
                   {s.pr_url && (
                     <a className="kb-pr" href={s.pr_url} target="_blank" rel="noreferrer" title={t("agents.sessions.openPR")}>{t("agents.sessions.pr")} ↗</a>
                   )}
-                  <button className="btn ghost sm" disabled={stopping.has(s.key)} onClick={() => void stop(s.key)}
+                  <button className="btn ghost ag-stop" disabled={stopping.has(s.key)} onClick={() => void stop(s.key)}
                     title="Detener este build y volver la story al backlog">
                     {stopping.has(s.key) ? "…" : "⏹ Detener"}
                   </button>
@@ -156,12 +156,12 @@ export default function Agents() {
               <Empty text={t("agents.prs.empty")} />
             ) : (
               prQueue.map((pr) => (
-                <div key={pr.url} className="agent-row" style={rowStyle}>
-                  <span className="pill review" style={{ fontSize: 10.5 }}>{pr.stories.length === 1 ? pr.stories[0].key : `${pr.stories.length} stories`}</span>
-                  <span style={ttlStyle}>
+                <div key={pr.url} className="ag-row">
+                  <span className="pill review">{pr.stories.length === 1 ? pr.stories[0].key : `${pr.stories.length} stories`}</span>
+                  <span className="ag-ttl">
                     {t("agents.prs.stories")} {pr.stories.map((s) => s.key).join(", ")}
                   </span>
-                  <span className="sp" style={{ flex: 1 }} />
+                  <span className="sp" />
                   <a className="kb-pr" href={pr.url} target="_blank" rel="noreferrer" title={t("agents.prs.openPR")}>{t("agents.sessions.pr")} ↗</a>
                 </div>
               ))
@@ -174,12 +174,12 @@ export default function Agents() {
               <Empty text={t("agents.prs.empty")} />
             ) : (
               runs.map((r) => (
-                <div key={r.id} className="agent-row" style={rowStyle}>
-                  <span className="pill queued" style={{ fontSize: 10.5 }}>{r.branch || r.event}</span>
-                  <span style={ttlStyle}>{r.title || r.name}</span>
-                  <span className="sp" style={{ flex: 1 }} />
+                <div key={r.id} className="ag-row">
+                  <span className="pill queued">{r.branch || r.event}</span>
+                  <span className="ag-ttl">{r.title || r.name}</span>
+                  <span className="sp" />
                   {r.html_url && <a className="kb-pr" href={r.html_url} target="_blank" rel="noreferrer">run ↗</a>}
-                  <button className="btn sm" disabled={approving.has(r.id)} onClick={() => void approve(r.id)}>
+                  <button className="btn primary" disabled={approving.has(r.id)} onClick={() => void approve(r.id)}>
                     {approving.has(r.id) ? t("agents.prs.approving") : t("agents.prs.approve")}
                   </button>
                 </div>
@@ -192,24 +192,18 @@ export default function Agents() {
   );
 }
 
-const rowStyle: React.CSSProperties = {
-  display: "flex", alignItems: "center", gap: 10, padding: "9px 12px",
-  border: "1px solid var(--stroke)", borderRadius: 10, background: "var(--bg2)",
-};
-const ttlStyle: React.CSSProperties = { fontSize: 13, color: "var(--ink2)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" };
-
 function Panel({ title, count, children }: { title: string; count: string; children: React.ReactNode }) {
   return (
-    <section style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-      <div style={{ display: "flex", alignItems: "baseline", gap: 8 }}>
-        <h3 style={{ fontSize: 13, fontWeight: 600, color: "var(--ink)", margin: 0 }}>{title}</h3>
-        <span style={{ fontSize: 12, color: "var(--ink4)" }}>{count}</span>
+    <section className="ag-panel">
+      <div className="ag-panel-head">
+        <h3>{title}</h3>
+        <span className="ag-count">{count}</span>
       </div>
-      <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>{children}</div>
+      <div className="ag-list">{children}</div>
     </section>
   );
 }
 
 function Empty({ text }: { text: string }) {
-  return <div style={{ fontSize: 12.5, color: "var(--ink4)", padding: "6px 2px" }}>{text}</div>;
+  return <div className="ag-empty">{text}</div>;
 }

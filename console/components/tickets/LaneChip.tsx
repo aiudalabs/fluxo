@@ -4,13 +4,15 @@
 // Color determinista por nombre de lane, avatar con la inicial. Es la cue de
 // escaneo nº1 en JIRA/Linear; antes el owner no se mostraba en ningún lado.
 
+// Paleta = roles MD3 (flipean con el tema). Los dos hex fijos que había acá
+// (violeta/teal) desaparecían sobre el scheme dark.
 const LANE_COLORS: [string, string][] = [
-  ["var(--navy)", "var(--navy-soft)"],
-  ["var(--emerald)", "var(--emerald-soft)"],
-  ["var(--amber)", "var(--amber-soft)"],
-  ["#6d28d9", "rgba(109, 40, 217, 0.09)"],
-  ["#0e7490", "rgba(14, 116, 144, 0.09)"],
-  ["var(--accent)", "var(--accent-soft)"],
+  ["var(--md-tertiary)", "var(--navy-soft)"],
+  ["var(--md-success)", "var(--emerald-soft)"],
+  ["var(--md-warning)", "var(--amber-soft)"],
+  ["var(--md-error)", "var(--danger-soft)"],
+  ["var(--md-on-surface-variant)", "color-mix(in srgb, var(--md-on-surface-variant) 12%, transparent)"],
+  ["var(--md-primary)", "var(--accent-soft)"],
 ];
 
 function laneColor(lane: string): [string, string] {

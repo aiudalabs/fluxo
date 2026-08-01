@@ -257,10 +257,9 @@ export default function Board() {
         <h2>{t("tickets.title")}</h2>
         <span className="c">{viewDesc}</span>
         <span className="sp" />
-        <div style={{ display: "flex", gap: 2, background: "var(--bg2)", border: "1px solid var(--stroke)", borderRadius: 10, padding: 3 }}>
+        <div className="tickets-tabs">
           {VIEWS.map((v) => (
-            <button key={v} className={`btn sm${view === v ? " primary" : " ghost"}`}
-              style={{ borderRadius: 7, border: "none", boxShadow: "none" }} onClick={() => setView(v)}>
+            <button key={v} className={`btn sm${view === v ? " primary" : " ghost"}`} onClick={() => setView(v)}>
               {t(`tickets.tab.${v}`)}
             </button>
           ))}
@@ -305,16 +304,16 @@ export default function Board() {
       </div>
 
       {nsOpen && (
-        <div className="tickets-toolbar" style={{ flexDirection: "column", alignItems: "stretch", gap: 8, background: "var(--bg2)", borderRadius: 10, padding: 12, margin: "0 0 8px" }}>
+        <div className="tickets-toolbar tickets-newstory">
           <input className="inp" placeholder="Título de la story (ej. Rediseño integral de la UI a MD3)" value={nsTitle} onChange={(e) => setNsTitle(e.target.value)} />
-          <textarea className="inp" style={{ minHeight: 140, resize: "vertical", fontFamily: "inherit" }} placeholder="Cuerpo / prompt: qué querés que haga el agente. Es el spec que recibe (pegá acá el prompt)." value={nsBody} onChange={(e) => setNsBody(e.target.value)} />
-          <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+          <textarea className="inp" placeholder="Cuerpo / prompt: qué querés que haga el agente. Es el spec que recibe (pegá acá el prompt)." value={nsBody} onChange={(e) => setNsBody(e.target.value)} />
+          <div className="row">
             <button className="btn primary" disabled={nsBusy || !nsTitle.trim()} onClick={createStory}>
               {nsBusy ? "Creando…" : "Crear en el backlog"}
             </button>
             <button className="btn ghost" onClick={() => setNsOpen(false)}>Cancelar</button>
             <span className="sp" style={{ flex: 1 }} />
-            <span className="c" style={{ fontSize: 12, opacity: 0.7 }}>Sin dependencias → queda lista para lanzar con ▶ (al motor del proyecto).</span>
+            <span className="tickets-hint">Sin dependencias → queda lista para lanzar con ▶ (al motor del proyecto).</span>
           </div>
         </div>
       )}
@@ -369,8 +368,8 @@ function TicketsTable({ tickets, gates, onOpenTicket, onOpenRun, onStop }: {
           <div key={tk.id} className="trow click" onClick={() => onOpenTicket(tk.id)}>
             <span className="id">{tk.id}</span>
             <span className="ttl">{tk.title}</span>
-            <span>{tk.owner ? <LaneChip lane={tk.owner} /> : <span style={{ color: "var(--ink4)", fontSize: 12 }}>—</span>}</span>
-            <span className="mono" style={{ fontSize: 11, color: "var(--ink4)" }}>{tk.sprint_id || "—"}</span>
+            <span>{tk.owner ? <LaneChip lane={tk.owner} /> : <span className="tickets-dash">—</span>}</span>
+            <span className="mono tickets-dash" style={{ fontSize: 11 }}>{tk.sprint_id || "—"}</span>
             <span className="dep">{tk.deps && tk.deps.length > 0 ? tk.deps.join(", ") : "—"}</span>
             <span>
               <span className={`pill ${statusToken(tk.status).pill}`} style={gated ? { opacity: 0.55 } : undefined}>
@@ -380,12 +379,12 @@ function TicketsTable({ tickets, gates, onOpenTicket, onOpenRun, onStop }: {
             <span>
               {tk.pr_url ? (
                 <a className="kb-pr" href={tk.pr_url} target="_blank" rel="noreferrer" onClick={(e) => e.stopPropagation()}>PR ↗</a>
-              ) : <span style={{ color: "var(--ink4)", fontSize: 12 }}>—</span>}
+              ) : <span className="tickets-dash">—</span>}
             </span>
             <span style={{ display: "flex", alignItems: "center", gap: 6 }}>
               {tk.run_id ? (
                 <button className="kb-run" onClick={(e) => { e.stopPropagation(); onOpenRun(tk.run_id!); }}>{tk.run_id.slice(0, 10)}…</button>
-              ) : <span style={{ color: "var(--ink4)", fontSize: 12 }}>—</span>}
+              ) : <span className="tickets-dash">—</span>}
               {tk.status === "running" && onStop && (
                 <button className="btn ghost sm" title={t("tickets.stop.title")}
                   onClick={(e) => { e.stopPropagation(); onStop(tk); }}>{t("tickets.stop.button")}</button>

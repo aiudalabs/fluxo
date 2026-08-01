@@ -66,16 +66,16 @@ export function TopBar({ currentProjectId }: { currentProjectId?: string }) {
 
       <div className="sh-switcher">
         <button className="sh-switch" onClick={() => setOpen(open === "sw" ? null : "sw")}>
-          <span className="d" style={{ background: current ? "var(--emerald)" : "var(--ink4)" }} />
+          <span className="d" style={{ background: current ? "var(--md-success)" : "var(--md-outline)" }} />
           <span>{current?.name ?? "Todos los proyectos"}</span>
           <span className="ca">▾</span>
         </button>
         <div className={`sh-menu${open === "sw" ? " on" : ""}`}>
           <div className="sh-mh">Tus proyectos</div>
-          {projects.length === 0 && <div className="sh-mi" style={{ color: "var(--ink4)" }}>Sin proyectos aún</div>}
+          {projects.length === 0 && <div className="sh-mi muted">Sin proyectos aún</div>}
           {projects.map((p) => (
             <button key={p.id} className="sh-mi" onClick={() => { setOpen(null); router.push(`/projects/${p.id}/overview`); }}>
-              <span className="d" style={{ background: p.id === currentProjectId ? "var(--accent)" : "var(--emerald)" }} />
+              <span className="d" style={{ background: p.id === currentProjectId ? "var(--md-primary)" : "var(--md-success)" }} />
               <span className="grow">{p.name}</span>
               {p.org && <span className="mini">{p.org}</span>}
             </button>
@@ -102,7 +102,7 @@ export function TopBar({ currentProjectId }: { currentProjectId?: string }) {
               <Link className="sh-mi" href={`/projects/${currentProjectId}/settings`} onClick={() => setOpen(null)}><span className="grow">🔑 Canal de build</span></Link>
             </>
           ) : (
-            <div className="sh-mi" style={{ opacity: 0.5 }}><span className="grow">⚙ Settings (abrí un proyecto)</span></div>
+            <div className="sh-mi off"><span className="grow">⚙ Settings (abrí un proyecto)</span></div>
           )}
           {login && <Link className="sh-mi" href="/account/credentials" onClick={() => setOpen(null)}><span className="grow">🔐 Mis credenciales</span></Link>}
           {installUrl && <a className="sh-mi" href={installUrl} target="_blank" rel="noreferrer"><span className="grow">⬇ Instalar App en otra org</span></a>}

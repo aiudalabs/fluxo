@@ -271,13 +271,13 @@ export default function Studio() {
         <span className="studio-eyebrow">{ceremonyName(run.workflow) ?? "Diseño"}</span>
         <span className="studio-branch"><span className="d" /> {t("studio.docs.onBranch")}</span>
         {!isTerminal && (
-          <button className="studio-runchip" onClick={() => pickPhase(phases.findIndex((p) => p.status === "awaiting_gate"))}>
-            <span className="d" style={{ background: awaitingCount > 0 ? "var(--accent)" : "var(--navy)" }} />
+          <button className={`studio-runchip${awaitingCount > 0 ? "" : " idle"}`} onClick={() => pickPhase(phases.findIndex((p) => p.status === "awaiting_gate"))}>
+            <span className="d" />
             {awaitingCount > 0 ? t("studio.docs.awaitingN", { n: awaitingCount }) : t("studio.docs.runActive")}
           </button>
         )}
         <div className="sp" />
-        <button className="btn sm" onClick={() => setShowInc(true)} title="Agregá una feature o mejora al producto ya construido">＋ Pedir incremento</button>
+        <button className="btn tonal sm" onClick={() => setShowInc(true)} title="Agregá una feature o mejora al producto ya construido">＋ Pedir incremento</button>
         {(phases.length > 0 || files.length > 0) && !fullscreen && (
           <button className={`btn ghost sm${!railOpen ? " on" : ""}`} onClick={() => setRailOpen((v) => !v)} title={t("studio.docs.railToggle")}>
             ⇤ {t("studio.docs.railToggle")}
@@ -320,7 +320,7 @@ export default function Studio() {
               <span className="lb-ic">✕</span>
               <span>{cer ? <>La ceremonia <b>{cer}</b> falló — se re-planea sola (mirá el Flow).</> : <>El diseño se cortó. Puede haber sido un hipo transitorio — <b>reanudá</b> para seguir desde donde quedó.</>}</span>
               {!cer && (
-                <button className="btn sm" disabled={resuming} onClick={() => void resumeRun()} style={{ marginLeft: "auto" }}>
+                <button className="btn sm" disabled={resuming} onClick={() => void resumeRun()}>
                   {resuming ? "Reanudando…" : "↻ Reanudar"}
                 </button>
               )}
@@ -381,12 +381,12 @@ export default function Studio() {
                     <>
                       {others.map(DocBtn)}
                       {mockups.length > 0 && (
-                        <details style={{ marginTop: 2 }}>
-                          <summary className="rail-doc" style={{ cursor: "pointer" }}>
+                        <details className="rail-group">
+                          <summary className="rail-doc">
                             <span className="pi">▢</span>
                             <span className="lbl">Mockups ({mockups.length})</span>
                           </summary>
-                          <div style={{ paddingLeft: 12 }}>{mockups.map(DocBtn)}</div>
+                          <div className="rail-group-items">{mockups.map(DocBtn)}</div>
                         </details>
                       )}
                     </>
@@ -427,21 +427,20 @@ export default function Studio() {
               <div className="studio-doc-scroll">
                 <div className="studio-doc-inner">
                   {activeVersions.length > 1 && (
-                    <div className="chips" style={{ marginBottom: 14 }}>
+                    <div className="chips doc-vers">
                       {activeVersions.map((h, i) => {
                         const vnum = activeVersions.length - i;
                         const isLatest = i === 0;
                         const on = isLatest ? ver === null || ver === h.id : ver === h.id;
                         return (
                           <button key={h.id} className={`chip${on ? " on" : ""}`}
-                            style={{ fontFamily: "var(--mono)", fontSize: 11.5, padding: "4px 10px" }}
                             title={`${h.message} · ${new Date(h.ts).toLocaleString()}`}
                             onClick={() => setVer(isLatest ? null : h.id)}>
                             v{vnum}
                           </button>
                         );
                       })}
-                      {ver !== null && <span style={{ color: "var(--ink4)", fontSize: 12, alignSelf: "center" }}>{t("studio.docs.viewingOld")}</span>}
+                      {ver !== null && <span className="doc-ver-note">{t("studio.docs.viewingOld")}</span>}
                     </div>
                   )}
                   {!active ? (
@@ -458,19 +457,18 @@ export default function Studio() {
 
       {/* Banner de gate pendiente (cuando no estás mirando esa fase) */}
       {pendingGate && !viewGate && (
-        <button className="studio-runchip" style={{ position: "fixed", right: 20, bottom: 20, zIndex: 30 }}
+        <button className="studio-runchip studio-gate-fab"
           onClick={() => pickPhase(phases.findIndex((p) => p.phase_id === pendingGate.phase_id))}>
-          <span className="d" style={{ background: "var(--accent)" }} /> {t("studio.docs.reviewChanges")}
+          <span className="d" /> {t("studio.docs.reviewChanges")}
         </button>
       )}
 
       {/* Overlay "Pedir incremento": acción con espacio propio (no atrapada en el rail). */}
       {showInc && (
-        <div onClick={() => setShowInc(false)}
-          style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.55)", zIndex: 50, display: "flex", alignItems: "flex-start", justifyContent: "center", padding: "8vh 16px", overflow: "auto" }}>
-          <div onClick={(e) => e.stopPropagation()} style={{ width: "100%", maxWidth: 640 }}>
+        <div className="studio-inc-overlay" onClick={() => setShowInc(false)}>
+          <div className="studio-inc-panel" onClick={(e) => e.stopPropagation()}>
             <IncrementRequest />
-            <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 10 }}>
+            <div className="studio-inc-close">
               <button className="btn ghost sm" onClick={() => setShowInc(false)}>Cerrar</button>
             </div>
           </div>
@@ -510,39 +508,39 @@ function PhasePanel({ phase, gate, workflow, onError }: { phase: Phase; gate: Ga
 
   return (
     <>
-      <div className="studio-doc-head" style={{ paddingLeft: 0, paddingRight: 0 }}>
+      <div className="studio-doc-head flush">
         <span className="eyebrow">{phaseTitle(t, workflow, phase.phase_id, phase.label)}</span>
         {phaseState(phase.status) === "approved" && !gate && <span className="doc-okchip">{t("studio.docs.approved")}</span>}
       </div>
 
       {doc && (
-        <div style={{ marginBottom: 18 }}>
+        <div className="studio-phase-doc">
           <DocView content={doc.content} path={doc.path} kind={doc.kind} />
         </div>
       )}
 
       {gate && (
-        <div style={{ border: "1px solid var(--accent-line)", background: "var(--accent-soft)", borderRadius: 14, padding: "16px 18px" }}>
-          <div style={{ fontFamily: "var(--mono)", fontSize: 11.5, color: "var(--accent)", marginBottom: 6 }}>
+        <div className="gate-card">
+          <div className="gate-eyebrow">
             {gate.attempt > 1 ? `Intento ${gate.attempt}` : "Tu decisión"}
           </div>
-          <p style={{ margin: "0 0 14px", fontSize: 14.5, color: "var(--ink)" }}>{gate.reason}</p>
+          <p className="gate-reason">{gate.reason}</p>
 
           {/* Sprint Review = ver el incremento corriendo antes de aceptar → atajo a la pestaña "App en vivo". */}
           {workflow === "sprint-review" && (
-            <button className="btn sm" style={{ marginBottom: 12 }}
+            <button className="btn ghost sm gate-preview"
               onClick={() => router.push(`/projects/${projectId}/preview`)}>
               ▶ Abrir preview ↗
             </button>
           )}
 
           {gate.open_questions.length > 0 && mode === "answer" && (
-            <div style={{ marginBottom: 12 }}>
+            <div className="gate-block">
               {gate.open_questions.map((q, i) => (
-                <div key={i} style={{ marginBottom: 10 }}>
-                  <label style={{ fontSize: 13.5, display: "block", marginBottom: 4, color: "var(--ink2)" }}>{q}</label>
-                  <input value={answers[i] ?? ""} onChange={(e) => setAnswers((p) => ({ ...p, [i]: e.target.value }))}
-                    placeholder={t("studio.view.answerPlaceholder")} style={inp} />
+                <div key={i} className="gate-q">
+                  <label>{q}</label>
+                  <input className="inp" value={answers[i] ?? ""} onChange={(e) => setAnswers((p) => ({ ...p, [i]: e.target.value }))}
+                    placeholder={t("studio.view.answerPlaceholder")} />
                 </div>
               ))}
               <button className="btn primary sm" disabled={!hasAnswers || busy !== null}
@@ -553,17 +551,17 @@ function PhasePanel({ phase, gate, workflow, onError }: { phase: Phase; gate: Ga
           )}
 
           {mode === "reject" && (
-            <div style={{ marginBottom: 12 }}>
-              <textarea value={feedback} onChange={(e) => setFeedback(e.target.value)} rows={3}
-                placeholder={t("studio.view.rejectPlaceholder")} style={{ ...inp, resize: "vertical" }} />
-              <button className="btn primary sm" style={{ marginTop: 8 }} disabled={!feedback.trim() || busy !== null}
+            <div className="gate-block">
+              <textarea className="inp" value={feedback} onChange={(e) => setFeedback(e.target.value)} rows={3}
+                placeholder={t("studio.view.rejectPlaceholder")} />
+              <button className="btn primary sm gate-send" disabled={!feedback.trim() || busy !== null}
                 onClick={() => resolve({ outcome: "revise", feedback: feedback.trim() }, "reject")}>
                 {busy === "reject" ? "…" : t("studio.view.sendFeedback")}
               </button>
             </div>
           )}
 
-          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+          <div className="gate-actions">
             <button className="btn primary sm" disabled={busy !== null} onClick={() => resolve({ outcome: "approve" }, "approve")}>
               ✓ {approveLabel(t, workflow)}
             </button>
@@ -581,9 +579,3 @@ function PhasePanel({ phase, gate, workflow, onError }: { phase: Phase; gate: Ga
     </>
   );
 }
-
-const inp: React.CSSProperties = {
-  width: "100%", boxSizing: "border-box", padding: "8px 10px", fontSize: 13.5,
-  background: "var(--panel)", color: "var(--ink)", border: "1px solid var(--stroke-strong)", borderRadius: 10,
-  fontFamily: "var(--display)",
-};

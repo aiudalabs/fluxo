@@ -197,7 +197,7 @@ export default function Flow() {
             />
           </div>
         ) : (
-          <div style={{ position: "absolute", inset: 0 }}>
+          <div className="flow-graph-canvas" style={{ position: "absolute", inset: 0 }}>
             <ReactFlow
               nodes={rfNodes}
               edges={laid.edges}

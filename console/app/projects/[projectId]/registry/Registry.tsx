@@ -6,7 +6,7 @@
 // (GET /api/projects/[id]/prompts, reconstruido con el kernel de despacho). Sin CRUD (v1 lo tenía;
 // diferido). Estilo: clases del board/wrap de v1; contenido crudo en <pre> (sin deps de markdown).
 
-import { type CSSProperties, useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { DocView } from "@/components/DocView";
 import { useProject } from "@/lib/project";
 import { activeToken } from "@/lib/supabaseClient";
@@ -100,9 +100,9 @@ export default function Registry() {
           ) : tab === "templates" ? (
             <TemplatesPane templates={templates} t={t} />
           ) : sel ? (
-            <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+            <div className="rg-detail">
               <button className="reg-back" onClick={() => { setSel(null); setDetail(null); }}>← {t("registry.count", { n: items.length })}</button>
-              <h3 style={{ margin: 0 }}>{sel.id}</h3>
+              <h3>{sel.id}</h3>
               {!detail ? (
                 <div className="placeholder"><span className="spin" /></div>
               ) : (
@@ -118,8 +118,7 @@ export default function Registry() {
                 <button key={it.id} className="reg-item" onClick={() => openItem(tab, it.id)}>
                   <div className="rid">{tab}/{it.id}{it.model && <span className="tag">{it.model}</span>}
                     {it.wired !== undefined && (
-                      <span className="tag" title={it.wired ? "Tiene un disparador vivo en v2" : "Método en data — todavía sin cablear a un disparador"}
-                        style={{ color: it.wired ? "var(--emerald)" : "var(--ink4)", borderColor: it.wired ? "var(--emerald)" : "var(--stroke)" }}>
+                      <span className={`tag rg-wired${it.wired ? " on" : ""}`} title={it.wired ? "Tiene un disparador vivo en v2" : "Método en data — todavía sin cablear a un disparador"}>
                         {it.wired ? "● cableado" : "○ solo-data"}
                       </span>
                     )}
@@ -152,9 +151,9 @@ function TemplatesPane({ templates, t }: { templates: string[]; t: (k: string, v
   // Drill-down: ver el contenido de un template (el CI/scaffold que Fluxo siembra en el repo).
   if (sel) {
     return (
-      <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+      <div className="rg-detail">
         <button className="reg-back" onClick={() => { setSel(null); setContent(null); }}>← templates</button>
-        <h3 style={{ margin: 0, fontFamily: "var(--mono, monospace)", fontSize: 13, wordBreak: "break-all" }}>{sel}</h3>
+        <h3 className="rg-path">{sel}</h3>
         {content == null ? <div className="placeholder"><span className="spin" /></div> : <DocView content={content} path={sel} />}
       </div>
     );
@@ -162,15 +161,14 @@ function TemplatesPane({ templates, t }: { templates: string[]; t: (k: string, v
   // Agrupado por STACK (primer segmento del path) para que sea navegable — no 57 paths planos.
   const byStack: Record<string, string[]> = {};
   for (const p of templates) { const s = p.split("/")[0]; (byStack[s] ??= []).push(p); }
-  const btn: CSSProperties = { textAlign: "left", fontFamily: "var(--mono, monospace)", fontSize: 12, padding: "5px 8px", border: "1px solid var(--stroke)", borderRadius: 6, background: "var(--panel)", color: "var(--ink2)", cursor: "pointer", alignSelf: "stretch", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" };
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-      <p className="c" style={{ margin: 0 }}>{t("registry.templates.intro")} — la CI + scaffold que Fluxo siembra en el repo del cliente. Elegí el stack y clickeá un archivo para ver su contenido.</p>
+    <div className="rg-stacks">
+      <p className="rg-intro">{t("registry.templates.intro")} — la CI + scaffold que Fluxo siembra en el repo del cliente. Elegí el stack y clickeá un archivo para ver su contenido.</p>
       {Object.entries(byStack).map(([stack, files]) => (
-        <div key={stack} style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+        <div key={stack} className="rg-stack">
           <div className="eyebrow acc">{stack}</div>
           {files.map((p) => (
-            <button key={p} onClick={() => open(p)} style={btn} title={p}>{p.slice(stack.length + 1)}</button>
+            <button key={p} className="rg-file" onClick={() => open(p)} title={p}>{p.slice(stack.length + 1)}</button>
           ))}
         </div>
       ))}
@@ -184,32 +182,32 @@ function PromptsPane({ data, t }: { data: { sprints: PromptSprint[]; stories: Pr
   const hasAny = data.sprints.some((s) => s.prompt) || data.stories.length > 0;
   if (!hasAny) return <div className="placeholder"><div className="ph-ic">◆</div>{t("registry.prompts.empty")}</div>;
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
-      <p className="c" style={{ margin: 0 }}>{t("registry.prompts.intro")}</p>
+    <div className="rg-prompts">
+      <p className="rg-intro">{t("registry.prompts.intro")}</p>
 
       <div>
-        <div className="eyebrow acc" style={{ marginBottom: 8 }}>{t("registry.prompts.sprints")}</div>
-        <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+        <div className="eyebrow acc rg-group-h">{t("registry.prompts.sprints")}</div>
+        <div className="rg-list">
           {data.sprints.filter((s) => s.prompt).map((s) => (
-            <details key={s.key} open={data.executionUnit === "sprint"}>
-              <summary style={{ cursor: "pointer", fontWeight: 600 }}>
-                {s.key}{s.title ? ` — ${s.title}` : ""} <span className="tag" style={{ fontSize: 10 }}>{s.storyKeys.join(", ")}</span>
+            <details key={s.key} className="rg-acc" open={data.executionUnit === "sprint"}>
+              <summary>
+                {s.key}{s.title ? ` — ${s.title}` : ""} <span className="tag">{s.storyKeys.join(", ")}</span>
               </summary>
-              <div style={{ marginTop: 8 }}><DocView content={s.prompt} path="prompt.txt" /></div>
+              <div className="rg-acc-body"><DocView content={s.prompt} path="prompt.txt" /></div>
             </details>
           ))}
         </div>
       </div>
 
       <div>
-        <div className="eyebrow acc" style={{ marginBottom: 8 }}>{t("registry.prompts.stories")}</div>
-        <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+        <div className="eyebrow acc rg-group-h">{t("registry.prompts.stories")}</div>
+        <div className="rg-list">
           {data.stories.map((s) => (
-            <details key={s.key} open={data.executionUnit !== "sprint"}>
-              <summary style={{ cursor: "pointer", fontWeight: 600 }}>
-                {s.key} — {s.title} <span className="tag" style={{ fontSize: 10 }}>{s.status}</span>
+            <details key={s.key} className="rg-acc" open={data.executionUnit !== "sprint"}>
+              <summary>
+                {s.key} — {s.title} <span className="tag">{s.status}</span>
               </summary>
-              <div style={{ marginTop: 8 }}><DocView content={s.prompt} path="prompt.txt" /></div>
+              <div className="rg-acc-body"><DocView content={s.prompt} path="prompt.txt" /></div>
             </details>
           ))}
         </div>

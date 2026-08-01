@@ -82,32 +82,30 @@ export default function CredentialsPage() {
           </button>
         </div>
 
-        {note && <p style={{ color: "var(--ink3)", fontSize: 13, margin: "0 0 12px" }}>{note}</p>}
+        {note && <p className="dash-note">{note}</p>}
 
         {state === "loading" ? (
-          <p style={{ color: "var(--ink4)" }}>Cargando…</p>
+          <p className="dash-loading">Cargando…</p>
         ) : state === "error" ? (
-          <p style={{ color: "var(--accent)" }}>No se pudieron cargar las credenciales. ¿Sesión iniciada?</p>
+          <p className="dash-error">No se pudieron cargar las credenciales. ¿Sesión iniciada?</p>
         ) : (
-          <div style={{ display: "flex", flexDirection: "column", gap: 14, maxWidth: 720 }}>
+          <div className="cred-list">
             {creds.map((c) => (
-              <div key={c.name} className="card" style={{ padding: 18, display: "flex", flexDirection: "column", gap: 10 }}>
-                <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                  <strong style={{ fontSize: 15 }}>{c.label}</strong>
-                  {c.optional && <span style={{ fontSize: 11, color: "var(--ink4)" }}>opcional</span>}
-                  <span className="sp" style={{ flex: 1 }} />
-                  <span style={{ fontSize: 12.5, color: c.set ? "var(--emerald)" : "var(--ink4)", fontWeight: 600 }}>
+              <div key={c.name} className="cred-card">
+                <div className="cred-head">
+                  <strong>{c.label}</strong>
+                  {c.optional && <span className="cred-opt">opcional</span>}
+                  <span className={`cred-state ${c.set ? "on" : "off"}`}>
                     {c.set ? `🟢 Configurada${c.updatedAt ? ` · ${new Date(c.updatedAt).toLocaleDateString()}` : ""}` : "⚪ No configurada"}
                   </span>
                 </div>
-                <p style={{ fontSize: 13, color: "var(--ink3)", margin: 0, lineHeight: 1.5 }}>{c.description}</p>
-                {c.docsUrl && <a href={c.docsUrl} target="_blank" rel="noreferrer" style={{ fontSize: 12.5, color: "var(--navy)" }}>Cómo obtenerla ↗</a>}
-                <div style={{ display: "flex", gap: 8, marginTop: 4 }}>
+                <p className="cred-desc">{c.description}</p>
+                {c.docsUrl && <a className="cred-docs" href={c.docsUrl} target="_blank" rel="noreferrer">Cómo obtenerla ↗</a>}
+                <div className="cred-row">
                   <input
                     className="inp" type="password" autoComplete="off"
                     placeholder={c.set ? "Pegá un valor nuevo para rotarla…" : "Pegá el valor…"}
                     value={values[c.name] ?? ""} onChange={(e) => setValues((v) => ({ ...v, [c.name]: e.target.value }))}
-                    style={{ flex: 1, fontFamily: "var(--mono)" }}
                   />
                   <button className="btn primary" disabled={busy === c.name || !(values[c.name] ?? "").trim()} onClick={() => void save(c.name)}>
                     {busy === c.name ? "Guardando…" : c.set ? "Rotar" : "Guardar"}
@@ -115,7 +113,7 @@ export default function CredentialsPage() {
                 </div>
               </div>
             ))}
-            <p style={{ fontSize: 12, color: "var(--ink4)", margin: "4px 0 0" }}>
+            <p className="cred-fine">
               El valor se guarda cifrado en la bóveda de Fluxo (nunca se muestra de vuelta) y se siembra en los
               Actions secrets de tus repos. Un proyecto nuevo hereda tus credenciales con «Sincronizar».
             </p>

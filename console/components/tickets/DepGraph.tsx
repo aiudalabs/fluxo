@@ -36,9 +36,9 @@ import { STATUS_ORDER, statusToken } from "@/lib/statusToken";
 function nodeStyle(s: TicketStatus) {
   const tok = statusToken(s);
   return {
-    background: s === "backlog" ? "#fff" : tok.soft,
-    border: `1.5px solid ${tok.border}`,
-    color: s === "backlog" ? "var(--ink4)" : tok.color,
+    background: s === "backlog" ? "var(--md-surface-container-lowest)" : tok.soft,
+    borderColor: tok.border,
+    color: s === "backlog" ? "var(--md-on-surface-variant)" : tok.color,
   };
 }
 
@@ -47,13 +47,13 @@ function nodeStyle(s: TicketStatus) {
 function edgeStroke(source: TicketStatus): { stroke: string; strokeWidth: number } {
   switch (source) {
     case "failed":
-      return { stroke: "rgba(180, 30, 30, 0.55)", strokeWidth: 2 };
+      return { stroke: "color-mix(in srgb, var(--md-error) 62%, transparent)", strokeWidth: 2 };
     case "running":
-      return { stroke: "rgba(20, 40, 80, 0.45)", strokeWidth: 2 };
+      return { stroke: "color-mix(in srgb, var(--md-primary) 62%, transparent)", strokeWidth: 2 };
     case "done":
-      return { stroke: "rgba(13, 13, 15, 0.12)", strokeWidth: 1.5 };
+      return { stroke: "color-mix(in srgb, var(--md-outline) 38%, transparent)", strokeWidth: 1.5 };
     default:
-      return { stroke: "rgba(13, 13, 15, 0.26)", strokeWidth: 1.5 };
+      return { stroke: "var(--md-outline)", strokeWidth: 1.5 };
   }
 }
 
@@ -71,42 +71,18 @@ function StoryNode({ data }: NodeProps) {
   const d = data as StoryNodeData;
   return (
     <div
-      style={{
-        ...nodeStyle(d.status),
-        borderRadius: 11,
-        padding: "8px 14px",
-        fontSize: 12,
-        fontWeight: 600,
-        fontFamily: "var(--display)",
-        cursor: "pointer",
-        width: NODE_W,
-        boxShadow: "0 2px 8px rgba(13,13,15,0.06)",
-        lineHeight: 1.35,
-        userSelect: "none",
-      }}
+      className="dag-node"
+      style={nodeStyle(d.status)}
       onClick={() => d.onOpenTicket(d.id)}
       title={`${d.title} — ${t("tickets.rowTitle")}`}
     >
       <Handle type="target" position={Position.Left} style={{ opacity: 0 }} />
       <Handle type="source" position={Position.Right} style={{ opacity: 0 }} />
-      <div style={{ display: "flex", justifyContent: "space-between", gap: 6 }}>
-        <span style={{ fontFamily: "var(--mono)", fontSize: 11, opacity: 0.7 }}>{d.id}</span>
-        {d.sprint && (
-          <span style={{ fontFamily: "var(--mono)", fontSize: 9.5, opacity: 0.5 }}>{d.sprint}</span>
-        )}
+      <div className="n-top">
+        <span className="n-id">{d.id}</span>
+        {d.sprint && <span className="n-sprint">{d.sprint}</span>}
       </div>
-      <div
-        style={{
-          fontSize: 12,
-          lineHeight: 1.3,
-          color: "inherit",
-          marginTop: 2,
-          display: "-webkit-box",
-          WebkitLineClamp: 2,
-          WebkitBoxOrient: "vertical",
-          overflow: "hidden",
-        }}
-      >
+      <div className="n-ttl">
         {d.title} {statusToken(d.status).icon}
       </div>
     </div>
@@ -161,7 +137,9 @@ function buildElements(
         target: t.id,
         animated: t.status === "running" || dep.status === "running",
         style: edgeStroke(dep.status),
-        markerEnd: { type: "arrowclosed", color: "#8a8a92" } as Edge["markerEnd"],
+        // Sin `color`: React Flow lo hornea en el id del <marker> (y un var() ahí
+        // rompe el url(#…)). El color lo pone globals.css sobre .arrowclosed.
+        markerEnd: { type: "arrowclosed" } as Edge["markerEnd"],
       });
     }
   }
@@ -400,7 +378,7 @@ function DepGraphInner({ tickets, onOpenTicket }: DepGraphProps) {
           const tok = statusToken(s);
           return (
             <span key={s} className="lg">
-              <i style={{ background: s === "backlog" ? "#fff" : tok.soft, borderColor: tok.border }} />
+              <i style={{ background: s === "backlog" ? "var(--md-surface-container-lowest)" : tok.soft, borderColor: tok.border }} />
               {t(`tickets.statusLabel.${s}`)}
             </span>
           );
@@ -419,12 +397,13 @@ function DepGraphInner({ tickets, onOpenTicket }: DepGraphProps) {
           maxZoom={2}
           proOptions={{ hideAttribution: true }}
         >
-          <Background color="rgba(13,13,15,0.10)" gap={22} size={1} />
-          <Controls style={{ boxShadow: "none", border: "1px solid var(--stroke-strong)", borderRadius: 8 }} />
+          {/* El chrome (fondo, controles, minimapa) se tematiza por las custom
+              props --xy-* en globals.css → sigue al scheme light/dark. */}
+          <Background gap={22} size={1} />
+          <Controls />
           <MiniMap
             pannable
             zoomable
-            style={{ background: "var(--bg2)", border: "1px solid var(--stroke)", borderRadius: 8 }}
             nodeColor={(n) => statusToken((n.data as StoryNodeData).status).border}
           />
         </ReactFlow>

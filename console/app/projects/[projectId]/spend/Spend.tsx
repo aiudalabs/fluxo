@@ -91,6 +91,8 @@ export default function Spend() {
     tokens: rows.reduce((s, r) => s + r.inTok + r.outTok, 0),
     cacheRead: rows.reduce((s, r) => s + r.cacheRead, 0),
   }), [rows]);
+  // Escala de la barra de proporción por fila (el run más caro = 100%).
+  const maxUsd = useMemo(() => rows.reduce((m, r) => Math.max(m, r.usd), 0), [rows]);
 
   return (
     <div className="wrap">
@@ -107,28 +109,32 @@ export default function Spend() {
         <div className="placeholder"><div className="ph-ic">$</div>Todavía no hay costos registrados. Aparecen cuando corre el diseño/una ceremonia (worker) o el build (Actions).</div>
       ) : (
         <>
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(200px, 1fr))", gap: 14, marginBottom: 20 }}>
+          <div className="sp-kpis">
             <Kpi value={usd(totals.usd)} label={t("spend.kpi.total")} sub={t("spend.kpi.total.sub")} strong />
             <Kpi value={String(rows.length)} label={t("spend.kpi.runsDone")} sub={t("spend.kpi.agentCalls.sub")} />
             <Kpi value={tok(totals.tokens)} label="Tokens (in+out)" sub={`${tok(totals.cacheRead)} cache read`} />
           </div>
 
           <div className="ttable">
-            <div className="trow" style={{ gridTemplateColumns: "90px 1fr 90px 90px 130px" }}>
+            <div className="trow sp-row">
               <span>Tipo</span><span>Detalle</span><span>Costo</span><span>Tokens</span><span>Fecha</span>
             </div>
             {rows.map((r) => (
-              <div key={`${r.kind}:${r.id}`} className="trow" style={{ gridTemplateColumns: "90px 1fr 90px 90px 130px" }}>
-                <span className="mono" style={{ fontSize: 10.5, color: r.kind === "design" ? "var(--navy)" : "var(--ink4)" }}>
+              <div key={`${r.kind}:${r.id}`} className="trow sp-row">
+                <span className={`sp-kind${r.kind === "design" ? " design" : ""}`}>
                   {r.kind === "design" ? "◆ worker" : "▤ build"}
                 </span>
-                <span style={{ fontSize: 12.5 }}>
-                  {r.label}
-                  {r.est && <span title="Costo estimado del log (run cancelado/timeout) — no autoritativo" style={{ marginLeft: 6, fontSize: 10, padding: "1px 5px", borderRadius: 5, background: "var(--bg2)", border: "1px solid var(--stroke)", color: "var(--ink4)" }}>~est</span>}
+                <span className="sp-detail">
+                  <span className="sp-detail-tx">{r.label}</span>
+                  {r.est && <span className="sp-est" title="Costo estimado del log (run cancelado/timeout) — no autoritativo">~est</span>}
                 </span>
-                <span style={{ fontWeight: 600 }}>{r.est ? "~" : ""}{usd(r.usd)}</span>
-                <span style={{ color: "var(--ink3)", fontSize: 12 }}>{tok(r.inTok + r.outTok)}</span>
-                <span style={{ color: "var(--ink4)", fontSize: 11 }}>{r.at ? new Date(r.at).toLocaleString() : "—"}</span>
+                {/* La barra es el share del run más caro — lee la distribución del gasto de un vistazo. */}
+                <span className="sp-cost">
+                  <span className="sp-usd">{r.est ? "~" : ""}{usd(r.usd)}</span>
+                  <span className="sp-bar"><span className="sp-bar-fill" style={{ width: `${maxUsd ? (r.usd / maxUsd) * 100 : 0}%` }} /></span>
+                </span>
+                <span className="sp-tok">{tok(r.inTok + r.outTok)}</span>
+                <span className="sp-at">{r.at ? new Date(r.at).toLocaleString() : "—"}</span>
               </div>
             ))}
           </div>
@@ -140,10 +146,10 @@ export default function Spend() {
 
 function Kpi({ value, label, sub, strong }: { value: string; label: string; sub: string; strong?: boolean }) {
   return (
-    <div className="card" style={{ padding: "16px 18px", display: "flex", flexDirection: "column", gap: 4 }}>
-      <div style={{ fontSize: 28, fontWeight: 700, color: strong ? "var(--emerald)" : "var(--ink1)" }}>{value}</div>
-      <div style={{ fontSize: 13, fontWeight: 600 }}>{label}</div>
-      <div className="c" style={{ fontSize: 11 }}>{sub}</div>
+    <div className="sp-kpi">
+      <div className={`sp-kpi-n${strong ? " strong" : ""}`}>{value}</div>
+      <div className="sp-kpi-l">{label}</div>
+      <div className="sp-kpi-s">{sub}</div>
     </div>
   );
 }

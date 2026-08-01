@@ -36,31 +36,36 @@ export function LanguageSwitcher() {
           position: relative;
           display: inline-flex;
           align-items: center;
-          height: 32px;
+          height: var(--ctl-h);
+          flex: none;
         }
         .face {
           display: inline-flex;
           align-items: center;
-          gap: 5px;
-          height: 32px;
-          padding: 0 8px;
-          border: 1px solid var(--stroke-strong);
-          border-radius: 9px;
-          background: var(--panel-2);
+          gap: 6px;
+          height: var(--ctl-h);
+          padding: 0 14px;
+          border: 1px solid var(--md-outline);
+          border-radius: var(--shape-full);
+          background: transparent;
+          transition: background var(--dur-1) var(--ease), border-color var(--dur-1) var(--ease);
+        }
+        .langsw:hover .face {
+          background: var(--state-hover);
+          border-color: var(--md-primary);
         }
         .flag {
           font-size: 15px;
           line-height: 1;
         }
         .code {
-          font-size: 12px;
-          font-weight: 700;
+          font: var(--type-label);
           letter-spacing: 0.03em;
-          color: var(--ink2);
+          color: var(--md-on-surface);
         }
         .caret {
           font-size: 10px;
-          color: var(--ink4);
+          color: var(--md-on-surface-variant);
         }
         select {
           position: absolute;

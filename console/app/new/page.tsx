@@ -115,8 +115,7 @@ export default function NewProjectPage() {
                 <button key={i} type="button" className="entry-chip" onClick={() => setIdea(ex)}>{ex.split(",")[0].slice(0, 42)}…</button>
               ))}
             </div>
-            <input className="entry-name-inp"
-              style={{ width: "100%", padding: "12px 14px", border: "1px solid var(--stroke-strong)", borderRadius: 12, fontFamily: "var(--display)", fontSize: 14, background: "var(--panel)", color: "var(--ink)" }}
+            <input className="entry-name-inp entry-inp-block"
               value={projectName} onChange={(e) => setProjectName(e.target.value)}
               placeholder={t("studio.entry.projectNamePlaceholder")} spellCheck={false} />
             <div className="entry-row">
@@ -124,14 +123,13 @@ export default function NewProjectPage() {
                 {insts === null ? (
                   <span className="entry-name-pre">verificando tu acceso a GitHub…</span>
                 ) : insts.length > 1 ? (
-                  <select value={org} onChange={(e) => setOrg(e.target.value)} title="Cuenta u organización donde se crea el repo (donde la app está instalada)"
-                    style={{ border: "none", background: "transparent", fontFamily: "var(--mono)", fontSize: 13, color: "var(--ink2)", cursor: "pointer", outline: "none", maxWidth: 180 }}>
+                  <select className="entry-org-sel" value={org} onChange={(e) => setOrg(e.target.value)} title="Cuenta u organización donde se crea el repo (donde la app está instalada)">
                     {insts.map((o) => <option key={o.login} value={o.login}>{o.login}{o.type === "User" ? " (personal)" : ""}</option>)}
                   </select>
                 ) : (
                   <span className="entry-name-pre">{org}</span>
                 )}
-                <span className="entry-name-pre" style={{ padding: "0 2px" }}>/</span>
+                <span className="entry-name-pre entry-slash">/</span>
                 <input className="entry-name-inp" value={repoName}
                   onChange={(e) => { setTouchedRepo(true); setRepoInput(e.target.value); }}
                   placeholder={t("studio.entry.namePlaceholder")} spellCheck={false} />

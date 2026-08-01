@@ -18,17 +18,19 @@ const COL_GAP = 96; // entre columnas de sprint (deja sitio a las ceremonias)
 const BAND_GAP = 72; // salto diseño→handoff→ejecución
 const PAD = 16;
 
-// Estado de la dependencia colorea la arista (misma regla que DepGraph).
+// Estado de la dependencia colorea la arista (misma regla que DepGraph). Los
+// colores salen de los roles M3 como var(...): @xyflow los pasa al `style` del
+// path y del marker, así que flipean con el tema (un hex fijo rompía el dark).
 function edgeStroke(source: TicketStatus): { stroke: string; strokeWidth: number } {
   switch (source) {
     case "failed":
-      return { stroke: "rgba(180, 30, 30, 0.55)", strokeWidth: 2 };
+      return { stroke: "color-mix(in srgb, var(--md-error) 60%, transparent)", strokeWidth: 2 };
     case "running":
-      return { stroke: "rgba(20, 40, 80, 0.45)", strokeWidth: 2 };
+      return { stroke: "color-mix(in srgb, var(--md-primary) 60%, transparent)", strokeWidth: 2 };
     case "done":
-      return { stroke: "rgba(13, 13, 15, 0.12)", strokeWidth: 1.5 };
+      return { stroke: "color-mix(in srgb, var(--md-outline) 35%, transparent)", strokeWidth: 1.5 };
     default:
-      return { stroke: "rgba(13, 13, 15, 0.26)", strokeWidth: 1.5 };
+      return { stroke: "var(--md-outline-variant)", strokeWidth: 1.5 };
   }
 }
 
@@ -42,7 +44,7 @@ function storyEdgeToRF(e: FlowEdgeDesc): Edge {
     style: e.crossSprint
       ? { ...base, strokeDasharray: "5 4" } // cross-sprint → punteada
       : base,
-    markerEnd: { type: "arrowclosed", color: "#8a8a92" } as Edge["markerEnd"],
+    markerEnd: { type: "arrowclosed", color: "var(--md-outline)" } as Edge["markerEnd"],
   };
 }
 
@@ -53,8 +55,8 @@ function spine(id: string, source: string, target: string): Edge {
     id,
     source,
     target,
-    style: { stroke: "rgba(13,13,15,0.14)", strokeWidth: 1.5 },
-    markerEnd: { type: "arrowclosed", color: "#b9b9c0" } as Edge["markerEnd"],
+    style: { stroke: "var(--md-outline-variant)", strokeWidth: 1.5 },
+    markerEnd: { type: "arrowclosed", color: "var(--md-outline-variant)" } as Edge["markerEnd"],
   };
 }
 

@@ -106,7 +106,7 @@ export function TicketDetail({ ticket, candidate, onDispatch, onStop, onClose, o
                 </div>
                 <h3>{ticket.title}</h3>
               </div>
-              <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+              <div className="td-head-actions">
                 <span className={`pill ${statusToken(ticket.status).pill}`}>{t(`tickets.statusLabel.${ticket.status}`)}</span>
                 <button className="x" onClick={onClose}>✕</button>
               </div>
@@ -114,10 +114,10 @@ export function TicketDetail({ ticket, candidate, onDispatch, onStop, onClose, o
 
             <div className="db">
               {(ticket.owner || ticket.repo) && (
-                <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", marginBottom: 14 }}>
+                <div className="td-meta">
                   {ticket.owner && <LaneChip lane={ticket.owner} title={t("tickets.detail.laneTitle")} />}
                   {ticket.repo && (
-                    <span className="tag" style={{ fontSize: 11 }} title={ticket.repo}>
+                    <span className="tag" title={ticket.repo}>
                       {ticket.repo.replace(/^https?:\/\/(www\.)?github\.com\//, "")}
                     </span>
                   )}
@@ -125,11 +125,7 @@ export function TicketDetail({ ticket, candidate, onDispatch, onStop, onClose, o
               )}
 
               {isAgentLost(ticket) && (
-                <div className="td-agent-lost" style={{
-                  display: "flex", gap: 8, alignItems: "flex-start", padding: "10px 12px", marginBottom: 14,
-                  borderRadius: 6, background: AGENT_LOST_TOKEN.soft, border: `1px solid ${AGENT_LOST_TOKEN.border}`,
-                  color: AGENT_LOST_TOKEN.color, fontSize: 12,
-                }}>
+                <div className="td-agent-lost">
                   <span aria-hidden>{AGENT_LOST_TOKEN.icon}</span>
                   <span><strong>{t("tickets.detail.agentLostTitle")}</strong><br />{ticket.agent_lost}</span>
                 </div>
@@ -140,7 +136,7 @@ export function TicketDetail({ ticket, candidate, onDispatch, onStop, onClose, o
 
               {acs.length > 0 && (
                 <>
-                  <div className="eyebrow acc" style={{ marginTop: 20 }}>{t("tickets.detail.acceptance")} · {acs.length}</div>
+                  <div className="eyebrow acc td-sec">{t("tickets.detail.acceptance")} · {acs.length}</div>
                   <ul className="td-acs">
                     {acs.map((ac, i) => <li key={i}><span className="td-ac-mark">✓</span>{ac}</li>)}
                   </ul>
@@ -149,7 +145,7 @@ export function TicketDetail({ ticket, candidate, onDispatch, onStop, onClose, o
 
               {ticket.deps && ticket.deps.length > 0 && (
                 <>
-                  <div className="eyebrow acc" style={{ marginTop: 20 }}>{t("tickets.detail.dependencies")}</div>
+                  <div className="eyebrow acc td-sec">{t("tickets.detail.dependencies")}</div>
                   <div className="td-deps">
                     {ticket.deps.map((d) => (
                       <button key={d} className="td-dep click" onClick={() => onOpenTicket(d)} title={t("tickets.rowTitle")}>{d} →</button>
@@ -158,14 +154,13 @@ export function TicketDetail({ ticket, candidate, onDispatch, onStop, onClose, o
                 </>
               )}
 
-              <div style={{ marginTop: 24, display: "flex", flexDirection: "column", gap: 8 }}>
+              <div className="td-actions">
                 {/* Despacho: cuando esta story/sprint es candidato despachable AHORA. Reusa el
                     onDispatch del Board (confirm + POST /dispatch money-safe). En sprint-mode el
                     candidato es el sprint entero → el botón dice "Despachar sprint SPn (N stories)". */}
                 {candidate && onDispatch && (
                   <button
                     className="btn primary"
-                    style={{ width: "100%" }}
                     onClick={() => onDispatch(candidate)}
                     title={t("tickets.dispatch.buttonTitle", { executor: candidate.executor, model: candidate.model || "auto" })}
                   >
@@ -176,42 +171,40 @@ export function TicketDetail({ ticket, candidate, onDispatch, onStop, onClose, o
                 )}
 
                 {ticket.session_url && (
-                  <a className="btn primary" style={{ width: "100%", textAlign: "center" }} href={ticket.session_url} target="_blank" rel="noreferrer">
+                  <a className="btn primary" href={ticket.session_url} target="_blank" rel="noreferrer">
                     {t("tickets.detail.viewSession")}
                   </a>
                 )}
                 {/* Detener: para un run vivo o un "running" falso pegado. En sprint-mode el server
                     detiene el sprint completo (todas sus stories running vuelven al backlog). */}
                 {ticket.status === "running" && onStop && (
-                  <button className="btn ghost" style={{ width: "100%" }} disabled={busy}
+                  <button className="btn ghost" disabled={busy}
                     onClick={() => onStop(ticket)} title={t("tickets.stop.title")}>
                     {t("tickets.stop.button")}
                   </button>
                 )}
                 {ticket.pr_url && (
-                  <a className="btn ghost" style={{ width: "100%", textAlign: "center" }} href={ticket.pr_url} target="_blank" rel="noreferrer">
+                  <a className="btn ghost" href={ticket.pr_url} target="_blank" rel="noreferrer">
                     {t("tickets.detail.viewPR")}
                   </a>
                 )}
                 {!ticket.session_url && !ticket.pr_url && <div className="td-empty">{t("tickets.detail.notRun")}</div>}
 
                 {isAgentLost(ticket) && (
-                  <button className="btn primary" style={{ width: "100%" }} onClick={() => doRequeue(false)} disabled={busy}
+                  <button className="btn primary" onClick={() => doRequeue(false)} disabled={busy}
                     title={t("tickets.detail.recover")}>
                     {busy ? t("tickets.detail.requeueing") : t("tickets.detail.recover")}
                   </button>
                 )}
                 {ticket.status === "failed" && !isAgentLost(ticket) && (
-                  <button className="btn ghost" style={{ width: "100%", color: "var(--danger)" }} onClick={() => doRequeue(true)} disabled={busy}
+                  <button className="btn ghost td-danger" onClick={() => doRequeue(true)} disabled={busy}
                     title={t("tickets.detail.requeue")}>
                     {busy ? t("tickets.detail.requeueing") : t("tickets.detail.requeue")}
                   </button>
                 )}
 
                 {actionError && (
-                  <div style={{ padding: "8px 12px", background: "var(--accent-soft)", border: "1px solid var(--accent-line)", borderRadius: 4, fontSize: 12, color: "var(--accent)" }}>
-                    {actionError}
-                  </div>
+                  <div className="td-error">{actionError}</div>
                 )}
 
                 {/* Log del build del engine (docs/17) — al FINAL de la task, colapsado (clic para abrir). */}
@@ -219,8 +212,7 @@ export function TicketDetail({ ticket, candidate, onDispatch, onStop, onClose, o
 
                 {/* Borrar la story (local, destructiva) — separada del resto, con confirm. */}
                 <button
-                  className="btn ghost"
-                  style={{ width: "100%", color: "var(--danger)", marginTop: 8 }}
+                  className="btn ghost td-danger sep"
                   onClick={doDelete}
                   disabled={busy}
                   title={t("tickets.detail.deleteTitle")}

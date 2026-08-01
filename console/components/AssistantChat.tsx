@@ -231,12 +231,9 @@ export function AssistantChat() {
     <div className="brain">
       <div className="brain-inner">
         {/* Barra de conversaciones (P5-4): hilo activo + cambiar de hilo + nuevo. */}
-        <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "2px 2px 10px", borderBottom: "1px solid var(--stroke)" }}>
+        <div className="sh-astbar">
           {/* Deshabilitado mientras responde: cambiar de hilo mid-stream mezclaría respuestas. */}
-          <select
-            value={convId ?? ""} onChange={(e) => setConvId(e.target.value || null)} disabled={busy}
-            style={{ flex: 1, maxWidth: 420, padding: "6px 10px", borderRadius: 8, border: "1px solid var(--stroke)", background: "var(--bg2)", color: "var(--text)", fontSize: 13, fontFamily: "inherit", opacity: busy ? 0.6 : 1 }}
-          >
+          <select value={convId ?? ""} onChange={(e) => setConvId(e.target.value || null)} disabled={busy}>
             {convId === null && <option value="">Conversación nueva…</option>}
             {convs.map((c) => <option key={c.id} value={c.id}>{c.title ?? "Sin título"}</option>)}
           </select>
@@ -249,7 +246,7 @@ export function AssistantChat() {
             <div className="brain-empty">
               <em>Soy el asistente de este proyecto.</em>
               <p>Preguntame por el estado, los costos, qué está trabado, o qué pedir como próximo incremento.</p>
-              <div style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: 14, alignItems: "center" }}>
+              <div className="sh-ast-sugg">
                 {SUGGESTIONS.map((s) => <button key={s} className="btn ghost sm" onClick={() => void send(s)}>{s}</button>)}
               </div>
             </div>
@@ -267,10 +264,10 @@ export function AssistantChat() {
                             <div className="h"><span className="tool">{ACTION_LABEL[parsed!.action.type] ?? parsed!.action.type}</span>{parsed!.action.summary ?? ""}</div>
                             {parsed!.action.instructions && <pre>{parsed!.action.instructions}</pre>}
                             <div className="acts">
-                              {acts[m.id] === "done" ? <span style={{ color: "var(--emerald)", fontSize: 13 }}>{ACTION_OK[parsed!.action.type] ?? "✓ Hecho."}</span>
-                              : acts[m.id] === "error" ? <span style={{ color: "var(--danger)", fontSize: 13 }}>Error al ejecutar. Probá de nuevo o hacelo desde la UI.</span>
+                              {acts[m.id] === "done" ? <span className="sh-ast-ok">{ACTION_OK[parsed!.action.type] ?? "✓ Hecho."}</span>
+                              : acts[m.id] === "error" ? <span className="sh-ast-err">Error al ejecutar. Probá de nuevo o hacelo desde la UI.</span>
                               : <>
-                                  <button className="btn" disabled={acts[m.id] === "busy"} onClick={() => void confirmAction(m.id, parsed!.action!)}>{acts[m.id] === "busy" ? "Ejecutando…" : "Confirmar"}</button>
+                                  <button className="btn primary" disabled={acts[m.id] === "busy"} onClick={() => void confirmAction(m.id, parsed!.action!)}>{acts[m.id] === "busy" ? "Ejecutando…" : "Confirmar"}</button>
                                   <button className="btn ghost" onClick={() => setActs((s) => ({ ...s, [m.id]: "dismissed" }))}>Descartar</button>
                                 </>}
                             </div>
@@ -294,9 +291,9 @@ export function AssistantChat() {
         </div>
 
         {sessionExpired && (
-          <div className="brain-err" style={{ display: "flex", alignItems: "center", gap: 10, justifyContent: "space-between" }}>
+          <div className="brain-err sh-ast-expired">
             <span>⚠ Tu sesión venció. Volvé a iniciar sesión para seguir usando el asistente.</span>
-            <a className="btn" href="/login">Iniciar sesión</a>
+            <a className="btn primary" href="/login">Iniciar sesión</a>
           </div>
         )}
         <form className="brain-form" onSubmit={(e) => { e.preventDefault(); void send(); }}>
@@ -305,7 +302,7 @@ export function AssistantChat() {
             onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); void send(); } }}
             placeholder="Escribí tu pregunta… (Enter para enviar)"
           />
-          <button className="btn" type="submit" disabled={busy || !input.trim()}>Enviar</button>
+          <button className="btn primary" type="submit" disabled={busy || !input.trim()}>Enviar</button>
         </form>
       </div>
     </div>

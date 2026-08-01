@@ -45,7 +45,7 @@ export default function OnboardingPage() {
             <div className="ob-eye">Paso 2 · Conectar GitHub</div>
             <h1>¿Dónde va a trabajar Fluxo?</h1>
             <p className="ob-lead">Fluxo trabaja <b>dentro de tus repos</b>: crea el repo del proyecto, abre PRs y corre el build. Elegí la organización.</p>
-            {orgs.length === 0 && <p className="ob-fine" style={{ marginBottom: 12 }}>Aún no detectamos la app instalada en ninguna cuenta. Instalala abajo 👇</p>}
+            {orgs.length === 0 && <p className="ob-fine tight">Aún no detectamos la app instalada en ninguna cuenta. Instalala abajo 👇</p>}
             {orgs.map((o) => (
               <button key={o.login} className="ob-org" onClick={() => setStep(2)}>
                 <span className="av">{o.login.slice(0, 1).toUpperCase()}</span>
@@ -54,7 +54,7 @@ export default function OnboardingPage() {
               </button>
             ))}
             {installUrl && (
-              <a className="ob-ghost" href={installUrl} target="_blank" rel="noreferrer" style={{ border: "1px solid var(--stroke-strong)", borderRadius: 12, padding: 14, marginTop: 6, textDecoration: "none" }}>
+              <a className="ob-ghost outlined" href={installUrl} target="_blank" rel="noreferrer">
                 ＋ Instalar Fluxo en otra organización
               </a>
             )}
@@ -68,7 +68,7 @@ export default function OnboardingPage() {
             <div className="ob-check ok"><span className="ic">✓</span><div className="t"><b>GitHub conectado</b><span>{login ?? "—"} · {orgs.length} organización(es)</span></div></div>
             <div className="ob-check ok"><span className="ic">✓</span><div className="t"><b>La App puede crear repos, issues y PRs</b><span>en las orgs donde la instalaste</span></div></div>
             <div className="ob-check pend"><span className="ic">!</span><div className="t"><b>Canal de build · Claude / Copilot</b><span>opcional — se configura por proyecto, cuando lo necesites</span></div></div>
-            <Link className="ob-pri" href="/" style={{ marginTop: 8 }}>Ir a mis proyectos →</Link>
+            <Link className="ob-pri" href="/">Ir a mis proyectos →</Link>
             <Link className="ob-ghost" href="/">Lo configuro después</Link>
           </div>
         )}

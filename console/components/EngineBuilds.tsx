@@ -15,7 +15,6 @@ export interface BuildJob {
   log: string | null; progress: Progress | null; cost_usd: number | null; error: string | null;
   story_keys: string[] | null; created_at: string;
 }
-const DOT: Record<string, string> = { running: "#0e8a16", done: "#5319e7", failed: "#d4183a", cancelling: "#c97c1a", pending: "#9c95a6" };
 
 export function useBuildJobs() {
   const { projectId, supabase } = useProject();
@@ -60,26 +59,22 @@ function BuildCard({ j, projectId }: { j: BuildJob; projectId: string }) {
   };
 
   return (
-    <div style={{ border: "1px solid var(--stroke)", borderRadius: 10, overflow: "hidden", background: "var(--bg2)" }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 12px", cursor: j.log ? "pointer" : "default" }} onClick={() => j.log && setOpen((v) => !v)}>
-        <span style={{ width: 9, height: 9, borderRadius: "50%", background: DOT[j.status] ?? "#999", boxShadow: running ? `0 0 0 3px ${DOT.running}22` : "none", flexShrink: 0 }} />
-        <b style={{ fontSize: 13 }}>{j.label}</b>
-        <span style={{ fontSize: 12, opacity: 0.7 }}>{j.status}</span>
-        <span className="sp" style={{ flex: 1 }} />
-        <span style={{ fontSize: 12, opacity: 0.75, fontVariantNumeric: "tabular-nums" }}>
+    <div className="eb-card">
+      <div className={`eb-bar${j.log ? " click" : ""}`} onClick={() => j.log && setOpen((v) => !v)}>
+        <span className={`eb-dot ${j.status}`} />
+        <b className="eb-label">{j.label}</b>
+        <span className="eb-status">{j.status}</span>
+        <span className="sp" />
+        <span className="eb-metrics">
           {p.turns ? `${p.turns} turns · ` : ""}{p.edits ? `${p.edits} edits · ` : ""}{cost ? `$${Number(cost).toFixed(2)}` : ""}
         </span>
-        {j.pr_url && <a href={j.pr_url} target="_blank" rel="noreferrer" style={{ fontSize: 12 }} onClick={(e) => e.stopPropagation()}>PR ↗</a>}
-        {running && <button className="btn ghost sm" disabled={stopping} onClick={(e) => { e.stopPropagation(); void stop(); }} title="Detener en el VPS">{stopping ? "…" : "⏹ Detener"}</button>}
-        {j.log && <span style={{ fontSize: 13, opacity: 0.6, width: 14, textAlign: "center" }}>{open ? "▾" : "▸"}</span>}
+        {j.pr_url && <a className="kb-pr" href={j.pr_url} target="_blank" rel="noreferrer" onClick={(e) => e.stopPropagation()}>PR ↗</a>}
+        {running && <button className="btn ghost ag-stop" disabled={stopping} onClick={(e) => { e.stopPropagation(); void stop(); }} title="Detener en el VPS">{stopping ? "…" : "⏹ Detener"}</button>}
+        {j.log && <span className="eb-caret">{open ? "▾" : "▸"}</span>}
       </div>
-      {open && p.last && running && <div style={{ padding: "0 12px 6px", fontSize: 12.5, opacity: 0.85 }}>💬 {p.last}</div>}
-      {open && j.log && (
-        <pre style={{ margin: 0, padding: "8px 12px", maxHeight: 460, overflow: "auto", fontSize: 11.5, lineHeight: 1.55, whiteSpace: "pre-wrap", wordBreak: "break-word", background: "var(--bg)", fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace" }}>
-          {j.log}
-        </pre>
-      )}
-      {j.error && <div style={{ padding: "6px 12px", fontSize: 12, color: "#d4183a" }}>✗ {j.error}</div>}
+      {open && p.last && running && <div className="eb-last">💬 {p.last}</div>}
+      {open && j.log && <pre className="eb-log">{j.log}</pre>}
+      {j.error && <div className="eb-error">✗ {j.error}</div>}
     </div>
   );
 }
@@ -99,14 +94,14 @@ export default function EngineBuilds({ only }: { only?: string } = {}) {
 
   if (shown.length === 0) return null;
   return (
-    <section style={{ marginBottom: only ? 8 : 16 }}>
+    <section className={`eb-section${only ? " compact" : ""}`}>
       {!only && (
-        <div style={{ display: "flex", alignItems: "baseline", gap: 8, margin: "4px 2px 10px" }}>
-          <h3 style={{ margin: 0, fontSize: 15 }}>⚙ Motor Fluxo — builds en el VPS</h3>
-          <span style={{ fontSize: 12, opacity: 0.6 }}>corren en tu engine (sin Actions) — clic para ver el log</span>
+        <div className="eb-head">
+          <h3>⚙ Motor Fluxo — builds en el VPS</h3>
+          <span className="eb-hint">corren en tu engine (sin Actions) — clic para ver el log</span>
         </div>
       )}
-      <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+      <div className="eb-list">
         {shown.map((j) => <BuildCard key={j.id} j={j} projectId={projectId} />)}
       </div>
     </section>
