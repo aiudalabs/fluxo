@@ -101,6 +101,41 @@ supabase/      migrations/ (schema + RLS) · functions/ (webhook receiver, Maest
 console/       UI Next.js (vista sobre el brain: board, grafo, studio, brain explorer, preview)
 ```
 
+## Deploy a producción — Hostinger VPS (fluxo.aiudalabs.com)
+
+El console (Next.js standalone) corre en **Docker** en el VPS `root@2.25.78.202`. El código vive en
+**`/opt/fluxo/`**; el compose en **`/opt/fluxo/deploy/`** (`docker-compose.prod.yml`, contexto de build `..`).
+Caddy (`deploy-caddy-1`) hace de proxy a `console:3000` en `fluxo.aiudalabs.com` (sin CDN). El deploy es por
+**rsync del source + rebuild del contenedor** (NO hay CI). Pasos para publicar un cambio del console:
+
+```bash
+# 1) rsync AL TARGET CORRECTO: /opt/fluxo/  (NO /opt/fluxo/deploy/ — el contexto de build es `..` desde
+#    deploy/, así que console/ debe aterrizar en /opt/fluxo/console/). Si tocaste design/ también sincronizalo
+#    (el console importa design/src/dispatch.ts en tiempo de build).
+rsync -az --delete --exclude node_modules --exclude .next --exclude .git \
+  console/ root@2.25.78.202:/opt/fluxo/console/
+#   … y si cambió design/:  rsync -az --delete --exclude node_modules --exclude .git design/ root@2.25.78.202:/opt/fluxo/design/
+
+# 2) rebuild + recreate (los build-args de Supabase salen de .env.prod)
+ssh root@2.25.78.202 'cd /opt/fluxo/deploy && set -a; source .env.prod; set +a; \
+  docker compose -f docker-compose.prod.yml build console && \
+  docker compose -f docker-compose.prod.yml up -d console'
+
+# 3) VERIFICAR EL BUNDLE SERVIDO — nunca confiar en "Built". Grepeá un marcador del diff (ej. una CSS var/clase
+#    nueva) en el .next servido, y chequeá el 200:
+ssh root@2.25.78.202 'docker exec deploy-console-1 sh -c "grep -rl \"<marcador-del-diff>\" /app/console/.next/static /app/console/.next/server 2>/dev/null | head; wget -qO- --server-response http://localhost:3000/ 2>&1 | grep HTTP | head -1"'
+```
+
+**Gotchas (mordidas reales):**
+- **Target `/opt/fluxo/`, NO `/opt/fluxo/deploy/`.** Rsyncar a `deploy/console/` deja el build leyendo el source
+  viejo y "deploya" en silencio lo anterior. (memoria: `fluxo-vps-deploy-target.md`.)
+- **Grepeá el chunk servido**, no confíes en el log "Built" — el marcador puede quedar re-encodeado (acentos/→
+  como `\uXXXX`); usá un fragmento ASCII del diff.
+- **Scripts host-level** (`scripts/agent-runner.sh`, `engine-tail.sh`, `preview-runner.sh`) NO van en el
+  contenedor: se rsyncan a `/opt/fluxo/<script>.sh` y corren por systemd (`fluxo-agent-runner`,
+  `fluxo-engine-tail`, `fluxo-preview-runner`). **rsync pierde el bit +x** → `chmod +x` en el VPS y
+  `systemctl restart <servicio>` tras sincronizarlos (si no, systemd falla con `203/EXEC`).
+
 ## Protocolo de build autónomo (para sesiones nuevas)
 
 Cuando una sesión arranca a construir:
