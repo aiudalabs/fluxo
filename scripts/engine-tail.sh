@@ -11,6 +11,8 @@ SUPA_URL="$(grep -E '^SUPABASE_URL=' "$ENVF" | cut -d= -f2- | tr -d '"')"
 SVC="$(grep -E '^SUPABASE_SERVICE_ROLE_KEY=' "$ENVF" | cut -d= -f2- | tr -d '"')"
 B="$SUPA_URL/rest/v1"
 H=(-H "apikey: $SVC" -H "Authorization: Bearer $SVC" -H "Content-Type: application/json")
+GITTOKF="${GITTOKF:-/opt/fluxo/.git-token}"  # tenant PAT — para consultar el estado del PR (merge→done)
+GIT_TOK="$( [ -f "$GITTOKF" ] && tr -d '\n' < "$GITTOKF" || true )"
 
 parse_stream() { # $1 = stream file → imprime JSON {log, progress} para el PATCH
   python3 - "$1" <<'PY'
@@ -48,6 +50,46 @@ revert_story() {
   [ -n "$sid" ] && curl -s "${H[@]}" -X POST "$B/rpc/project_external_status" -d "{\"p_story_id\":\"$sid\",\"p_status\":\"backlog\",\"p_pr_url\":null,\"p_agent_lost\":true}" >/dev/null || true
 }
 
+# reconcile_merged: cierra el hueco merge→done del ExecEnv fluxo_engine. El path de Actions lo hacía la
+# proyección del worker; el engine NO pasa por ahí, así que una story quedaba pegada en 'review' aunque su
+# PR ya estuviera mergeado (el usuario mergea y "no ve que ya mergeé"). Acá, para cada story en 'review' con
+# PR de un build del engine (status done), consultamos el PR real en GitHub:
+#   merged → story done · closed sin merge → story backlog (re-despachable) · open → se deja en review.
+reconcile_merged() {
+  [ -z "$GIT_TOK" ] && return 0
+  local STORIES ENGKEYS
+  STORIES="$(curl -s "${H[@]}" "$B/stories?status=eq.review&pr_url=not.is.null&select=id,key,pr_url")"
+  ENGKEYS="$(curl -s "${H[@]}" "$B/build_jobs?status=eq.done&pr_url=not.is.null&select=story_keys")"
+  GIT_TOK="$GIT_TOK" python3 - "$STORIES" "$ENGKEYS" <<'PY' | while IFS=$'\t' read -r SID NEW; do
+import json,sys,os,re,urllib.request
+tok=os.environ.get("GIT_TOK","")
+try: stories=json.loads(sys.argv[1])
+except: stories=[]
+try: eng=json.loads(sys.argv[2])
+except: eng=[]
+keys=set(k for row in eng for k in (row.get("story_keys") or []))  # solo stories con build del engine
+for s in stories:
+    if s.get("key") not in keys: continue                          # no tocar el path de Actions
+    m=re.search(r"github\.com/([^/]+)/([^/]+)/pull/(\d+)", s.get("pr_url") or "")
+    if not m: continue
+    api="https://api.github.com/repos/%s/%s/pulls/%s"%(m.group(1),m.group(2),m.group(3))
+    req=urllib.request.Request(api, headers={"Authorization":"Bearer "+tok,"Accept":"application/vnd.github+json","User-Agent":"fluxo-engine-tail"})
+    try: pr=json.load(urllib.request.urlopen(req, timeout=15))
+    except Exception: continue                                     # error de red → reintenta el próximo ciclo
+    if pr.get("merged"): print(s["id"]+"\tdone")
+    elif pr.get("state")=="closed": print(s["id"]+"\tbacklog")     # cerrado sin merge
+PY
+    [ -z "$SID" ] && continue
+    if [ "$NEW" = "done" ]; then
+      curl -s "${H[@]}" -X POST "$B/rpc/project_external_status" -d "{\"p_story_id\":\"$SID\",\"p_status\":\"done\",\"p_pr_url\":null,\"p_agent_lost\":false}" >/dev/null || true
+      echo "[engine-tail] ✅ PR mergeado → story $SID a done"
+    else
+      curl -s "${H[@]}" -X POST "$B/rpc/project_external_status" -d "{\"p_story_id\":\"$SID\",\"p_status\":\"backlog\",\"p_pr_url\":null,\"p_agent_lost\":false}" >/dev/null || true
+      echo "[engine-tail] ↩ PR cerrado sin merge → story $SID a backlog"
+    fi
+  done
+}
+
 echo "[engine-tail] arriba (interval=${INTERVAL}s)"
 while true; do
   JOBS="$(curl -s "${H[@]}" "$B/build_jobs?status=in.(running,cancelling)&select=id,label,project_id,story_keys,status")"
@@ -79,5 +121,6 @@ while true; do
       fi
     fi
   done
+  reconcile_merged   # merge→done / closed→backlog para stories del engine en review (path sin worker)
   sleep "$INTERVAL"
 done
