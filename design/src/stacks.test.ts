@@ -7,6 +7,7 @@ import assert from "node:assert/strict";
 import { readFileSync, readdirSync } from "node:fs";
 import { dirname, resolve, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import yaml from "js-yaml";
 import { listStacks, knownStackIds, artifactStacks } from "./capabilities.ts";
 import { buildScaffold } from "./scaffold.ts";
 
@@ -66,6 +67,47 @@ test("base-agents: el catálogo del registry incluye supabase-dev y react-web-de
     assert.ok(files.includes(`${id}.md`), `falta ${id}.md en el catálogo del registry`);
     assert.ok(files.includes(`${id}.yaml`), `falta ${id}.yaml en el catálogo del registry`);
   }
+});
+
+// ── consistencia lanes↔agentes (docs/18 §9 pto3 / §10 pto4): el mapeo `lanes:` de cada stack
+// manifest es la FUENTE DE VERDAD del ruteo de owner. Cada agente que una lane nombra debe (a)
+// EXISTIR en el catálogo (.md + .yaml) y (b) estar tagueado con ESE stack (artifactStacks incluye
+// el stack, salvo core compartido ["*"]). Caza el drift: una lane a un agente inexistente o
+// mal-tagueado (ej. el seam react-dev/react-web-dev que la Fase 2 cierra).
+test("stacks.lanes: cada agente referenciado existe y está tagueado con su stack", () => {
+  const agentFiles = readdirSync(join(registryDir, "agents"));
+  const stackFiles = readdirSync(join(registryDir, "stacks")).filter((n) => /\.ya?ml$/.test(n));
+  let lanesSeen = 0;
+  for (const f of stackFiles) {
+    const doc = yaml.load(readFileSync(join(registryDir, "stacks", f), "utf8")) as
+      | { id?: string; lanes?: Record<string, unknown> }
+      | null;
+    if (!doc?.lanes) continue;
+    const stackId = doc.id ? String(doc.id) : "";
+    for (const [lane, agentRaw] of Object.entries(doc.lanes)) {
+      const agent = String(agentRaw);
+      lanesSeen++;
+      assert.ok(agentFiles.includes(`${agent}.md`), `${stackId}.lanes.${lane} → ${agent}: falta ${agent}.md en el catálogo`);
+      assert.ok(agentFiles.includes(`${agent}.yaml`), `${stackId}.lanes.${lane} → ${agent}: falta ${agent}.yaml en el catálogo`);
+      const tags = artifactStacks(readFileSync(join(registryDir, "agents", `${agent}.yaml`), "utf8"));
+      assert.ok(
+        tags.includes("*") || tags.includes(stackId),
+        `${stackId}.lanes.${lane} → ${agent}: tagueado ${JSON.stringify(tags)}, no incluye «${stackId}» (ni es core ["*"])`,
+      );
+    }
+  }
+  // los 3 stacks reales declaran lanes (3 + 2 + 2 = 7) → el drift de "manifest sin lanes" también se caza.
+  assert.ok(lanesSeen >= 7, `esperaba ≥7 lanes declaradas en los manifests, vi ${lanesSeen}`);
+});
+
+// El seam cerrado, explícito: el frontend WEB rutea a react-web-dev; react-dev queda SOLO como la
+// lane admin (Firebase) de aiuda-flutter-firebase; el backend Supabase a supabase-dev.
+test("stacks.lanes: el mapeo exacto por stack (web→react-web-dev, admin→react-dev, backend correcto)", () => {
+  const lanesOf = (id: string) =>
+    (yaml.load(readFileSync(join(registryDir, "stacks", `${id}.yaml`), "utf8")) as { lanes?: Record<string, string> }).lanes;
+  assert.deepEqual(lanesOf("aiuda-flutter-firebase"), { mobile: "flutter-dev", backend: "firebase-dev", admin: "react-dev" });
+  assert.deepEqual(lanesOf("react-supabase"), { web: "react-web-dev", backend: "supabase-dev" });
+  assert.deepEqual(lanesOf("python-fastapi-react"), { backend: "python-dev", web: "react-web-dev" });
 });
 
 test("artifactStacks: contenido nulo/sin stacks/`stacks: []` → COMPARTIDO ['*']", () => {

@@ -12,3 +12,12 @@ description: Web app con backend Supabase (Postgres).
 # Hoy no hay una capability `supabase` declarada en el registry → [] (degrada limpio: sin frontera
 # humana automática). Sumar la capability cuando exista es data, cero código.
 capabilities: []
+# lanes: el mapeo SUPERFICIE → agente-dev de este stack (data, la FUENTE DE VERDAD del ruteo de
+# owner). Claves confirmadas contra el template (registry/templates/github-native/react-supabase/
+# CLAUDE.md.tmpl: «the Vite React app (react-web-dev lane)» = web; «the backend (supabase-dev lane)»
+# = backend). El frontend web de este stack va a `react-web-dev` (NO `react-dev`, que es la lane admin
+# de aiuda-flutter-firebase); el backend Supabase va a `supabase-dev`. El scrum-master asigna el
+# `owner` según ESTE mapeo (hoy espejado en su prosa; futura fase lo inyecta desde acá).
+lanes:
+  web: react-web-dev
+  backend: supabase-dev

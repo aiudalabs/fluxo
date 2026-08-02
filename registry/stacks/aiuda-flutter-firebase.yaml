@@ -12,3 +12,15 @@ label: Flutter + Firebase
 description: Apps móviles iOS/Android con backend Firebase.
 capabilities:
   - firebase
+# lanes: el mapeo SUPERFICIE → agente-dev de este stack (data, la FUENTE DE VERDAD del ruteo de
+# owner). La clave es la superficie tal como la nombran los templates del stack
+# (registry/templates/github-native/aiuda-flutter-firebase/: `.github/agents/{flutter,firebase}-dev`
+# + CLAUDE.md.tmpl «the admin (react-dev) lane»); el valor es el `id` del agente del registry que la
+# implementa. El scrum-master asigna el `owner` de cada story según ESTE mapeo — hoy lo ESPEJA en su
+# prosa (el agente no lee el registry en runtime); una fase futura lo inyecta desde acá sin re-escribir
+# la persona. OJO: `react-dev` acá es SOLO la lane admin (React Firebase-integrated), NUNCA el frontend
+# web genérico — ese es `react-web-dev` (ver react-supabase.yaml / python-fastapi-react.yaml).
+lanes:
+  mobile: flutter-dev
+  backend: firebase-dev
+  admin: react-dev

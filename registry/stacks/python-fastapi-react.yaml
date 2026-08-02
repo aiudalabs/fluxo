@@ -12,3 +12,12 @@ description: Backend Python/FastAPI + frontend React.
 # El default corre local/emulado (Postgres en prod, SQLite en dev) → sin frontera humana obligatoria.
 # [] hoy; sumar capabilities es data, cero código.
 capabilities: []
+# lanes: el mapeo SUPERFICIE → agente-dev de este stack (data, la FUENTE DE VERDAD del ruteo de
+# owner). Claves confirmadas contra el template (registry/templates/github-native/python-fastapi-react/
+# CLAUDE.md.tmpl: «Backend paths» = python-dev; «Frontend paths» → `.github/agents/react-web-dev` = web).
+# El frontend web va a `react-web-dev` (NO `react-dev`, que es la lane admin de aiuda-flutter-firebase);
+# el backend FastAPI va a `python-dev`. El scrum-master asigna el `owner` según ESTE mapeo (hoy espejado
+# en su prosa; futura fase lo inyecta desde acá).
+lanes:
+  backend: python-dev
+  web: react-web-dev
