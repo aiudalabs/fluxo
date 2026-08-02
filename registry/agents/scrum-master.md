@@ -59,20 +59,48 @@ one story at a time, just before it is built.
          specialist on one branch. Mixed-lane sprints currently run under the default agent;
          avoid them unless the feature genuinely spans stacks.
    - Owner: the registry agent id of the SPECIALIST for the lane this story touches —
-     this is the lane router that decides which engine implements the story. Pick from the
-     architecture's stack and which part of the system the story implements:
-       - frontend / web / admin dashboard (React, TypeScript)       → `react-dev`
-       - backend / API / services / migrations (Python, FastAPI)    → `python-dev`
-       - mobile app (Flutter, Dart widgets/screens)                 → `flutter-dev`
-       - cloud functions / Firestore rules / indexes (Firebase)     → `firebase-dev`
-       - generic, unknown, or single-stack project with no match     → `dev`
+     this is the lane router that decides which engine implements the story. **Owner
+     assignment is STACK-AWARE**: the same surface (e.g. "a web frontend screen") routes to
+     a DIFFERENT agent depending on the project's stack, so you must read the stack first.
+
+     **Read `stack` from `docs/provisioning.yaml`** (you already receive it as the
+     `provisioning` input — the architect wrote it in phase 5, BEFORE this backlog phase, and
+     it is resolved even when the human chose `auto`). Then assign each story's `owner` from
+     the LANE MAPPING of THAT stack:
+
+     | stack (`provisioning.yaml`) | surface the story touches | owner |
+     |---|---|---|
+     | `aiuda-flutter-firebase` | mobile app (Flutter, Dart widgets/screens) | `flutter-dev` |
+     | `aiuda-flutter-firebase` | backend: cloud functions / Firestore rules / indexes | `firebase-dev` |
+     | `aiuda-flutter-firebase` | **admin** web dashboard (React, Firebase-integrated) | `react-dev` |
+     | `react-supabase` | web frontend (React / Vite, TypeScript) | `react-web-dev` |
+     | `react-supabase` | backend (Supabase: SQL migrations, RLS, Edge Functions) | `supabase-dev` |
+     | `python-fastapi-react` | backend (Python / FastAPI, migrations, services) | `python-dev` |
+     | `python-fastapi-react` | web frontend (React / Vite, TypeScript) | `react-web-dev` |
+     | any / unknown / single-stack with no match | generic | `dev` |
+
+     **`react-dev` is ONLY the admin (Firebase-integrated) lane of `aiuda-flutter-firebase`.**
+     A frontend WEB story on `react-supabase` or `python-fastapi-react` goes to
+     `react-web-dev`, never `react-dev`. The `react-supabase` backend goes to `supabase-dev`;
+     the `python-fastapi-react` backend goes to `python-dev`. Getting this wrong dispatches a
+     web story to the Firebase-admin agent (wrong paths, wrong idioms).
+
+     <!-- This table MIRRORS the `lanes:` block of each stack manifest
+     (registry/stacks/<stack>.yaml) — that data is the source of truth. It is inlined here
+     because the agent cannot read the registry at runtime yet; a future phase will inject
+     these lanes from the manifests so this prose no longer has to be kept in sync by hand. -->
+
      A story stays in ONE lane — if it would need two, split it (see step 2). For a
      single-stack project (e.g. a Python CLI) EVERY story's owner is that one agent (e.g.
-     `python-dev`, or `dev` when the stack has no specialist). Use the ids exactly as written —
-     each must resolve to a registry agent.
+     `python-dev`, or `dev` when the stack has no specialist). If `provisioning.yaml` is absent
+     or carries no `stack` (older project), fall back to matching the surface against the
+     architecture's stated stack. Use the ids exactly as written — each must resolve to a
+     registry agent.
 
 3b. **Design-system foundation story (any project with a UI).** If `docs/DESIGN_SYSTEM.md`
-   exists, add ONE wave-1 story owned by the frontend lane (`react-dev` / `flutter-dev`):
+   exists, add ONE wave-1 story owned by the frontend lane of THIS stack (`react-web-dev`
+   for `react-supabase`/`python-fastapi-react`, `react-dev` for the `aiuda-flutter-firebase`
+   admin, `flutter-dev` for the mobile app):
    "Implement the design system — wire the tokens (color, typography, spacing, radii,
    shadows) from `docs/DESIGN_SYSTEM.md` into the app theme and build the shared primitives
    (Button, Card, Input)". Give it NO deps (it is the base). EVERY screen/UI story must
@@ -122,8 +150,8 @@ one story at a time, just before it is built.
      stack), this step is a no-op — purely additive, like §3c.
 
 3d. **Every frontend story MUST declare `screen_key` — a real key or `none`.** Any story
-   owned by a frontend lane (`react-dev` / `flutter-dev`) carries a `screen_key` field with
-   one of two legal values:
+   owned by a frontend lane (`react-web-dev` / `react-dev` / `flutter-dev`) carries a
+   `screen_key` field with one of two legal values:
    - the screen's stable key in `role.screen` form (`passenger.home`, `provider.bookings`,
      `admin.users`) when the story builds a specific screen/surface — use the SAME key the
      UI spec uses; keep it lowercase, dotted, and stable. This binds the screen's mockup ↔
@@ -179,9 +207,9 @@ one story at a time, just before it is built.
    item fails:
    - Every story has id, title, a user-story body, 2–5 ACs, owner, sprint_id, deps.
    - No cycles in the deps graph; owner is a valid registry agent id.
-   - Every FRONTEND story (owner `react-dev` / `flutter-dev`) declares `screen_key` —
-     a real `role.screen` key, or `none` for a foundation story with no screen of its own.
-     A frontend story missing the field fails the deterministic backlog lint.
+   - Every FRONTEND story (owner `react-web-dev` / `react-dev` / `flutter-dev`) declares
+     `screen_key` — a real `role.screen` key, or `none` for a foundation story with no screen
+     of its own. A frontend story missing the field fails the deterministic backlog lint.
    - If `docs/UI_SCREENS.md` exists: EVERY screen id it specifies appears exactly once in
      `coverage:` (→ a real story id) OR in `out_of_scope:` (→ a reason). A screen id in
      neither is a silently-dropped screen and is reported by the coverage check.
@@ -226,7 +254,7 @@ stories:
       - Submitting a valid email + password creates an account and returns a session.
       - A duplicate email is rejected with a clear error.
       - A weak/invalid password is rejected before the account is created.
-    owner: python-dev         # agent id from the registry (dev, python-dev, react-dev…)
+    owner: python-dev         # agent id from the registry, STACK-AWARE (python-dev, react-web-dev, react-dev, flutter-dev, firebase-dev, supabase-dev, dev)
     sprint_id: SP1            # sprint identifier, e.g. SP1
     deps: []                  # list of story ids this story depends on
   - id: S1-02
@@ -238,7 +266,7 @@ stories:
       - The catalog lists products with name, price, and availability.
       - An empty catalog shows an empty-state message, not an error.
       - The catalog list query runs without a missing-index error.   # ← frontier AC from provisioning.yaml (indexes)
-    owner: react-dev
+    owner: react-web-dev           # ← web frontend on a react-supabase / python stack (react-dev would be the Firebase-admin lane)
     sprint_id: SP1
     screen_key: customer.catalog   # ← frontend story building a screen: stable role.screen key
     deps: [S1-01]
@@ -250,7 +278,7 @@ stories:
     acceptance: |
       - The token set (color, type, spacing) is defined and importable.
       - Base components (button, input, card) render with the tokens.
-    owner: react-dev
+    owner: react-web-dev           # ← web frontend lane for this stack (react-dev only for the aiuda-flutter-firebase admin)
     sprint_id: SP1
     screen_key: none               # ← frontend story with NO screen of its own: explicit opt-out
     deps: []
@@ -271,10 +299,10 @@ Rules:
   is the screen id copied verbatim from the doc's header (`P.1`, `S.5`, `1.2`…), NOT the `role.screen`
   `screen_key`. `coverage[].story` must reference a real story `id`. Omit both blocks only when the
   project has no `docs/UI_SCREENS.md`.
-- `screen_key` is REQUIRED on every frontend story (owner `react-dev` / `flutter-dev`):
-  either the screen's key (`role.screen` form, lowercase, dotted, stable) OR the literal
-  `none` for a foundation story that builds no screen of its own. Backend / non-frontend
-  stories OMIT it. A frontend story missing the field fails the backlog lint.
+- `screen_key` is REQUIRED on every frontend story (owner `react-web-dev` / `react-dev` /
+  `flutter-dev`): either the screen's key (`role.screen` form, lowercase, dotted, stable) OR
+  the literal `none` for a foundation story that builds no screen of its own. Backend /
+  non-frontend stories OMIT it. A frontend story missing the field fails the backlog lint.
 - `body` is a SHORT user-story ("As a … I want … so that …"), NOT an implementation spec.
 - `deps` must reference valid `id` values within the same file.
 - IDs must be unique across the entire file.

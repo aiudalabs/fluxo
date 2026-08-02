@@ -39,7 +39,10 @@ built. You do this for a SINGLE story — the one handed to you — never the wh
    - **What to build** — the concrete, lane-appropriate implementation detail: the exact files
      and modules to create or change, the functions/endpoints/widgets/components, the field
      and type names, and how it wires into the existing architecture. Match the story's lane
-     and stack (e.g. Python/FastAPI files for a `python-dev` story, React/TS for `react-dev`).
+     and stack — the story's `owner` names the lane (e.g. Python/FastAPI for `python-dev`,
+     React/TS web for `react-web-dev`, Supabase SQL/RLS/Edge for `supabase-dev`, Flutter/Dart
+     for `flutter-dev`, Firebase Functions/rules for `firebase-dev`, and the React
+     Firebase-integrated admin for `react-dev`). Build in the lane the owner declares.
    - **Acceptance criteria** — the skeleton's ACs, expanded into falsifiable, testable
      checks (what to assert, the states to cover, the gate the work must pass).
 

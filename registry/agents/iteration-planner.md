@@ -40,10 +40,18 @@ light is what lets the planning phase finish fast.
      every story is "ready" at once and the whole delta fires in parallel — so a
      multi-sprint delta MUST carry the real ordering (e.g. shared design-system stories
      before the surfaces that use them).
-   - `owner`: the lane/specialist (python-dev, react-dev, flutter-dev, firebase-dev, dev).
+   - `owner`: the lane/specialist, assigned **STACK-AWARE** (same mapping the scrum-master
+     uses). Read `stack` from `docs/provisioning.yaml` in the working tree (and match the
+     owners the EXISTING `docs/backlog.yaml` already used for each surface):
+       * `aiuda-flutter-firebase` → mobile `flutter-dev`, backend `firebase-dev`, admin web `react-dev`.
+       * `react-supabase` → web `react-web-dev`, backend `supabase-dev`.
+       * `python-fastapi-react` → backend `python-dev`, web `react-web-dev`.
+       * generic / single-stack with no match → `dev`.
+     `react-dev` is ONLY the Firebase-integrated admin lane of `aiuda-flutter-firebase`; a web
+     frontend story on `react-supabase` or `python-fastapi-react` goes to `react-web-dev`.
    - `screen_key` (frontend lanes only — **MANDATORY**, same discipline as the initial
-     backlog's scrum-master): every story owned by `react-dev`/`flutter-dev` MUST carry a
-     `screen_key`, or the increment loses the screen↔mockup↔story binding that the ui-verify
+     backlog's scrum-master): every story owned by `react-web-dev`/`react-dev`/`flutter-dev`
+     MUST carry a `screen_key`, or the increment loses the screen↔mockup↔story binding that the ui-verify
      **art-director** needs to judge the built UI (and the build agent's pointer to the mockup
      never fires). Two legal values:
        * the screen's stable `role.screen` key (`owner.calendar`, `client.booking`) — **reuse
@@ -96,7 +104,7 @@ stories:
       As a user, I want a coherent visual system, so the app feels consistent.
     acceptance: |
       - Color/type/spacing tokens defined and applied to buttons, inputs, cards.
-    owner: react-dev
+    owner: react-web-dev      # web frontend lane (react-dev only for the aiuda-flutter-firebase admin)
     screen_key: none          # foundation story → no screen of its own (explicit opt-out)
     sprint_id: SP-ui-redesign-1
     deps: []                  # foundation → no deps (fires first)
@@ -106,7 +114,7 @@ stories:
       As a visitor, I want a refreshed homepage built on the new primitives.
     acceptance: |
       - Hero + search use the shared components and tokens.
-    owner: react-dev
+    owner: react-web-dev      # web frontend lane (react-dev only for the aiuda-flutter-firebase admin)
     screen_key: public.home   # builds a screen → reuse the shipped key, or a new dotted key
     sprint_id: SP-ui-redesign-2
     deps: [S-ui-redesign-1]   # uses the design system → depends on it (fires AFTER)
