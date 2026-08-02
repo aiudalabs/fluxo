@@ -4,7 +4,7 @@
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { readFileSync, readdirSync } from "node:fs";
 import { dirname, resolve, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { listStacks, knownStackIds, artifactStacks } from "./capabilities.ts";
@@ -37,12 +37,35 @@ test("artifactStacks: un agent -dev stack-específico declara su stack; uno sin 
   const flutterDev = readFileSync(join(registryDir, "agents", "flutter-dev.yaml"), "utf8");
   assert.deepEqual(artifactStacks(flutterDev), ["aiuda-flutter-firebase"]);
 
+  // react-dev es el admin dashboard Firebase-integrated → SOLO el stack Flutter+Firebase.
   const reactDev = readFileSync(join(registryDir, "agents", "react-dev.yaml"), "utf8");
-  assert.deepEqual(artifactStacks(reactDev), ["react-supabase", "python-fastapi-react"]);
+  assert.deepEqual(artifactStacks(reactDev), ["aiuda-flutter-firebase"]);
 
   // analyst no lleva `stacks:` → COMPARTIDO (["*"]).
   const analyst = readFileSync(join(registryDir, "agents", "analyst.yaml"), "utf8");
   assert.deepEqual(artifactStacks(analyst), ["*"]);
+});
+
+// ── arreglos de base (docs/18 §9): los agentes/lanes de las web-stacks dejan de estar rotos ──────
+// supabase-dev EXISTE y es dueño del backend Supabase; react-web-dev es el frontend web GENÉRICO
+// (react-supabase + python); react-dev queda SOLO como admin Firebase.
+test("base-agents: supabase-dev / react-web-dev existen y están tagueados al stack correcto", () => {
+  const supabaseDev = readFileSync(join(registryDir, "agents", "supabase-dev.yaml"), "utf8");
+  assert.deepEqual(artifactStacks(supabaseDev), ["react-supabase"]);
+
+  const reactWebDev = readFileSync(join(registryDir, "agents", "react-web-dev.yaml"), "utf8");
+  assert.deepEqual(artifactStacks(reactWebDev), ["react-supabase", "python-fastapi-react"]);
+
+  const reactDev = readFileSync(join(registryDir, "agents", "react-dev.yaml"), "utf8");
+  assert.deepEqual(artifactStacks(reactDev), ["aiuda-flutter-firebase"]);
+});
+
+test("base-agents: el catálogo del registry incluye supabase-dev y react-web-dev (con .md + .yaml)", () => {
+  const files = readdirSync(join(registryDir, "agents"));
+  for (const id of ["supabase-dev", "react-web-dev"]) {
+    assert.ok(files.includes(`${id}.md`), `falta ${id}.md en el catálogo del registry`);
+    assert.ok(files.includes(`${id}.yaml`), `falta ${id}.yaml en el catálogo del registry`);
+  }
 });
 
 test("artifactStacks: contenido nulo/sin stacks/`stacks: []` → COMPARTIDO ['*']", () => {
