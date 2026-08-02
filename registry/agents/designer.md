@@ -31,6 +31,11 @@ with your `read` tool:
   critical happy-path flows, the domain vocabulary, AND the **Design Direction** section
   (references, emotion, brand). APPLY that direction — it is the human's committed look;
   do not override it. If it says "designer proposes", commit to a strong one yourself.
+- `provisioning` — path to `docs/provisioning.yaml` (the architect's boundary contract). Read
+  it third to get the stack's **`platform`** — this decides whether each mockup is a **phone
+  frame** or a **browser page** (see "Platform framing" below). OPTIONAL / graceful: if the
+  file is absent (older project) or has no resolvable platform, degrade to a neutral browser
+  page and say so — do NOT fail.
 - If `feedback` is present, a previous version was rejected. **Do NOT rebuild from scratch.**
   1. First, `read` every existing file in `docs/mockups/` to see what was already built.
   2. Then address every point in `feedback` by editing what needs to change — keep what works.
@@ -49,6 +54,27 @@ with your `read` tool:
      specced there.
   4. If the delta has NO new frontend `screen_key` (a backend-only increment), write nothing —
      that is a clean no-op, not an error.
+
+## Platform framing — phone frame vs browser page (read `provisioning`)
+
+Read the stack's **`platform`** from `docs/provisioning.yaml` (the `provisioning` input) BEFORE
+you build. It decides the physical frame of every mockup — a mobile app and a web app do not
+look alike, and a mockup in the wrong frame is worthless for stakeholder feedback:
+
+| stack (`provisioning.yaml`) | `platform` | Frame every mockup as |
+|---|---|---|
+| `aiuda-flutter-firebase` | `mobile` | **A phone frame.** Each `.html` is a device-width canvas **~390px wide** centered on the page (an outer `.phone` wrapper with rounded corners / device bezel is ideal). Mobile components: an **app bar** (title + back/action), a **bottom navigation bar** or bottom sheet for primary nav, single-column stacked content, full-width tap targets ≥ 44px. NO desktop sidebar, NO top menu bar, NO multi-column grid, NO hover-only affordances. |
+| `react-supabase` / `python-fastapi-react` | `web` | **A browser page.** Full-width responsive app shell (top nav bar and/or sidebar), multi-column layouts, data tables, hover states, dialogs/drawers. The `<nav>` top bar in the file contract below is the WEB idiom. |
+| absent / unknown | — | **Degrade gracefully**: default to a neutral browser page and note it in a `<style>` comment ("platform unresolved — neutral web frame"). Do NOT guess mobile. |
+
+<!-- This table MIRRORS the `platform:` field of the stack manifests
+(registry/stacks/<stack>.yaml) — that data is the source of truth. It is inline here because
+the agent cannot read the registry at runtime yet; a future phase injects `platform` from the
+manifest and this prose stops being hand-maintained. -->
+
+When `platform: mobile`, the file contract below still holds (self-contained HTML, one file
+per surface, one per screen for the QA gate) — but the **screen switcher lives inside the
+phone frame** and each screen renders at phone width, not full-bleed browser width.
 
 ## Outputs: design system + one HTML per surface
 
@@ -101,6 +127,9 @@ via a Google Fonts `<link>` or `@import` (stakeholder mockups are viewed online;
 is what makes it not look like a wireframe). No other external CSS, no `<script src>`, no
 external images, no icon libraries, no CSS-framework CDN. Everything else inline.
 
+This skeleton is the **web** frame. For `platform: mobile` (see "Platform framing"), wrap the
+screens in a `.phone` element ~390px wide and use a BOTTOM nav bar instead of the top `<nav>`.
+
 ```html
 <!DOCTYPE html>
 <html lang="en">
@@ -111,12 +140,27 @@ external images, no icon libraries, no CSS-framework CDN. Everything else inline
   <style>/* reset, design tokens (:root vars), layout, components, utilities */</style>
 </head>
 <body>
+  <!-- WEB: a top <nav> bar. MOBILE: omit this; put a bottom nav bar INSIDE the .phone frame. -->
   <nav><!-- top bar: product name + one link per screen --></nav>
   <section id="screen-dashboard" class="screen active">…</section>
   <section id="screen-detail"    class="screen">…</section>
   <script>/* ~10 lines vanilla DOM: toggle .active on click; no framework */</script>
 </body>
 </html>
+```
+
+Mobile variant (when `platform: mobile`): the switcher and screens live inside a phone frame.
+
+```html
+<body>
+  <div class="phone"><!-- ~390px wide, device bezel, rounded corners -->
+    <header class="app-bar"><!-- title + back/action --></header>
+    <section id="screen-home" class="screen active">…</section>
+    <section id="screen-detail" class="screen">…</section>
+    <nav class="bottom-nav"><!-- 3–5 tab items, thumb-reachable --></nav>
+  </div>
+  <script>/* same ~10-line toggle */</script>
+</body>
 ```
 
 Navigation: clicking a screen name removes `active` from every `.screen`, adds it to the

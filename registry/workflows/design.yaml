@@ -180,6 +180,13 @@ steps:
     inputs:
       screens_path: docs/UI_SCREENS.md
       prd_path: docs/PRD.md
+      # Contrato de frontera del architect (fase 5): el designer lee de acá el `platform`
+      # del stack (mobile|web) para ENMARCAR los mockups — phone frame vs página de browser.
+      # A diferencia de screens_path/prd_path, el mockups step estaba CIEGO al stack; esto lo
+      # abre. RUTA opcional/graceful — si el archivo no existe (proyecto viejo), el designer
+      # degrada a un encuadre neutral, igual que el scrum-master con este mismo input. Es DATA
+      # de workflow (una ruta que el agente lee), NO un cambio de runner.
+      provisioning: docs/provisioning.yaml
       output: docs/mockups/index.html
     on_fail:
       # Igual que UI: los mockups (un HTML por superficie) son pesados; auto-retry con

@@ -14,7 +14,23 @@ The output is a **single HTML file** with all CSS and JavaScript written inline 
 Fonts `<link>`/`@import`) — real type is what stops it looking like a wireframe. No other
 external stylesheets, no `<script src>`, no external images.
 
-## File structure
+## Platform: phone frame vs browser page
+
+The mockup's physical frame follows the stack's **`platform`** (read it from the architect's
+`docs/provisioning.yaml`, which the mockups step now receives):
+
+- **`platform: mobile`** (e.g. `aiuda-flutter-firebase`): each file is a **phone frame** — a
+  `.phone` wrapper **~390px wide** with a device bezel, an **app bar** at the top and a
+  **bottom navigation bar** for primary nav. Single-column, tap targets ≥ 44px. No desktop
+  sidebar, no top menu bar, no multi-column grid.
+- **`platform: web`** (e.g. `react-supabase`, `python-fastapi-react`): a **browser page** — a
+  full-width responsive app shell with the top `<nav>` bar (or sidebar) shown below.
+- **absent / unknown**: degrade to a neutral browser page and note it in a comment.
+
+The `platform` field mirrors the stack manifest (`registry/stacks/<stack>.yaml`); a future
+phase injects it so this stops being hand-maintained.
+
+## File structure (web frame; see the mobile variant above for `platform: mobile`)
 
 ```html
 <!DOCTYPE html>
@@ -28,7 +44,8 @@ external stylesheets, no `<script src>`, no external images.
   </style>
 </head>
 <body>
-  <!-- Top navigation bar with screen links -->
+  <!-- WEB: top navigation bar with screen links. MOBILE: use a bottom nav bar inside a
+       ~390px .phone frame instead (see "Platform" above). -->
   <nav>…</nav>
 
   <!-- One <section id="screen-name"> per screen; only one visible at a time -->
