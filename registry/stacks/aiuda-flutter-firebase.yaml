@@ -10,26 +10,34 @@ id: aiuda-flutter-firebase
 # nuevo", Settings y los chips de filtro del Registry). Español criollo, una línea.
 label: Flutter + Firebase
 description: Apps móviles iOS/Android con backend Firebase.
-# platform / backend: la FORMA del stack (data, fuente de verdad) que las fases de DISEÑO leen para
-# encuadrar su salida. `platform` (mobile|web) dirige el encuadre de UI/mockups: mobile → pantallas de
-# teléfono (bottom nav, phone frame ~390px); web → layouts de browser (top nav, breakpoints). `backend`
-# (firebase|supabase|fastapi) es el PARADIGMA de datos (NO solo el store, para no conflacionar supabase
-# vs fastapi): firebase → Firestore documental; supabase → Postgres relacional + RLS en la DB; fastapi →
-# Postgres relacional + authz en la capa de app. Hoy el data-modeler/ux/designer lo ESPEJAN en prosa (el
-# agente no lee el registry en runtime); una fase futura lo inyecta desde acá sin re-escribir la persona.
-platform: mobile
+# backend: el PARADIGMA de datos del stack (data, fuente de verdad) que la fase de DISEÑO del
+# data-modeler lee para modelar el paradigma correcto. `backend` (firebase|supabase|fastapi) NO es
+# solo el store (para no conflacionar supabase vs fastapi): firebase → Firestore documental; supabase →
+# Postgres relacional + RLS en la DB; fastapi → Postgres relacional + authz en la capa de app. Vive a
+# nivel STACK (no en la lane) a propósito: un stack tiene UN paradigma de backend, compartido por todas
+# sus superficies (el admin de este stack también habla Firebase). El data-modeler lo ESPEJA en prosa
+# (el agente no lee el registry en runtime); una fase futura lo inyecta desde acá sin re-escribir la persona.
+#
+# `platform` NO vive acá: es PER-LANE (ver `lanes:` abajo). Un stack multi-superficie tiene superficies de
+# DISTINTA plataforma —app Flutter (mobile) + admin React (web)— así que una sola `platform` a nivel stack
+# framearía MAL el admin (como teléfono). La plataforma es una propiedad de la SUPERFICIE, no del stack.
 backend: firebase
 capabilities:
   - firebase
-# lanes: el mapeo SUPERFICIE → agente-dev de este stack (data, la FUENTE DE VERDAD del ruteo de
-# owner). La clave es la superficie tal como la nombran los templates del stack
-# (registry/templates/github-native/aiuda-flutter-firebase/: `.github/agents/{flutter,firebase}-dev`
-# + CLAUDE.md.tmpl «the admin (react-dev) lane»); el valor es el `id` del agente del registry que la
-# implementa. El scrum-master asigna el `owner` de cada story según ESTE mapeo — hoy lo ESPEJA en su
-# prosa (el agente no lee el registry en runtime); una fase futura lo inyecta desde acá sin re-escribir
-# la persona. OJO: `react-dev` acá es SOLO la lane admin (React Firebase-integrated), NUNCA el frontend
-# web genérico — ese es `react-web-dev` (ver react-supabase.yaml / python-fastapi-react.yaml).
+# lanes: el mapeo SUPERFICIE → { agent, platform? } de este stack (data, la FUENTE DE VERDAD del ruteo de
+# owner Y del encuadre por-superficie de UI/mockups). La clave es la superficie tal como la nombran los
+# templates del stack (registry/templates/github-native/aiuda-flutter-firebase/:
+# `.github/agents/{flutter,firebase}-dev` + CLAUDE.md.tmpl «the admin (react-dev) lane»); `agent` es el
+# `id` del agente del registry que la implementa. El scrum-master asigna el `owner` de cada story según
+# ESTE mapeo. `platform` (mobile|web) lo llevan SOLO las lanes de FRONTEND: dirige el encuadre de la
+# superficie en ux/designer — mobile → pantallas de teléfono (bottom nav, phone frame ~390px); web →
+# layouts de browser (top nav, breakpoints). Las lanes de BACKEND NO llevan platform (no tienen UI). Hoy
+# ux/designer/scrum-master lo ESPEJAN en prosa (el agente no lee el registry en runtime); una fase futura
+# lo inyecta desde acá sin re-escribir la persona. OJO: la lane `admin` (React Firebase-integrated) es
+# `platform: web` aunque el stack sea "de apps móviles" — es un portal admin de browser; framearlo como
+# teléfono es el bug que este esquema per-lane arregla. `react-dev` acá es SOLO la lane admin, NUNCA el
+# frontend web genérico — ese es `react-web-dev` (ver react-supabase.yaml / python-fastapi-react.yaml).
 lanes:
-  mobile: flutter-dev
-  backend: firebase-dev
-  admin: react-dev
+  mobile: { agent: flutter-dev, platform: mobile }
+  backend: { agent: firebase-dev }
+  admin: { agent: react-dev, platform: web }

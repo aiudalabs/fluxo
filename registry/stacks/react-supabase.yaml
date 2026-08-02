@@ -8,24 +8,27 @@ id: react-supabase
 # label/description: el stack como cosa SELECCIONABLE (data para la UI).
 label: React + Supabase
 description: Web app con backend Supabase (Postgres).
-# platform / backend: la FORMA del stack (data, fuente de verdad) que las fases de DISEÑO leen para
-# encuadrar su salida. `platform` (mobile|web) dirige el encuadre de UI/mockups: web → layouts de browser
-# (top nav, breakpoints responsive). `backend` (firebase|supabase|fastapi) es el PARADIGMA de datos (NO
-# solo el store, para no conflacionar supabase vs fastapi): supabase → Postgres relacional + RLS policies
-# en la DB. Hoy el data-modeler/ux/designer lo ESPEJAN en prosa (el agente no lee el registry en runtime);
-# una fase futura lo inyecta desde acá sin re-escribir la persona.
-platform: web
+# backend: el PARADIGMA de datos del stack (data, fuente de verdad) que la fase de DISEÑO del
+# data-modeler lee para modelar el paradigma correcto. `backend` (firebase|supabase|fastapi) NO es solo
+# el store (para no conflacionar supabase vs fastapi): supabase → Postgres relacional + RLS policies en la
+# DB. Vive a nivel STACK (no en la lane): un stack tiene UN paradigma de backend. El data-modeler lo
+# ESPEJA en prosa (el agente no lee el registry en runtime); una fase futura lo inyecta desde acá.
+#
+# `platform` NO vive acá: es PER-LANE (ver `lanes:` abajo). La plataforma es una propiedad de la SUPERFICIE
+# (frontend), no del stack — así un stack multi-superficie framea cada una correctamente.
 backend: supabase
 # capabilities — integraciones externas BYO que el stack necesita (registry/capabilities/<id>.yaml).
 # Hoy no hay una capability `supabase` declarada en el registry → [] (degrada limpio: sin frontera
 # humana automática). Sumar la capability cuando exista es data, cero código.
 capabilities: []
-# lanes: el mapeo SUPERFICIE → agente-dev de este stack (data, la FUENTE DE VERDAD del ruteo de
-# owner). Claves confirmadas contra el template (registry/templates/github-native/react-supabase/
-# CLAUDE.md.tmpl: «the Vite React app (react-web-dev lane)» = web; «the backend (supabase-dev lane)»
-# = backend). El frontend web de este stack va a `react-web-dev` (NO `react-dev`, que es la lane admin
-# de aiuda-flutter-firebase); el backend Supabase va a `supabase-dev`. El scrum-master asigna el
-# `owner` según ESTE mapeo (hoy espejado en su prosa; futura fase lo inyecta desde acá).
+# lanes: el mapeo SUPERFICIE → { agent, platform? } de este stack (data, la FUENTE DE VERDAD del ruteo de
+# owner Y del encuadre de UI/mockups por superficie). Claves confirmadas contra el template
+# (registry/templates/github-native/react-supabase/CLAUDE.md.tmpl: «the Vite React app (react-web-dev
+# lane)» = web; «the backend (supabase-dev lane)» = backend). `agent` es el id del dev; `platform`
+# (mobile|web) lo llevan SOLO las lanes de FRONTEND (web → layouts de browser, top nav, breakpoints); las
+# de BACKEND no. El frontend web va a `react-web-dev` (NO `react-dev`, que es la lane admin de
+# aiuda-flutter-firebase); el backend Supabase a `supabase-dev`. El scrum-master asigna el `owner` y
+# ux/designer el encuadre según ESTE mapeo (hoy espejado en prosa; futura fase lo inyecta desde acá).
 lanes:
-  web: react-web-dev
-  backend: supabase-dev
+  web: { agent: react-web-dev, platform: web }
+  backend: { agent: supabase-dev }

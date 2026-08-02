@@ -69,24 +69,43 @@ test("base-agents: el catálogo del registry incluye supabase-dev y react-web-de
   }
 });
 
+// ── FASE 3b: forma de `lanes` = { rol: { agent, platform? } }. `platform` (mobile|web) es PER-LANE
+// (propiedad de la SUPERFICIE, no del stack): un stack multi-superficie —app Flutter mobile + admin
+// React web— framea cada superficie correctamente. Solo las lanes de FRONTEND llevan platform; las de
+// BACKEND no (no tienen UI). El sets cerrados de platform/backend que fijan el contrato.
+const PLATFORMS = ["mobile", "web"];
+const BACKENDS = ["firebase", "supabase", "fastapi"];
+
+type LaneCfg = { agent?: string; platform?: string };
+const lanesOf = (id: string): Record<string, LaneCfg> =>
+  (yaml.load(readFileSync(join(registryDir, "stacks", `${id}.yaml`), "utf8")) as { lanes?: Record<string, LaneCfg> }).lanes ?? {};
+
 // ── consistencia lanes↔agentes (docs/18 §9 pto3 / §10 pto4): el mapeo `lanes:` de cada stack
-// manifest es la FUENTE DE VERDAD del ruteo de owner. Cada agente que una lane nombra debe (a)
-// EXISTIR en el catálogo (.md + .yaml) y (b) estar tagueado con ESE stack (artifactStacks incluye
-// el stack, salvo core compartido ["*"]). Caza el drift: una lane a un agente inexistente o
-// mal-tagueado (ej. el seam react-dev/react-web-dev que la Fase 2 cierra).
-test("stacks.lanes: cada agente referenciado existe y está tagueado con su stack", () => {
+// manifest es la FUENTE DE VERDAD del ruteo de owner + del encuadre por superficie. Cada lane es un
+// objeto `{ agent, platform? }`; su `agent` debe (a) EXISTIR en el catálogo (.md + .yaml) y (b) estar
+// tagueado con ESE stack (artifactStacks incluye el stack, salvo core compartido ["*"]). Su `platform`,
+// cuando está presente (lane de frontend), debe ∈ {mobile,web}. Caza el drift: una lane a un agente
+// inexistente/mal-tagueado, o un platform inválido.
+test("stacks.lanes: cada lane {agent,platform?} — agent existe+tagueado, platform (si hay) es válido", () => {
   const agentFiles = readdirSync(join(registryDir, "agents"));
   const stackFiles = readdirSync(join(registryDir, "stacks")).filter((n) => /\.ya?ml$/.test(n));
   let lanesSeen = 0;
+  let frontendLanesSeen = 0;
   for (const f of stackFiles) {
     const doc = yaml.load(readFileSync(join(registryDir, "stacks", f), "utf8")) as
-      | { id?: string; lanes?: Record<string, unknown> }
+      | { id?: string; lanes?: Record<string, LaneCfg> }
       | null;
     if (!doc?.lanes) continue;
     const stackId = doc.id ? String(doc.id) : "";
-    for (const [lane, agentRaw] of Object.entries(doc.lanes)) {
-      const agent = String(agentRaw);
+    for (const [lane, cfgRaw] of Object.entries(doc.lanes)) {
       lanesSeen++;
+      // La lane es un objeto { agent, platform? } — NO ya un string (Fase 3b cambia el schema).
+      assert.ok(
+        cfgRaw && typeof cfgRaw === "object" && !Array.isArray(cfgRaw),
+        `${stackId}.lanes.${lane}: esperaba un objeto { agent, platform? }, vi ${JSON.stringify(cfgRaw)}`,
+      );
+      const agent = String(cfgRaw.agent);
+      assert.ok(cfgRaw.agent, `${stackId}.lanes.${lane}: falta el campo agent`);
       assert.ok(agentFiles.includes(`${agent}.md`), `${stackId}.lanes.${lane} → ${agent}: falta ${agent}.md en el catálogo`);
       assert.ok(agentFiles.includes(`${agent}.yaml`), `${stackId}.lanes.${lane} → ${agent}: falta ${agent}.yaml en el catálogo`);
       const tags = artifactStacks(readFileSync(join(registryDir, "agents", `${agent}.yaml`), "utf8"));
@@ -94,60 +113,80 @@ test("stacks.lanes: cada agente referenciado existe y está tagueado con su stac
         tags.includes("*") || tags.includes(stackId),
         `${stackId}.lanes.${lane} → ${agent}: tagueado ${JSON.stringify(tags)}, no incluye «${stackId}» (ni es core ["*"])`,
       );
+      // platform es una obligación SOLO de las lanes de frontend; cuando está, ∈ {mobile,web}.
+      if (cfgRaw.platform !== undefined) {
+        frontendLanesSeen++;
+        assert.ok(
+          PLATFORMS.includes(String(cfgRaw.platform)),
+          `${stackId}.lanes.${lane}.platform inválido: «${cfgRaw.platform}» (∉ ${JSON.stringify(PLATFORMS)})`,
+        );
+      }
     }
   }
   // los 3 stacks reales declaran lanes (3 + 2 + 2 = 7) → el drift de "manifest sin lanes" también se caza.
   assert.ok(lanesSeen >= 7, `esperaba ≥7 lanes declaradas en los manifests, vi ${lanesSeen}`);
+  // cada stack tiene al menos una superficie de frontend con platform (mobile≥1 + web≥3 = ≥4).
+  assert.ok(frontendLanesSeen >= 4, `esperaba ≥4 lanes de frontend con platform, vi ${frontendLanesSeen}`);
 });
 
-// El seam cerrado, explícito: el frontend WEB rutea a react-web-dev; react-dev queda SOLO como la
-// lane admin (Firebase) de aiuda-flutter-firebase; el backend Supabase a supabase-dev.
-test("stacks.lanes: el mapeo exacto por stack (web→react-web-dev, admin→react-dev, backend correcto)", () => {
-  const lanesOf = (id: string) =>
-    (yaml.load(readFileSync(join(registryDir, "stacks", `${id}.yaml`), "utf8")) as { lanes?: Record<string, string> }).lanes;
-  assert.deepEqual(lanesOf("aiuda-flutter-firebase"), { mobile: "flutter-dev", backend: "firebase-dev", admin: "react-dev" });
-  assert.deepEqual(lanesOf("react-supabase"), { web: "react-web-dev", backend: "supabase-dev" });
-  assert.deepEqual(lanesOf("python-fastapi-react"), { backend: "python-dev", web: "react-web-dev" });
+// El seam cerrado, explícito, con la forma per-lane: el frontend WEB rutea a react-web-dev con
+// platform:web; la lane admin de flutter-firebase (react-dev) es platform:web (browser, NO teléfono —
+// el bug que Fase 3b arregla); la app móvil es platform:mobile; las lanes de backend NO llevan platform.
+test("stacks.lanes: el mapeo exacto por stack — agent + platform por superficie", () => {
+  assert.deepEqual(lanesOf("aiuda-flutter-firebase"), {
+    mobile: { agent: "flutter-dev", platform: "mobile" },
+    backend: { agent: "firebase-dev" },
+    admin: { agent: "react-dev", platform: "web" },
+  });
+  assert.deepEqual(lanesOf("react-supabase"), {
+    web: { agent: "react-web-dev", platform: "web" },
+    backend: { agent: "supabase-dev" },
+  });
+  assert.deepEqual(lanesOf("python-fastapi-react"), {
+    backend: { agent: "python-dev" },
+    web: { agent: "react-web-dev", platform: "web" },
+  });
 });
 
-// ── FASE 3a: platform/backend en cada manifest (data, la FUENTE DE VERDAD de la FORMA del stack para
-// las fases de diseño). `platform` (mobile|web) → ux/designer enmarcan las pantallas/mockups; `backend`
-// (firebase|supabase|fastapi) → el data-modeler modela el paradigma correcto. Los agentes lo ESPEJAN
-// en prosa hoy; una fase futura lo inyecta desde estos campos. Estos tests fijan el contrato.
-const PLATFORMS = ["mobile", "web"];
-const BACKENDS = ["firebase", "supabase", "fastapi"];
-
-test("stacks.platform/backend: los valores esperados por stack", () => {
+// ── backend a nivel STACK (un paradigma de datos por stack) — el data-modeler lo lee. platform YA NO
+// vive a nivel stack (es per-lane, arriba). Estos tests fijan el contrato: cada stack declara SOLO
+// backend∈{firebase,supabase,fastapi} arriba, y NO un platform a nivel stack.
+test("stacks.backend: los valores esperados por stack, y platform NO vive a nivel stack", () => {
   const metaOf = (id: string) =>
     yaml.load(readFileSync(join(registryDir, "stacks", `${id}.yaml`), "utf8")) as { platform?: string; backend?: string };
-  const expected: Record<string, { platform: string; backend: string }> = {
-    "aiuda-flutter-firebase": { platform: "mobile", backend: "firebase" },
-    "react-supabase": { platform: "web", backend: "supabase" },
-    "python-fastapi-react": { platform: "web", backend: "fastapi" },
+  const expected: Record<string, string> = {
+    "aiuda-flutter-firebase": "firebase",
+    "react-supabase": "supabase",
+    "python-fastapi-react": "fastapi",
   };
-  for (const [id, want] of Object.entries(expected)) {
+  for (const [id, wantBackend] of Object.entries(expected)) {
     const doc = metaOf(id);
-    assert.equal(doc.platform, want.platform, `${id}.platform esperado «${want.platform}», vi «${doc.platform}»`);
-    assert.equal(doc.backend, want.backend, `${id}.backend esperado «${want.backend}», vi «${doc.backend}»`);
+    assert.equal(doc.backend, wantBackend, `${id}.backend esperado «${wantBackend}», vi «${doc.backend}»`);
+    assert.equal(doc.platform, undefined, `${id}.platform NO debe existir a nivel stack (es per-lane), vi «${doc.platform}»`);
   }
 });
 
-// Contrato para TODO manifest (caza el drift de un stack nuevo sin platform/backend, o con un valor
-// fuera del set cerrado): cada manifest con id declara platform∈{mobile,web} y backend∈{firebase,
-// supabase,fastapi}. Espeja el patrón de la aserción `lanesSeen >= 7`.
-test("stacks.platform/backend: todo manifest declara platform∈{mobile,web} y backend∈{firebase,supabase,fastapi}", () => {
+// Contrato para TODO manifest (caza el drift de un stack nuevo mal formado): cada manifest con id
+// declara backend∈{firebase,supabase,fastapi} a nivel stack, NO declara platform a nivel stack, y tiene
+// al menos una lane de FRONTEND con platform∈{mobile,web}. Espeja el patrón de `lanesSeen >= 7`.
+test("stacks.shape: todo manifest declara backend a nivel stack, sin platform de stack, con ≥1 lane frontend", () => {
   const stackFiles = readdirSync(join(registryDir, "stacks")).filter((n) => /\.ya?ml$/.test(n));
   let seen = 0;
   for (const f of stackFiles) {
     const doc = yaml.load(readFileSync(join(registryDir, "stacks", f), "utf8")) as
-      | { id?: string; platform?: string; backend?: string }
+      | { id?: string; platform?: string; backend?: string; lanes?: Record<string, LaneCfg> }
       | null;
     if (!doc?.id) continue;
     seen++;
-    assert.ok(PLATFORMS.includes(String(doc.platform)), `${doc.id}.platform inválido: «${doc.platform}» (∉ ${JSON.stringify(PLATFORMS)})`);
     assert.ok(BACKENDS.includes(String(doc.backend)), `${doc.id}.backend inválido: «${doc.backend}» (∉ ${JSON.stringify(BACKENDS)})`);
+    assert.equal(doc.platform, undefined, `${doc.id}.platform NO debe vivir a nivel stack (es per-lane), vi «${doc.platform}»`);
+    const frontendLanes = Object.values(doc.lanes ?? {}).filter((c) => c && c.platform !== undefined);
+    assert.ok(frontendLanes.length >= 1, `${doc.id}: esperaba ≥1 lane de frontend con platform, vi ${frontendLanes.length}`);
+    for (const c of frontendLanes) {
+      assert.ok(PLATFORMS.includes(String(c.platform)), `${doc.id}: lane de frontend con platform inválido «${c.platform}»`);
+    }
   }
-  assert.ok(seen >= 3, `esperaba ≥3 manifests con platform/backend, vi ${seen}`);
+  assert.ok(seen >= 3, `esperaba ≥3 manifests, vi ${seen}`);
 });
 
 test("artifactStacks: contenido nulo/sin stacks/`stacks: []` → COMPARTIDO ['*']", () => {
