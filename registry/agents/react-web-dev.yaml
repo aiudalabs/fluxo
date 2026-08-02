@@ -1,0 +1,12 @@
+id: react-web-dev
+version: 1.0.0
+# stacks: lane -dev de frontend React GENÉRICO (Vite/Next, backend REST o Supabase web SDK) —
+# la usan DOS stacks (la web de react-supabase y el frontend de python-fastapi-react).
+# NO es el admin Firebase (eso es react-dev). Sin `stacks:` = compartido.
+stacks: [react-supabase, python-fastapi-react]
+model: claude-sonnet-4-6
+skills:
+  - acceptance-self-audit
+  - frontend-quality
+tools: [read, edit, write, bash]
+role: "Implement the ticket in the generic React/TypeScript web app (REST or Supabase web SDK), leaving the working tree modified. Do NOT commit."

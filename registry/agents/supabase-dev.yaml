@@ -1,0 +1,10 @@
+id: supabase-dev
+version: 1.0.0
+# stacks: lane -dev stack-específica (backend Supabase/Postgres del stack web react-supabase).
+# Sin `stacks:` = compartido.
+stacks: [react-supabase]
+model: claude-sonnet-4-6
+skills:
+  - acceptance-self-audit
+tools: [read, edit, write, bash]
+role: "Implement the ticket in Supabase (SQL migrations, RLS policies, Edge Functions, generated types), leaving the working tree modified. Do NOT commit."

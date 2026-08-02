@@ -1,11 +1,12 @@
 id: react-dev
 version: 1.0.0
-# stacks: lane -dev de frontend React — la usan DOS stacks (web de react-supabase y el frontend de
-# python-fastapi-react). Sin `stacks:` = compartido.
-stacks: [react-supabase, python-fastapi-react]
+# stacks: lane -dev del admin dashboard React (Firebase-integrated: callables + Firestore web SDK)
+# del stack Flutter+Firebase. El frontend web GENÉRICO (react-supabase / python-fastapi-react) es
+# react-web-dev. Sin `stacks:` = compartido.
+stacks: [aiuda-flutter-firebase]
 model: claude-sonnet-4-6
 skills:
   - acceptance-self-audit
   - frontend-quality
 tools: [read, edit, write, bash]
-role: "Implement the ticket in the React/TypeScript web app, leaving the working tree modified. Do NOT commit."
+role: "Implement the ticket in the React/TypeScript admin dashboard (Firebase-integrated: callables + Firestore web SDK), leaving the working tree modified. Do NOT commit."
