@@ -12,13 +12,13 @@ roster in `AGENTS.md`.
 
 ## Repo layout
 
-- `src/**` — the Vite React app (react-dev lane): components, pages, routing,
+- `src/**` — the Vite React app (react-web-dev lane): components, pages, routing,
   hooks, forms, styling.
 - `supabase/**` — the backend (supabase-dev lane): `migrations/**` (SQL: tables,
   constraints, RLS policies), `functions/**` (Deno/TS Edge Functions),
   `config.toml`, `seed.sql`.
 - `src/lib/database.types.ts` — generated from the schema by supabase-dev
-  (`supabase gen types typescript`); consumed **read-only** by react-dev.
+  (`supabase gen types typescript`); consumed **read-only** by react-web-dev.
 
 ## Lanes and ownership
 
@@ -35,7 +35,7 @@ Frontend (React app) paths:
 {{path_map_frontend}}
 
 `src/lib/database.types.ts` is owned by the supabase-dev lane (regenerated from the
-schema) and consumed read-only by the react-dev lane; the frontend never hand-edits
+schema) and consumed read-only by the react-web-dev lane; the frontend never hand-edits
 it to make the UI compile.
 
 ## Global rules (apply to every lane)
