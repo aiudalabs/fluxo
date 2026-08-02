@@ -12,8 +12,9 @@ import { useProject } from "@/lib/project";
 import { activeToken } from "@/lib/supabaseClient";
 import { useT } from "@/lib/i18n";
 
-type CatalogItem = { id: string; summary: string | null; model: string | null; wired?: boolean };
+type CatalogItem = { id: string; summary: string | null; model: string | null; stacks?: string[]; wired?: boolean };
 type Catalog = Record<string, CatalogItem[]>;
+type StackInfo = { id: string; label: string; description: string };
 type Detail = { yaml: string | null; md: string | null };
 type PromptSprint = { key: string; title: string; storyKeys: string[]; prompt: string };
 type PromptStory = { key: string; title: string; status: string; prompt: string };
@@ -27,6 +28,10 @@ export default function Registry() {
   const [tab, setTab] = useState<Tab>("agents");
   const [catalog, setCatalog] = useState<Catalog | null>(null);
   const [templates, setTemplates] = useState<string[]>([]);
+  const [stacks, setStacks] = useState<StackInfo[]>([]);
+  // Filtro por stack: null = "Todos". Filtra a los artefactos COMPARTIDOS (stacks incluye "*") + los
+  // del stack elegido. Los templates se agrupan por stack (byStack) → se filtran igual.
+  const [stackFilter, setStackFilter] = useState<string | null>(null);
   const [sel, setSel] = useState<{ kind: string; id: string } | null>(null);
   const [detail, setDetail] = useState<Detail | null>(null);
   const [prompts, setPrompts] = useState<{ sprints: PromptSprint[]; stories: PromptStory[]; executionUnit: string } | null>(null);
@@ -38,10 +43,11 @@ export default function Registry() {
     (async () => {
       try {
         const res = await fetch("/api/registry");
-        const data = (await res.json()) as { catalog: Catalog; templates: string[] };
+        const data = (await res.json()) as { catalog: Catalog; templates: string[]; stacks?: StackInfo[] };
         if (cancelled) return;
         setCatalog(data.catalog ?? {});
         setTemplates(data.templates ?? []);
+        setStacks(Array.isArray(data.stacks) ? data.stacks : []);
       } catch { if (!cancelled) setCatalog({}); }
       finally { if (!cancelled) setLoading(false); }
     })();
@@ -70,7 +76,13 @@ export default function Registry() {
   }, [tab, prompts, projectId]);
 
   const isCatalog = (KIND_TABS as readonly string[]).includes(tab);
-  const items = catalog?.[tab] ?? [];
+  // Un artefacto es visible bajo un stack si es COMPARTIDO (stacks incluye "*" o falta) o lo declara.
+  const matchesStack = (its: string[] | undefined) =>
+    !stackFilter || !its || its.includes("*") || its.includes(stackFilter);
+  const items = (catalog?.[tab] ?? []).filter((it) => matchesStack(it.stacks));
+  // La fila de chips aplica a las solapas de catálogo + templates (no a "prompts"), y solo cuando NO
+  // hay un item abierto (drill-down).
+  const showStackChips = stacks.length > 0 && tab !== "prompts" && !sel;
 
   return (
     <div className="wrap">
@@ -93,12 +105,25 @@ export default function Registry() {
 
         {/* Contenido: grid de cards (default) · detalle (drill-down) · panes especiales */}
         <div>
+          {/* Chips de stack: "Todos" + un chip por stack. Filtran los artefactos a los COMPARTIDOS
+              + los del stack elegido. El stack es el concepto de primera clase (data del registry). */}
+          {showStackChips && !loading && (
+            <div className="reg-stackchips">
+              <button className={`reg-chip${!stackFilter ? " on" : ""}`} onClick={() => setStackFilter(null)}>Todos</button>
+              {stacks.map((s) => (
+                <button key={s.id} className={`reg-chip${stackFilter === s.id ? " on" : ""}`}
+                  title={s.description} onClick={() => setStackFilter(stackFilter === s.id ? null : s.id)}>
+                  {s.label}
+                </button>
+              ))}
+            </div>
+          )}
           {loading ? (
             <div className="placeholder"><span className="spin" /></div>
           ) : tab === "prompts" ? (
             <PromptsPane data={prompts} t={t} />
           ) : tab === "templates" ? (
-            <TemplatesPane templates={templates} t={t} />
+            <TemplatesPane templates={templates} stackFilter={stackFilter} t={t} />
           ) : sel ? (
             <div className="rg-detail">
               <button className="reg-back" onClick={() => { setSel(null); setDetail(null); }}>← {t("registry.count", { n: items.length })}</button>
@@ -136,7 +161,7 @@ export default function Registry() {
   );
 }
 
-function TemplatesPane({ templates, t }: { templates: string[]; t: (k: string, v?: Record<string, string | number>) => string }) {
+function TemplatesPane({ templates, stackFilter, t }: { templates: string[]; stackFilter: string | null; t: (k: string, v?: Record<string, string | number>) => string }) {
   const [sel, setSel] = useState<string | null>(null);
   const [content, setContent] = useState<string | null>(null);
   const open = useCallback(async (p: string) => {
@@ -159,8 +184,13 @@ function TemplatesPane({ templates, t }: { templates: string[]; t: (k: string, v
     );
   }
   // Agrupado por STACK (primer segmento del path) para que sea navegable — no 57 paths planos.
+  // Con un stack elegido, mostramos `_common` (compartido, siempre) + el grupo de ese stack.
   const byStack: Record<string, string[]> = {};
-  for (const p of templates) { const s = p.split("/")[0]; (byStack[s] ??= []).push(p); }
+  for (const p of templates) {
+    const s = p.split("/")[0];
+    if (stackFilter && s !== "_common" && s !== stackFilter) continue;
+    (byStack[s] ??= []).push(p);
+  }
   return (
     <div className="rg-stacks">
       <p className="rg-intro">{t("registry.templates.intro")} — la CI + scaffold que Fluxo siembra en el repo del cliente. Elegí el stack y clickeá un archivo para ver su contenido.</p>

@@ -45,6 +45,9 @@ steps:
     inputs:
       brief: $discovery.output.text
       instructions: $trigger.instructions
+      # stack elegido por el humano en "Proyecto nuevo"/Settings (settings.stack). "auto" = Fluxo
+      # elige. El principles lo FIJA en la constitución sin inventar uno fuera de la lista cerrada.
+      stack: $trigger.stack
       output: docs/CONSTITUTION.md
 
   - id: constitution_gate
@@ -125,6 +128,10 @@ steps:
     inputs:
       prd: $prd.output.text
       data_model: $data_model.output.text
+      # stack elegido (settings.stack) o "auto". El architect CONSTRUYE SOBRE ÉL y escribe el MISMO
+      # valor en `stack:` de docs/provisioning.yaml — nunca inventa un stack fuera de la lista cerrada
+      # [aiuda-flutter-firebase, react-supabase, python-fastapi-react] (mata la alucinación de Salonara).
+      stack: $trigger.stack
       output: docs/ARCHITECTURE.md
       provisioning: docs/provisioning.yaml
 

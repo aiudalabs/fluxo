@@ -1,0 +1,14 @@
+# registry/stacks/python-fastapi-react.yaml
+#
+# Manifest del stack (data). Vive FUERA de registry/templates/github-native/<stack>/ a propósito:
+# ese árbol lo shippea buildScaffold entero al repo del cliente — un manifest ahí se filtraría al
+# repo. Acá declara metadata del stack para Fluxo (ver aiuda-flutter-firebase.yaml para el contrato).
+# El template correspondiente vive en registry/templates/github-native/python-fastapi-react/.
+id: python-fastapi-react
+# label/description: el stack como cosa SELECCIONABLE (data para la UI).
+label: Python + React
+description: Backend Python/FastAPI + frontend React.
+# capabilities — integraciones externas BYO que el stack necesita (registry/capabilities/<id>.yaml).
+# El default corre local/emulado (Postgres en prod, SQLite en dev) → sin frontera humana obligatoria.
+# [] hoy; sumar capabilities es data, cero código.
+capabilities: []

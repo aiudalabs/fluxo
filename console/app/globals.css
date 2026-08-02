@@ -6050,6 +6050,23 @@ main:has(.studio-shell) > .studio-shell {
 }
 .entry-slash { padding: 0 2px; }
 
+/* ── Selector de stack en /new (el stack como cosa seleccionable) ── */
+.entry-stack { width: 100%; margin-top: 12px; text-align: left; }
+.entry-stack-lbl { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 6px; }
+.entry-stack-lbl > span { font: var(--type-label-lg); color: var(--md-on-surface-variant); }
+.entry-stack-help-btn { background: transparent; border: 0; padding: 0; cursor: pointer;
+  font: var(--type-label-md); color: var(--md-primary); text-decoration: underline; }
+.entry-stack-sel {
+  width: 100%; min-height: var(--field-h); padding: 0 14px;
+  border: 1px solid var(--md-outline); border-radius: var(--shape-sm);
+  font-family: var(--display); font-size: 14px;
+  background: var(--md-surface-container-lowest); color: var(--md-on-surface); cursor: pointer;
+}
+.entry-stack-sel:focus { outline: none; border-color: var(--md-primary); box-shadow: inset 0 0 0 1px var(--md-primary); }
+.entry-stack-desc { margin: 6px 2px 0; font: var(--type-body); color: var(--md-on-surface-variant); }
+.entry-stack-help { margin: 8px 2px 0; padding: 10px 12px; border-radius: var(--shape-sm);
+  background: var(--md-surface-container-low); font: var(--type-body); color: var(--md-on-surface-variant); }
+
 /* ── CTA de diseño en /overview (evita el dead-end) ── */
 /* Banner tonal M3 (primary-container): la única llamada fuerte de la vista. */
 .ov-designcta {
@@ -6114,6 +6131,14 @@ main:has(.studio-shell) > .studio-shell {
 .reg-cat:hover { background: var(--state-hover); color: var(--md-on-surface); }
 .reg-cat.on { background: var(--md-surface-container-high); color: var(--md-on-surface); font-weight: 600; }
 .reg-cat .n { margin-left: auto; font-family: var(--mono); font-size: 11px; color: var(--md-on-surface-variant); }
+/* Chips de filtro por stack (el stack como concepto de primera clase) */
+.reg-stackchips { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 16px; }
+.reg-chip { min-height: var(--ctl-h); padding: 0 14px; border-radius: var(--shape-full);
+  border: 1px solid var(--md-outline-variant); background: var(--md-surface-container-low);
+  color: var(--md-on-surface-variant); font: var(--type-label-lg); cursor: pointer;
+  transition: border-color var(--dur-1) var(--ease), background var(--dur-1) var(--ease), color var(--dur-1) var(--ease); }
+.reg-chip:hover { border-color: var(--md-outline); color: var(--md-on-surface); }
+.reg-chip.on { background: var(--md-primary-container); color: var(--md-on-primary-container); border-color: transparent; font-weight: 600; }
 .reg-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 14px; align-content: start; }
 .reg-item { background: var(--md-surface-container-low); border: 1px solid var(--md-outline-variant);
   border-radius: var(--shape-md); padding: 18px 20px; text-align: left; cursor: pointer;

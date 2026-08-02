@@ -10,9 +10,77 @@
 // un run, qué markers de provisioning debe cazar el gate (accounts declarados ∪ capabilities del
 // stack), leyendo los markers de cada capability desde el registry.
 
-import { readFileSync } from "node:fs";
+import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import yaml from "js-yaml";
+
+// ── El stack como CONCEPTO DE PRIMERA CLASE (visible, seleccionable, conocido por los agentes) ──
+// El stack es la receta tecnológica con la que Fluxo construye. Vive como DATA en registry/stacks/
+// <id>.yaml (id + label + description + capabilities). Estas funciones LEEN ese registry y lo tipan
+// para la UI (selector de "Proyecto nuevo", Settings, chips de filtro del Registry) y para el
+// fail-loud del scaffold (un stack fuera de esta lista NO es un stack real). Golden rule #1: cero
+// metodología en código — solo transportamos la data del registry.
+
+export interface StackInfo {
+  id: string;
+  label: string;
+  description: string;
+  capabilities: string[];
+}
+
+// listStacks: los stacks REALES del registry (registry/stacks/*.yaml, excluye README/no-yaml).
+// Orden estable por id. Un yaml que no parsea o sin `id` se saltea (no rompe la lista). label cae
+// al id si falta; description a "" — la UI siempre tiene algo que mostrar.
+export function listStacks(registryDir: string): StackInfo[] {
+  let files: string[];
+  try {
+    files = readdirSync(join(registryDir, "stacks"));
+  } catch {
+    return [];
+  }
+  const out: StackInfo[] = [];
+  for (const f of files.filter((n) => /\.ya?ml$/.test(n)).sort()) {
+    try {
+      const doc = yaml.load(readFileSync(join(registryDir, "stacks", f), "utf8")) as {
+        id?: unknown; label?: unknown; description?: unknown; capabilities?: unknown;
+      } | null;
+      const id = doc?.id != null ? String(doc.id).trim() : "";
+      if (!id) continue;
+      out.push({
+        id,
+        label: doc?.label != null && String(doc.label).trim() ? String(doc.label).trim() : id,
+        description: doc?.description != null ? String(doc.description).trim() : "",
+        capabilities: Array.isArray(doc?.capabilities) ? doc!.capabilities.map((c) => String(c).trim()).filter(Boolean) : [],
+      });
+    } catch {
+      continue;
+    }
+  }
+  return out;
+}
+
+// knownStackIds: solo los ids (el set de stacks reales). El fail-loud del scaffold lo usa como
+// AUTORIDAD: un `stack:` que no está acá es alucinado/inexistente → se surface, no degrada callado.
+export function knownStackIds(registryDir: string): string[] {
+  return listStacks(registryDir).map((s) => s.id);
+}
+
+// artifactStacks: los stacks a los que un artefacto (agent/skill/workflow/provider) pertenece,
+// leídos de su campo `stacks:` en el .yaml. La DECISIÓN de data-model: los artefactos SIN el campo
+// son COMPARTIDOS → default ["*"] (visibles para todo stack). NO se listan los artefactos dentro del
+// stack; el artefacto se auto-taggea. `stacks: ["*"]` explícito también = compartido.
+export function artifactStacks(yamlContent: string | null | undefined): string[] {
+  if (!yamlContent) return ["*"];
+  let doc: { stacks?: unknown } | null;
+  try {
+    doc = yaml.load(yamlContent) as { stacks?: unknown } | null;
+  } catch {
+    return ["*"];
+  }
+  if (!Array.isArray(doc?.stacks)) return ["*"];
+  const ids = doc!.stacks.map((s) => String(s).trim()).filter(Boolean);
+  return ids.length ? ids : ["*"];
+}
 
 export interface CapabilityProvisioning {
   // Resumen humano de lo que el usuario crea one-time (link guiado va en `guide`).
