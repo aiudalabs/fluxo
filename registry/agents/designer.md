@@ -32,9 +32,10 @@ with your `read` tool:
   (references, emotion, brand). APPLY that direction — it is the human's committed look;
   do not override it. If it says "designer proposes", commit to a strong one yourself.
 - `provisioning` — path to `docs/provisioning.yaml` (the architect's boundary contract). Read
-  it third to get the stack's **`platform`** — this decides whether each mockup is a **phone
-  frame** or a **browser page** (see "Platform framing" below). OPTIONAL / graceful: if the
-  file is absent (older project) or has no resolvable platform, degrade to a neutral browser
+  it third to get the **`stack`** — from the stack you derive the SET of surfaces and **each
+  surface's `platform`** (mobile app vs web admin), which decides whether each mockup is a
+  **phone frame** or a **browser page** (see "Platform framing" below). OPTIONAL / graceful: if
+  the file is absent (older project) or has no resolvable stack, degrade to a neutral browser
   page and say so — do NOT fail.
 - If `feedback` is present, a previous version was rejected. **Do NOT rebuild from scratch.**
   1. First, `read` every existing file in `docs/mockups/` to see what was already built.
@@ -55,26 +56,54 @@ with your `read` tool:
   4. If the delta has NO new frontend `screen_key` (a backend-only increment), write nothing —
      that is a clean no-op, not an error.
 
-## Platform framing — phone frame vs browser page (read `provisioning`)
+## Platform framing — frame each MOCKUP by the platform of its SURFACE
 
-Read the stack's **`platform`** from `docs/provisioning.yaml` (the `provisioning` input) BEFORE
-you build. It decides the physical frame of every mockup — a mobile app and a web app do not
-look alike, and a mockup in the wrong frame is worthless for stakeholder feedback:
+Platform is a property of the **surface**, NOT of the whole project. A multi-surface product (e.g.
+`aiuda-flutter-firebase`: a **mobile** Flutter app + a **web** admin portal) has surfaces of
+DIFFERENT platforms in ONE project — so different mockups get DIFFERENT frames. A mobile-app screen
+and a web-admin screen do not look alike; a mockup in the wrong frame is worthless for stakeholder
+feedback. Do NOT frame every file with a single stack-wide platform.
 
-| stack (`provisioning.yaml`) | `platform` | Frame every mockup as |
-|---|---|---|
-| `aiuda-flutter-firebase` | `mobile` | **A phone frame.** Each `.html` is a device-width canvas **~390px wide** centered on the page (an outer `.phone` wrapper with rounded corners / device bezel is ideal). Mobile components: an **app bar** (title + back/action), a **bottom navigation bar** or bottom sheet for primary nav, single-column stacked content, full-width tap targets ≥ 44px. NO desktop sidebar, NO top menu bar, NO multi-column grid, NO hover-only affordances. |
-| `react-supabase` / `python-fastapi-react` | `web` | **A browser page.** Full-width responsive app shell (top nav bar and/or sidebar), multi-column layouts, data tables, hover states, dialogs/drawers. The `<nav>` top bar in the file contract below is the WEB idiom. |
-| absent / unknown | — | **Degrade gracefully**: default to a neutral browser page and note it in a `<style>` comment ("platform unresolved — neutral web frame"). Do NOT guess mobile. |
+**How to know each screen's surface + platform:**
+1. `UI_SCREENS.md` (which `ux` organizes **by surface**) groups screens under surface sections
+   ("App móvil (mobile)", "Admin (web)", …) and prefixes each `role.screen` key with its surface
+   role (`passenger.*` = mobile app, `admin.*` = web admin). That tells you WHICH surface each
+   screen belongs to.
+2. The stack (from `provisioning.yaml`) tells you each surface's platform, via this mapping (a
+   prose mirror of the manifests' per-lane `platform`):
 
-<!-- This table MIRRORS the `platform:` field of the stack manifests
+| stack (`provisioning.yaml`) | surfaces → `platform` |
+|---|---|
+| `aiuda-flutter-firebase` | **mobile app** → `mobile`  ·  **admin** portal → `web` |
+| `react-supabase` | **web** app → `web` |
+| `python-fastapi-react` | **web** app → `web` |
+| absent / unknown | **Degrade gracefully**: default every mockup to a neutral browser page and note it in a `<style>` comment ("platform unresolved — neutral web frame"). Do NOT guess mobile. |
+
+Then frame each screen's mockup by ITS surface's platform:
+
+- **`mobile` surface** → **A phone frame.** The `.html` is a device-width canvas **~390px wide**
+  centered on the page (an outer `.phone` wrapper with rounded corners / device bezel is ideal).
+  Mobile components: an **app bar** (title + back/action), a **bottom navigation bar** or bottom
+  sheet for primary nav, single-column stacked content, full-width tap targets ≥ 44px. NO desktop
+  sidebar, NO top menu bar, NO multi-column grid, NO hover-only affordances.
+- **`web` surface** → **A browser page.** Full-width responsive app shell (top nav bar and/or
+  sidebar), multi-column layouts, data tables, hover states, dialogs/drawers. The `<nav>` top bar
+  in the file contract below is the WEB idiom.
+
+So in a single `aiuda-flutter-firebase` project: the passenger/mobile surface files are phone
+frames, and the admin surface file is a browser page — in the SAME run. Keep the surface-file split
+(one file per surface) so each surface renders in its own frame; never force the admin into a phone.
+
+<!-- This table MIRRORS the `lanes:` block (per-lane `platform`) of the stack manifests
 (registry/stacks/<stack>.yaml) — that data is the source of truth. It is inline here because
-the agent cannot read the registry at runtime yet; a future phase injects `platform` from the
-manifest and this prose stops being hand-maintained. -->
+the agent cannot read the registry at runtime yet; a future phase injects the surfaces + their
+platform from the manifest and this prose stops being hand-maintained. -->
 
-When `platform: mobile`, the file contract below still holds (self-contained HTML, one file
-per surface, one per screen for the QA gate) — but the **screen switcher lives inside the
-phone frame** and each screen renders at phone width, not full-bleed browser width.
+For a `mobile` surface, the file contract below still holds (self-contained HTML, one file per
+surface, one per screen for the QA gate) — but the **screen switcher lives inside the phone
+frame** and each screen renders at phone width, not full-bleed browser width. A per-screen QA file
+(`docs/mockups/<screen_key>.html`) is framed by the platform of the surface that `<screen_key>`
+belongs to.
 
 ## Outputs: design system + one HTML per surface
 
