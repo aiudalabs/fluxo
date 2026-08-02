@@ -119,10 +119,53 @@ export interface GithubTarget {
   declaredOutputs?: string[];
 }
 
-// resolveScaffoldVars arma las {{vars}} del scaffold desde el workdir (al momento del handoff los
-// docs ya están cosechados). Solo pone las que puede resolver bien; las que faltan (design_tokens,
-// path_map_*) dejan sus archivos sin emitir — buildScaffold los reporta y el handoff los loguea.
-function resolveScaffoldVars(workdir: string, projectName: string, stories: StorySeed[]): ScaffoldVars {
+// El shape (laxo) del manifest del stack que necesitamos para el path-map + vars de scaffold.
+interface StackLane { agent?: unknown; platform?: unknown; paths?: unknown }
+interface StackManifest { lanes?: Record<string, StackLane | null>; validation_commands?: unknown; design_tokens?: unknown }
+
+// stackScaffoldVars: deriva del manifest del stack (registry/stacks/<stack>.yaml) las {{vars}} de
+// scaffold que dependen del STACK (no del backlog): los path-maps por lane, los comandos de validación
+// y el bloque de design tokens. El path-map se PARTE por `platform`: una lane con `platform` es de
+// FRONTEND (su superficie tiene UI); sin `platform`, es de BACKEND. Cada lane rinde un bullet
+// `- \`glob\`, \`glob\` — <agent>` (markdown, como {{lanes}}), y buildScaffold lo dropea donde el
+// template pone el bloque. Degradación graceful: manifest ausente/ilegible, sin `lanes`, o un campo
+// faltante → esa var queda `undefined` (buildScaffold saltea+reporta el archivo, como antes — nunca
+// se shippea un `{{placeholder}}` a medias). No lanza: un stack roto degrada a las vars que sí resuelvan.
+export function stackScaffoldVars(registryDir: string, stack: string): Partial<ScaffoldVars> {
+  let doc: StackManifest | null;
+  try {
+    doc = yaml.load(readFileSync(join(registryDir, "stacks", `${stack}.yaml`), "utf8")) as StackManifest | null;
+  } catch {
+    return {}; // sin manifest legible → nada que derivar (degradá)
+  }
+  if (!doc || typeof doc !== "object") return {};
+
+  const out: Partial<ScaffoldVars> = {};
+  const lanes = doc.lanes && typeof doc.lanes === "object" ? doc.lanes : {};
+  const frontend: string[] = [];
+  const backend: string[] = [];
+  for (const [surface, lane] of Object.entries(lanes)) {
+    if (!lane || typeof lane !== "object") continue;
+    const paths = Array.isArray(lane.paths) ? lane.paths.map((p) => String(p).trim()).filter(Boolean) : [];
+    if (!paths.length) continue; // una lane sin paths no aporta al path-map
+    const agent = lane.agent != null && String(lane.agent).trim() ? String(lane.agent).trim() : surface;
+    const bullet = `- ${paths.map((p) => `\`${p}\``).join(", ")} — ${agent}`;
+    (lane.platform ? frontend : backend).push(bullet);
+  }
+  if (frontend.length) out.path_map_frontend = frontend.join("\n");
+  if (backend.length) out.path_map_backend = backend.join("\n");
+  if (typeof doc.validation_commands === "string" && doc.validation_commands.trim()) out.validation_commands = doc.validation_commands.trim();
+  if (typeof doc.design_tokens === "string" && doc.design_tokens.trim()) out.design_tokens = doc.design_tokens.trim();
+  return out;
+}
+
+// resolveScaffoldVars arma las {{vars}} del scaffold desde el workdir (al momento del handoff los docs
+// ya están cosechados) + el manifest del stack (registryDir). Las vars stack-derivadas (path_map_*,
+// validation_commands, design_tokens) salen de stackScaffoldVars — antes quedaban sin resolver y
+// SALTEABAN CLAUDE.md/AGENTS.md/instructions enteros (el repo del cliente se shippeaba sin
+// constitución). Solo pone las que puede resolver bien; las que falten dejan sus archivos sin emitir
+// — buildScaffold los reporta y el handoff los loguea (honesto, no `{{placeholder}}` a medias).
+function resolveScaffoldVars(workdir: string, projectName: string, stories: StorySeed[], registryDir?: string): ScaffoldVars {
   // stack: de docs/provisioning.yaml (§machine-readable del architect). Sin él → solo _common.
   let stack: string | undefined;
   try {
@@ -134,12 +177,16 @@ function resolveScaffoldVars(workdir: string, projectName: string, stories: Stor
   const laneSet = [...new Set(stories.map((s) => s.lane).filter((l): l is string => !!l && l.trim() !== ""))];
   const lanes = laneSet.length ? laneSet.map((l) => `- ${l}`).join("\n") : undefined;
 
+  // path_map_*/validation_commands/design_tokens: del manifest del stack (si tenemos stack + registryDir).
+  const stackVars = stack && registryDir ? stackScaffoldVars(registryDir, stack) : {};
+
   return {
     project_name: projectName,
     stack,
     language: "es",          // ICP LATAM/español (default; el wizard lo fijará por proyecto — F9)
     lanes,
     art_director: "on",      // el juez-visión se auto-saltea sin screen_key/mockup (P2-1 lo endurece)
+    ...stackVars,            // path_map_backend, path_map_frontend, validation_commands, design_tokens
   };
 }
 
@@ -196,7 +243,7 @@ async function publishToGithub(store: SupabaseDesignStore, workdir: string, gh: 
   // Scaffold: el canal de build + el HARNESS DE VERIFY (e2e-verify/provisioning-lint/ui-verify +
   // .fluxo/verify/**). Se construye acá (workdir con docs → stack + lanes). Los archivos que aún
   // necesitan una var sin resolver NO se emiten y se loguean (no shippear `{{placeholder}}`).
-  const vars = resolveScaffoldVars(workdir, gh.projectName, stories);
+  const vars = resolveScaffoldVars(workdir, gh.projectName, stories, gh.registryDir);
   const { files, skipped, unknownStack, availableStacks } = buildScaffold(gh.registryDir, vars);
   // FAIL-LOUD (2026-07-29): el proyecto declaró un stack SIN template → solo se emitió `_common`, o sea
   // SIN la persona de frontend, las instructions ni el gate `ui-verify` (calidad de UI sin verificar).

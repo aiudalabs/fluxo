@@ -4,6 +4,7 @@ import { fileURLToPath } from "node:url";
 import { dirname, resolve } from "node:path";
 import yaml from "js-yaml";
 import { buildScaffold, substitute, leftoverVars, type ScaffoldVars } from "./scaffold.ts";
+import { stackScaffoldVars } from "./handoff.ts";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const registryDir = resolve(here, "..", "..", "registry"); // design/src → fluxo/registry
@@ -130,6 +131,47 @@ test("los archivos con vars sin generador (AGENTS/CLAUDE/frontend.instructions) 
   // el skip reporta QUÉ var falta (para el follow-up del generador)
   const agents = skipped.find((s) => s.path === "AGENTS.md")!;
   assert.ok(agents.missing.includes("path_map_backend"));
+});
+
+// ── El fix del scaffold: CLAUDE.md (la constitución) EMITE con las vars del manifest ────────────────
+// BUG pre-existente: CLAUDE.md/AGENTS.md/instructions se SALTEABAN en TODOS los stacks porque
+// {{path_map_frontend}} · {{path_map_backend}} · {{validation_commands}} · {{design_tokens}} nunca se
+// resolvían — el repo del cliente se shippeaba SIN constitución ni path-map. stackScaffoldVars ahora las
+// deriva del manifest del stack (registry/stacks/<stack>.yaml). Este test cubre los 3 stacks reales y
+// caza la regresión: si la derivación se rompe, CLAUDE.md vuelve a `skipped` → falla acá.
+for (const stack of ["aiuda-flutter-firebase", "react-supabase", "python-fastapi-react"]) {
+  test(`buildScaffold (${stack}) EMITE CLAUDE.md + AGENTS.md con las vars del manifest (cero leftoverVars)`, () => {
+    const derived = stackScaffoldVars(registryDir, stack);
+    // El manifest debe aportar las 4 vars stack-derivadas (si no, el fix no cura el skip).
+    assert.ok(derived.path_map_frontend, `${stack}: manifest sin path_map_frontend derivado`);
+    assert.ok(derived.path_map_backend, `${stack}: manifest sin path_map_backend derivado`);
+    assert.ok(derived.validation_commands, `${stack}: manifest sin validation_commands`);
+    assert.ok(derived.design_tokens, `${stack}: manifest sin design_tokens`);
+
+    const vars: ScaffoldVars = {
+      project_name: "Acme", stack, language: "es",
+      lanes: "- backend\n- frontend", art_director: "on", ...derived,
+    };
+    const { files, skipped } = buildScaffold(registryDir, vars);
+    const emitted = new Map(files.map((f) => [f.path, f.content]));
+    // CLAUDE.md (el bug exacto) + AGENTS.md ahora EMITEN — ya no en `skipped`, y sin placeholders.
+    for (const must of ["CLAUDE.md", "AGENTS.md"]) {
+      assert.ok(emitted.has(must), `${stack}: ${must} debería EMITIRSE (era el bug: se salteaba). skipped=${JSON.stringify(skipped.map((s) => s.path))}`);
+      assert.deepEqual(leftoverVars(emitted.get(must)!), [], `${stack}: ${must} con vars sin resolver`);
+    }
+    // CLAUDE.md contiene de verdad el project_name + el path-map renderizado (no un stub vacío).
+    const claude = emitted.get("CLAUDE.md")!;
+    assert.match(claude, /Acme/, `${stack}: CLAUDE.md sin project_name`);
+    assert.ok(claude.includes(derived.path_map_backend!), `${stack}: CLAUDE.md sin el path_map_backend`);
+  });
+}
+
+// Degradación graceful: sin stack o sin registryDir → stackScaffoldVars/skip como antes (no crashea).
+test("stackScaffoldVars degrada limpio: stack inexistente → {}; sin él CLAUDE.md se saltea (no crashea)", () => {
+  assert.deepEqual(stackScaffoldVars(registryDir, "no-such-stack"), {}, "un stack sin manifest no debe derivar vars");
+  const { files, skipped } = buildScaffold(registryDir, { project_name: "Demo", stack: "react-supabase" }); // sin las vars derivadas
+  assert.ok(!new Set(files.map((f) => f.path)).has("CLAUDE.md"), "sin las vars derivadas, CLAUDE.md se saltea (degradación previa intacta)");
+  assert.ok(new Set(skipped.map((s) => s.path)).has("CLAUDE.md"), "CLAUDE.md debe reportarse en skipped");
 });
 
 test("e2e-verify y provisioning-lint son BLOQUEANTES (sin continue-on-error) — cierra L-AUTO-3", () => {
