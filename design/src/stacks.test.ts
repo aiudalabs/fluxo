@@ -76,7 +76,7 @@ test("base-agents: el catálogo del registry incluye supabase-dev y react-web-de
 const PLATFORMS = ["mobile", "web"];
 const BACKENDS = ["firebase", "supabase", "fastapi"];
 
-type LaneCfg = { agent?: string; platform?: string };
+type LaneCfg = { agent?: string; platform?: string; paths?: string[] };
 const lanesOf = (id: string): Record<string, LaneCfg> =>
   (yaml.load(readFileSync(join(registryDir, "stacks", `${id}.yaml`), "utf8")) as { lanes?: Record<string, LaneCfg> }).lanes ?? {};
 
@@ -133,18 +133,19 @@ test("stacks.lanes: cada lane {agent,platform?} — agent existe+tagueado, platf
 // platform:web; la lane admin de flutter-firebase (react-dev) es platform:web (browser, NO teléfono —
 // el bug que Fase 3b arregla); la app móvil es platform:mobile; las lanes de backend NO llevan platform.
 test("stacks.lanes: el mapeo exacto por stack — agent + platform por superficie", () => {
+  // `paths` (por lane) = el path-ownership que el scaffold rinde en {{path_map_*}} de CLAUDE.md/AGENTS.md.
   assert.deepEqual(lanesOf("aiuda-flutter-firebase"), {
-    mobile: { agent: "flutter-dev", platform: "mobile" },
-    backend: { agent: "firebase-dev" },
-    admin: { agent: "react-dev", platform: "web" },
+    mobile: { agent: "flutter-dev", platform: "mobile", paths: ["apps/**", "packages/**"] },
+    backend: { agent: "firebase-dev", paths: ["functions/**", "packages-ts/**", "firestore.rules", "firestore.indexes.json", "database.rules.json", "storage.rules"] },
+    admin: { agent: "react-dev", platform: "web", paths: ["admin/**"] },
   });
   assert.deepEqual(lanesOf("react-supabase"), {
-    web: { agent: "react-web-dev", platform: "web" },
-    backend: { agent: "supabase-dev" },
+    web: { agent: "react-web-dev", platform: "web", paths: ["src/**", "index.html", "vite.config.ts"] },
+    backend: { agent: "supabase-dev", paths: ["supabase/**"] },
   });
   assert.deepEqual(lanesOf("python-fastapi-react"), {
-    backend: { agent: "python-dev" },
-    web: { agent: "react-web-dev", platform: "web" },
+    backend: { agent: "python-dev", paths: ["src/**", "alembic/**", "tests/**"] },
+    web: { agent: "react-web-dev", platform: "web", paths: ["frontend/**"] },
   });
 });
 

@@ -37,7 +37,32 @@ capabilities:
 # `platform: web` aunque el stack sea "de apps móviles" — es un portal admin de browser; framearlo como
 # teléfono es el bug que este esquema per-lane arregla. `react-dev` acá es SOLO la lane admin, NUNCA el
 # frontend web genérico — ese es `react-web-dev` (ver react-supabase.yaml / python-fastapi-react.yaml).
+# `paths` (por lane): los globs que la lane POSEE — la fuente de verdad del path-ownership que el
+# scaffold rinde en CLAUDE.md/AGENTS.md ({{path_map_frontend}} = unión de las lanes con `platform`;
+# {{path_map_backend}} = las sin `platform`). Confirmados contra el `applyTo:` de cada
+# .github/instructions/*.instructions.md.tmpl de este stack. Una lane sin `paths` no aporta al
+# path-map (degradación limpia).
 lanes:
-  mobile: { agent: flutter-dev, platform: mobile }
-  backend: { agent: firebase-dev }
-  admin: { agent: react-dev, platform: web }
+  mobile: { agent: flutter-dev, platform: mobile, paths: [apps/**, packages/**] }
+  backend: { agent: firebase-dev, paths: [functions/**, packages-ts/**, firestore.rules, firestore.indexes.json, database.rules.json, storage.rules] }
+  admin: { agent: react-dev, platform: web, paths: [admin/**] }
+
+# validation_commands: los comandos EXACTOS que la CI corre en cada PR (espejo de
+# .github/workflows/test-verify.yml.tmpl de este stack) — el bloque {{validation_commands}} de
+# CLAUDE.md/AGENTS.md. Se rinde verbatim (fenced code) donde el template pone el gate.
+validation_commands: |
+  ```bash
+  # Flutter — en cada paquete con carpeta test/ (apps + packages)
+  flutter pub get && flutter test
+  # Cloud Functions (Node 20 + TypeScript)
+  cd functions && npm ci && npm test
+  ```
+# design_tokens: el bloque {{design_tokens}} de las instructions de frontend (app.instructions). Los
+# valores concretos (paleta, tipografía, spacing, radii) los fija la fase de DISEÑO por-proyecto y
+# viven en los docs del repo; a nivel stack apuntamos al agente a esos docs (degradación honesta: sin
+# tokens per-proyecto en el manifest, no inventamos hex codes).
+design_tokens: |
+  Los design tokens comprometidos de este producto (paleta, escala tipográfica, spacing, radii,
+  sombras) están especificados en `docs/UI_SCREENS.md` (sección de design tokens) y
+  `docs/OPINIONATED_DEFAULTS.md`. Aplicá esos valores exactos vía `ThemeData` + `google_fonts` — no
+  inventes colores ni tamaños por pantalla; un valor que falte es un gap de diseño para levantar en el issue.

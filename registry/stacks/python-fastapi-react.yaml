@@ -29,6 +29,27 @@ capabilities: []
 # de BACKEND no. El frontend web va a `react-web-dev` (NO `react-dev`, que es la lane admin de
 # aiuda-flutter-firebase); el backend FastAPI a `python-dev`. El scrum-master asigna el `owner` y
 # ux/designer el encuadre según ESTE mapeo (hoy espejado en prosa; futura fase lo inyecta desde acá).
+# `paths` (por lane): los globs que la lane POSEE — la fuente de verdad del path-ownership que el
+# scaffold rinde en CLAUDE.md/AGENTS.md ({{path_map_frontend}} = lanes con `platform`;
+# {{path_map_backend}} = las sin `platform`). Confirmados contra el `applyTo:` de cada
+# .github/instructions/*.instructions.md.tmpl de este stack.
 lanes:
-  backend: { agent: python-dev }
-  web: { agent: react-web-dev, platform: web }
+  backend: { agent: python-dev, paths: [src/**, alembic/**, tests/**] }
+  web: { agent: react-web-dev, platform: web, paths: [frontend/**] }
+
+# validation_commands: los comandos EXACTOS que la CI corre en cada PR (espejo de
+# .github/workflows/test-verify.yml.tmpl) — el bloque {{validation_commands}} de CLAUDE.md/AGENTS.md.
+validation_commands: |
+  ```bash
+  # Backend (FastAPI + pytest)
+  cd backend && pip install -e ".[dev]" && pytest
+  # Frontend (React + Vite)
+  cd frontend && npm ci && npm test
+  ```
+# design_tokens: el bloque {{design_tokens}} de las instructions de frontend. Los valores concretos los
+# fija la fase de DISEÑO por-proyecto y viven en los docs del repo; a nivel stack apuntamos a esos docs.
+design_tokens: |
+  Los design tokens comprometidos de este producto (paleta, escala tipográfica, spacing, radii,
+  sombras) están especificados en `docs/UI_SCREENS.md` (sección de design tokens) y
+  `docs/OPINIONATED_DEFAULTS.md`. Aplicá esos valores exactos vía el theme de Tailwind / CSS variables —
+  no inventes colores ni tamaños por pantalla; un valor que falte es un gap de diseño para levantar en el issue.
