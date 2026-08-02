@@ -110,6 +110,46 @@ test("stacks.lanes: el mapeo exacto por stack (web→react-web-dev, admin→reac
   assert.deepEqual(lanesOf("python-fastapi-react"), { backend: "python-dev", web: "react-web-dev" });
 });
 
+// ── FASE 3a: platform/backend en cada manifest (data, la FUENTE DE VERDAD de la FORMA del stack para
+// las fases de diseño). `platform` (mobile|web) → ux/designer enmarcan las pantallas/mockups; `backend`
+// (firebase|supabase|fastapi) → el data-modeler modela el paradigma correcto. Los agentes lo ESPEJAN
+// en prosa hoy; una fase futura lo inyecta desde estos campos. Estos tests fijan el contrato.
+const PLATFORMS = ["mobile", "web"];
+const BACKENDS = ["firebase", "supabase", "fastapi"];
+
+test("stacks.platform/backend: los valores esperados por stack", () => {
+  const metaOf = (id: string) =>
+    yaml.load(readFileSync(join(registryDir, "stacks", `${id}.yaml`), "utf8")) as { platform?: string; backend?: string };
+  const expected: Record<string, { platform: string; backend: string }> = {
+    "aiuda-flutter-firebase": { platform: "mobile", backend: "firebase" },
+    "react-supabase": { platform: "web", backend: "supabase" },
+    "python-fastapi-react": { platform: "web", backend: "fastapi" },
+  };
+  for (const [id, want] of Object.entries(expected)) {
+    const doc = metaOf(id);
+    assert.equal(doc.platform, want.platform, `${id}.platform esperado «${want.platform}», vi «${doc.platform}»`);
+    assert.equal(doc.backend, want.backend, `${id}.backend esperado «${want.backend}», vi «${doc.backend}»`);
+  }
+});
+
+// Contrato para TODO manifest (caza el drift de un stack nuevo sin platform/backend, o con un valor
+// fuera del set cerrado): cada manifest con id declara platform∈{mobile,web} y backend∈{firebase,
+// supabase,fastapi}. Espeja el patrón de la aserción `lanesSeen >= 7`.
+test("stacks.platform/backend: todo manifest declara platform∈{mobile,web} y backend∈{firebase,supabase,fastapi}", () => {
+  const stackFiles = readdirSync(join(registryDir, "stacks")).filter((n) => /\.ya?ml$/.test(n));
+  let seen = 0;
+  for (const f of stackFiles) {
+    const doc = yaml.load(readFileSync(join(registryDir, "stacks", f), "utf8")) as
+      | { id?: string; platform?: string; backend?: string }
+      | null;
+    if (!doc?.id) continue;
+    seen++;
+    assert.ok(PLATFORMS.includes(String(doc.platform)), `${doc.id}.platform inválido: «${doc.platform}» (∉ ${JSON.stringify(PLATFORMS)})`);
+    assert.ok(BACKENDS.includes(String(doc.backend)), `${doc.id}.backend inválido: «${doc.backend}» (∉ ${JSON.stringify(BACKENDS)})`);
+  }
+  assert.ok(seen >= 3, `esperaba ≥3 manifests con platform/backend, vi ${seen}`);
+});
+
 test("artifactStacks: contenido nulo/sin stacks/`stacks: []` → COMPARTIDO ['*']", () => {
   assert.deepEqual(artifactStacks(null), ["*"]);
   assert.deepEqual(artifactStacks("id: x\nversion: 1"), ["*"]);
