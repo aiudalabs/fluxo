@@ -8,6 +8,14 @@ id: react-supabase
 # label/description: el stack como cosa SELECCIONABLE (data para la UI).
 label: React + Supabase
 description: Web app con backend Supabase (Postgres).
+# platform / backend: la FORMA del stack (data, fuente de verdad) que las fases de DISEÑO leen para
+# encuadrar su salida. `platform` (mobile|web) dirige el encuadre de UI/mockups: web → layouts de browser
+# (top nav, breakpoints responsive). `backend` (firebase|supabase|fastapi) es el PARADIGMA de datos (NO
+# solo el store, para no conflacionar supabase vs fastapi): supabase → Postgres relacional + RLS policies
+# en la DB. Hoy el data-modeler/ux/designer lo ESPEJAN en prosa (el agente no lee el registry en runtime);
+# una fase futura lo inyecta desde acá sin re-escribir la persona.
+platform: web
+backend: supabase
 # capabilities — integraciones externas BYO que el stack necesita (registry/capabilities/<id>.yaml).
 # Hoy no hay una capability `supabase` declarada en el registry → [] (degrada limpio: sin frontera
 # humana automática). Sumar la capability cuando exista es data, cero código.

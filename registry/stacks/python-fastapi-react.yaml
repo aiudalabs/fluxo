@@ -8,6 +8,14 @@ id: python-fastapi-react
 # label/description: el stack como cosa SELECCIONABLE (data para la UI).
 label: Python + React
 description: Backend Python/FastAPI + frontend React.
+# platform / backend: la FORMA del stack (data, fuente de verdad) que las fases de DISEÑO leen para
+# encuadrar su salida. `platform` (mobile|web) dirige el encuadre de UI/mockups: web → layouts de browser
+# (top nav, breakpoints responsive). `backend` (firebase|supabase|fastapi) es el PARADIGMA de datos (NO
+# solo el store, para no conflacionar supabase vs fastapi): fastapi → Postgres relacional + SQLAlchemy +
+# authz en la capa de app (NO RLS en la DB). Hoy el data-modeler/ux/designer lo ESPEJAN en prosa (el agente
+# no lee el registry en runtime); una fase futura lo inyecta desde acá sin re-escribir la persona.
+platform: web
+backend: fastapi
 # capabilities — integraciones externas BYO que el stack necesita (registry/capabilities/<id>.yaml).
 # El default corre local/emulado (Postgres en prod, SQLite en dev) → sin frontera humana obligatoria.
 # [] hoy; sumar capabilities es data, cero código.

@@ -10,6 +10,15 @@ id: aiuda-flutter-firebase
 # nuevo", Settings y los chips de filtro del Registry). Español criollo, una línea.
 label: Flutter + Firebase
 description: Apps móviles iOS/Android con backend Firebase.
+# platform / backend: la FORMA del stack (data, fuente de verdad) que las fases de DISEÑO leen para
+# encuadrar su salida. `platform` (mobile|web) dirige el encuadre de UI/mockups: mobile → pantallas de
+# teléfono (bottom nav, phone frame ~390px); web → layouts de browser (top nav, breakpoints). `backend`
+# (firebase|supabase|fastapi) es el PARADIGMA de datos (NO solo el store, para no conflacionar supabase
+# vs fastapi): firebase → Firestore documental; supabase → Postgres relacional + RLS en la DB; fastapi →
+# Postgres relacional + authz en la capa de app. Hoy el data-modeler/ux/designer lo ESPEJAN en prosa (el
+# agente no lee el registry en runtime); una fase futura lo inyecta desde acá sin re-escribir la persona.
+platform: mobile
+backend: firebase
 capabilities:
   - firebase
 # lanes: el mapeo SUPERFICIE → agente-dev de este stack (data, la FUENTE DE VERDAD del ruteo de
