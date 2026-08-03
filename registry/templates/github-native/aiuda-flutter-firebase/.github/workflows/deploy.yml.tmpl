@@ -84,6 +84,9 @@ jobs:
         run: |
           set -euo pipefail
           flutter config --enable-web
+          # Asegura el soporte web/ si la app se creo mobile-only (idempotente, no pisa lo existente).
+          # Sin esto `flutter build web` falla con "This project is not configured for the web".
+          flutter create . --platforms web >/dev/null 2>&1 || echo "flutter create web best-effort"
           # `flutter build web` corre pub get; genera build/web (lo que firebase.json publica).
           flutter build web --release
 

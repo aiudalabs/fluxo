@@ -69,7 +69,14 @@ jobs:
       - name: Build Flutter web
         if: ${{ env.APP_PATH != '' }}
         working-directory: ${{ env.APP_PATH }}
-        run: flutter build web
+        run: |
+          set -euo pipefail
+          flutter config --enable-web
+          # Asegura el soporte web/ si la app se creo mobile-only (el agente no siempre habilita la
+          # plataforma web) — idempotente: no pisa lo existente. Sin esto `flutter build web` falla con
+          # "This project is not configured for the web".
+          flutter create . --platforms web >/dev/null 2>&1 || echo "flutter create web best-effort"
+          flutter build web
 
       - name: Serve the web build
         if: ${{ env.APP_PATH != '' }}
