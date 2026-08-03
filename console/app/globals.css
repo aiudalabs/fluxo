@@ -3181,6 +3181,12 @@ details.log-row[open] > summary::before {
 .tickets-head .sp {
   flex: 1;
 }
+/* Panel "Pedir incremento" desplegado desde el header del board: mismos gutters
+   que head/toolbar (suelto quedaba edge-to-edge pegado a ambos). */
+.tickets-inc {
+  flex: none;
+  padding: 0 clamp(20px, 2.4vw, 48px) 12px;
+}
 /* Tabs de vista (kanban/tabla/sprints/grafo): segmented control M3. */
 .tickets-tabs {
   display: flex;
@@ -5628,9 +5634,11 @@ main:has(.studio-shell) > .studio-shell {
 /* Mission Control: el diagrama del ciclo usa los tokens de la consola → flipea con el tema. */
 .cyc {
   --cyc-orange: var(--accent);
-  --cyc-orange-soft: var(--accent-soft);
+  /* Tintes SÓLIDOS (mix sobre superficie, no alpha): los fills translúcidos
+     desaparecían sobre el canvas near-black del tema dark. */
+  --cyc-orange-soft: color-mix(in srgb, var(--accent) 16%, var(--md-surface-container-low));
   --cyc-blue: var(--cyan);
-  --cyc-blue-soft: var(--cyan-soft);
+  --cyc-blue-soft: color-mix(in srgb, var(--cyan) 16%, var(--md-surface-container-low));
   --cyc-amber: var(--amber);
   --cyc-fail: var(--danger);
   --cyc-ink: var(--ink);
@@ -6055,7 +6063,7 @@ main:has(.studio-shell) > .studio-shell {
 .entry-stack-lbl { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 6px; }
 .entry-stack-lbl > span { font: var(--type-label-lg); color: var(--md-on-surface-variant); }
 .entry-stack-help-btn { background: transparent; border: 0; padding: 0; cursor: pointer;
-  font: var(--type-label-md); color: var(--md-primary); text-decoration: underline; }
+  font: var(--type-label); color: var(--md-primary); text-decoration: underline; }
 .entry-stack-sel {
   width: 100%; min-height: var(--field-h); padding: 0 14px;
   border: 1px solid var(--md-outline); border-radius: var(--shape-sm);

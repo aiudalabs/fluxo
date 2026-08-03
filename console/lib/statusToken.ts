@@ -10,10 +10,15 @@ export interface StatusToken {
   pill: string;
   /** Color fuerte (headers de columna, conteos, leyenda). */
   color: string;
-  /** Fondo suave (nodos del grafo, chips). */
+  /** Fondo suave (chips translúcidos sobre panel). */
   soft: string;
   /** Borde del nodo en el grafo. */
   border: string;
+  /** Superficie SÓLIDA del nodo (par container M3 — los fondos translúcidos
+      desaparecían sobre el canvas oscuro del grafo). */
+  container: string;
+  /** Texto sobre `container` (contraste garantizado en ambos temas). */
+  onContainer: string;
   /** Glifo compacto (grafo / leyenda). */
   icon: string;
 }
@@ -33,27 +38,35 @@ export const STATUS_TOKENS: Record<TicketStatus, StatusToken> = {
     color: "var(--ink4)",
     soft: "var(--bg3)",
     border: "var(--stroke-strong)",
+    container: "var(--md-surface-container-high)",
+    onContainer: "var(--md-on-surface-variant)",
     icon: "⏳",
   },
   ready: {
     pill: "ready",
     color: "var(--cyan)",
     soft: "var(--cyan-soft)",
-    border: "color-mix(in srgb, var(--cyan) 40%, transparent)",
+    border: "var(--cyan)",
+    container: "var(--md-tertiary-container)",
+    onContainer: "var(--md-on-tertiary-container)",
     icon: "⟳",
   },
   running: {
     pill: "run_",
     color: "var(--accent)",
     soft: "var(--accent-soft)",
-    border: "var(--accent-line)",
+    border: "var(--accent)",
+    container: "var(--md-primary-container)",
+    onContainer: "var(--md-on-primary-container)",
     icon: "⟳",
   },
   in_review: {
     pill: "review",
     color: "var(--amber)",
     soft: "var(--amber-soft)",
-    border: "color-mix(in srgb, var(--amber) 40%, transparent)",
+    border: "var(--amber)",
+    container: "var(--md-warning-container)",
+    onContainer: "var(--md-on-warning-container)",
     icon: "⌾",
   },
   done: {
@@ -61,6 +74,8 @@ export const STATUS_TOKENS: Record<TicketStatus, StatusToken> = {
     color: "var(--emerald)",
     soft: "var(--emerald-soft)",
     border: "var(--emerald)",
+    container: "var(--md-success-container)",
+    onContainer: "var(--md-on-success-container)",
     icon: "✓",
   },
   failed: {
@@ -68,6 +83,8 @@ export const STATUS_TOKENS: Record<TicketStatus, StatusToken> = {
     color: "var(--danger)",
     soft: "var(--danger-soft)",
     border: "var(--danger)",
+    container: "var(--md-error-container)",
+    onContainer: "var(--md-on-error-container)",
     icon: "✗",
   },
 };
@@ -86,5 +103,7 @@ export const AGENT_LOST_TOKEN: StatusToken = {
   color: "var(--danger)",
   soft: "var(--danger-soft)",
   border: "var(--danger)",
+  container: "var(--md-error-container)",
+  onContainer: "var(--md-on-error-container)",
   icon: "⚠",
 };

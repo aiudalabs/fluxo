@@ -35,10 +35,12 @@ import { STATUS_ORDER, statusToken } from "@/lib/statusToken";
 
 function nodeStyle(s: TicketStatus) {
   const tok = statusToken(s);
+  // Par container/on-container M3: superficie SÓLIDA — los fondos translúcidos
+  // (tok.soft) desaparecían sobre el canvas near-black del tema dark.
   return {
-    background: s === "backlog" ? "var(--md-surface-container-lowest)" : tok.soft,
+    background: tok.container,
     borderColor: tok.border,
-    color: s === "backlog" ? "var(--md-on-surface-variant)" : tok.color,
+    color: tok.onContainer,
   };
 }
 
@@ -378,7 +380,7 @@ function DepGraphInner({ tickets, onOpenTicket }: DepGraphProps) {
           const tok = statusToken(s);
           return (
             <span key={s} className="lg">
-              <i style={{ background: s === "backlog" ? "var(--md-surface-container-lowest)" : tok.soft, borderColor: tok.border }} />
+              <i style={{ background: tok.container, borderColor: tok.border }} />
               {t(`tickets.statusLabel.${s}`)}
             </span>
           );

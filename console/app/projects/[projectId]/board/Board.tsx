@@ -72,6 +72,7 @@ export default function Board() {
   const [sprintMeta, setSprintMeta] = useState<SprintMeta[]>([]);
   const [state, setState] = useState<"loading" | "ready" | "error">("loading");
   const [view, setView] = useState<ViewKind>("kanban");
+  const [showInc, setShowInc] = useState(false); // "Pedir incremento" colapsado (botón en el header)
   const [q, setQ] = useState("");
   const [fStatus, setFStatus] = useState<TicketStatus | "all">("all");
   const [fSprint, setFSprint] = useState("all");
@@ -264,10 +265,19 @@ export default function Board() {
             </button>
           ))}
         </div>
+        <button className={`btn sm${showInc ? " primary" : " tonal"}`} onClick={() => setShowInc((v) => !v)}>
+          ＋ Pedir incremento
+        </button>
       </div>
 
-      {/* Pedir incremento también desde el board (además del Overview y el AI Assistant). */}
-      <IncrementRequest />
+      {/* Pedir incremento también desde el board (además del Overview y el AI Assistant).
+          Colapsado tras el botón del header: expandido de fábrica se incrustaba sin
+          separación entre el header y la toolbar. */}
+      {showInc && (
+        <div className="tickets-inc">
+          <IncrementRequest />
+        </div>
+      )}
 
       <div className="tickets-toolbar">
         <input className="inp" style={{ width: 220 }} placeholder={t("tickets.toolbar.search")} value={q} onChange={(e) => setQ(e.target.value)} />

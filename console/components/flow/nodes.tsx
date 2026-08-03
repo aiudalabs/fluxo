@@ -83,14 +83,15 @@ export interface StoryNodeData extends Record<string, unknown> {
   screenKey?: string;
 }
 
-// El par tonal viene de statusToken (única fuente); backlog es el estado SIN rol
-// → superficie neutra M3 (surface-container-high + on-surface-variant).
+// El par tonal viene de statusToken (única fuente). container/on-container:
+// superficie SÓLIDA M3 — los fondos translúcidos (tok.soft) desaparecían
+// sobre el canvas near-black del tema dark.
 function storyNodeStyle(s: TicketStatus) {
   const tok = statusToken(s);
   return {
-    background: s === "backlog" ? "var(--md-surface-container-high)" : tok.soft,
+    background: tok.container,
     borderColor: s === "backlog" ? "var(--md-outline-variant)" : tok.border,
-    color: s === "backlog" ? "var(--md-on-surface-variant)" : tok.color,
+    color: tok.onContainer,
   };
 }
 
