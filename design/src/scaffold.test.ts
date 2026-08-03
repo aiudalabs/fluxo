@@ -188,10 +188,15 @@ test("stackScaffoldVars (aiuda-flutter-firebase) DERIVA app_path → ui-verify +
   ]) {
     assert.ok(emitted.has(wf), `${wf} debería EMITIRSE (era el bug: {{app_path}} sin derivar). skipped=${JSON.stringify(skipped.map((s) => s.path))}`);
   }
-  // El path derivado se renderiza de verdad en ui-verify (no un placeholder).
+  // ui-verify + deploy DETECTAN la app en runtime (find apps/*/pubspec.yaml) → ya no dependen de un
+  // app_path fijo (que quedaba inerte si el agente nombraba la app distinto al default del scaffold).
   const uiverify = files.find((f) => f.path === ".github/workflows/ui-verify.yml")!;
-  assert.match(uiverify.content, /APP_PATH:\s*["']?apps\//, "ui-verify sin el app_path renderizado");
+  assert.match(uiverify.content, /find apps .*pubspec\.yaml/, "ui-verify sin el paso de deteccion runtime de la app");
+  assert.doesNotMatch(uiverify.content, /hashFiles\('apps\/customer/, "ui-verify no debe tener el guard con path fijo apps/customer");
   assert.deepEqual(leftoverVars(uiverify.content), [], "ui-verify con vars sin resolver");
+  const deploy = files.find((f) => f.path === ".github/workflows/deploy.yml")!;
+  assert.match(deploy.content, /find apps .*pubspec\.yaml/, "deploy sin deteccion runtime de la app");
+  assert.deepEqual(leftoverVars(deploy.content), [], "deploy con vars sin resolver");
 });
 
 // Degradación graceful: sin stack o sin registryDir → stackScaffoldVars/skip como antes (no crashea).

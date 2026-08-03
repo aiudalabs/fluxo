@@ -22,9 +22,6 @@ permissions:
 env:
   PORT: "4173"
   SMOKE_URL: "http://127.0.0.1:4173/"
-  # App principal a verificar (build web). El generador la sustituye; default
-  # apps/customer.
-  APP_PATH: "{{app_path}}"
 
 jobs:
   ui-verify:
@@ -35,24 +32,33 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      # Guard hashFiles (patron de copilot-setup-steps): si la app no existe en el
-      # arbol, cada paso se salta y el job pasa en verde. El filtro de paths ya
-      # acota el disparo; esto es defensa en profundidad.
+      # Detecta la app Flutter primaria (apps/*/pubspec.yaml) EN RUNTIME, en vez de un
+      # path fijo scaffoldeado — asi funciona sin importar como nombro el agente a la app
+      # (apps/yomap, apps/customer, …). Exporta APP_PATH a los pasos siguientes; si no hay
+      # app en el arbol, APP_PATH queda vacio y cada paso se salta (el job pasa en verde).
+      # Reemplaza el guard `hashFiles('<path-fijo>/pubspec.yaml')`, que dejaba el gate visual
+      # INERTE cuando la app no estaba en el default del scaffold.
+      - name: Detectar app Flutter primaria
+        run: |
+          d="$(find apps -maxdepth 2 -name pubspec.yaml 2>/dev/null | sort | head -1 | xargs -r dirname)"
+          echo "APP_PATH=$d" >> "$GITHUB_ENV"
+          [ -n "$d" ] && echo "App detectada: $d" || echo "Sin app Flutter en apps/*/ — ui-verify se salta (job verde)."
+
       - name: Set up Flutter
-        if: ${{ hashFiles('{{app_path}}/pubspec.yaml') != '' }}
+        if: ${{ env.APP_PATH != '' }}
         uses: subosito/flutter-action@v2
         with:
           channel: stable
           cache: true
 
       - name: Set up Node (para Playwright)
-        if: ${{ hashFiles('{{app_path}}/pubspec.yaml') != '' }}
+        if: ${{ env.APP_PATH != '' }}
         uses: actions/setup-node@v4
         with:
           node-version: "20"
 
       - name: Bootstrap Dart workspace (melos, best-effort)
-        if: ${{ hashFiles('{{app_path}}/pubspec.yaml') != '' }}
+        if: ${{ env.APP_PATH != '' }}
         run: |
           set -euo pipefail
           export PATH="$PATH:$HOME/.pub-cache/bin"
@@ -61,12 +67,12 @@ jobs:
           melos bootstrap || echo "melos bootstrap best-effort fallo; seguimos (flutter build hara pub get)."
 
       - name: Build Flutter web
-        if: ${{ hashFiles('{{app_path}}/pubspec.yaml') != '' }}
+        if: ${{ env.APP_PATH != '' }}
         working-directory: ${{ env.APP_PATH }}
         run: flutter build web
 
       - name: Serve the web build
-        if: ${{ hashFiles('{{app_path}}/pubspec.yaml') != '' }}
+        if: ${{ env.APP_PATH != '' }}
         working-directory: ${{ env.APP_PATH }}/build/web
         run: |
           set -euo pipefail
@@ -76,7 +82,7 @@ jobs:
           echo "Servidor lanzado en background (PORT=$PORT)."
 
       - name: Wait for the app to answer
-        if: ${{ hashFiles('{{app_path}}/pubspec.yaml') != '' }}
+        if: ${{ env.APP_PATH != '' }}
         run: |
           set -euo pipefail
           # until-curl con timeout ~120s (60 x 2s). Si la app no arranca, el gate
@@ -94,7 +100,7 @@ jobs:
           exit 1
 
       - name: Playwright smoke (home renderiza, sin errores JS)
-        if: ${{ hashFiles('{{app_path}}/pubspec.yaml') != '' }}
+        if: ${{ env.APP_PATH != '' }}
         run: |
           set -euo pipefail
           WORK="$RUNNER_TEMP/pw-smoke"
@@ -166,7 +172,7 @@ jobs:
           SHOT_PATH="$RUNNER_TEMP/ui-verify-home.png" node smoke.js
 
       - name: Upload home screenshot
-        if: ${{ always() && hashFiles('{{app_path}}/pubspec.yaml') != '' }}
+        if: ${{ always() && env.APP_PATH != '' }}
         uses: actions/upload-artifact@v4
         with:
           name: ui-verify-home
@@ -184,7 +190,7 @@ jobs:
       # (default) y la story trae screen_key en su issue. Sin screen_key => skip limpio.
       - name: Art-director — resolver screen_key del issue enlazado
         id: artdir
-        if: ${{ hashFiles('{{app_path}}/pubspec.yaml') != '' && '{{art_director}}' != 'off' }}
+        if: ${{ env.APP_PATH != '' && '{{art_director}}' != 'off' }}
         env:
           GH_TOKEN: ${{ github.token }}
           PR_BODY: ${{ github.event.pull_request.body }}

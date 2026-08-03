@@ -19,9 +19,9 @@ name: deploy
 # Disparo MANUAL (workflow_dispatch): elegís preview o prod. NO deploya solo en cada push — publicar es una
 # acción deliberada del humano.
 #
-# MULTI-APP (v1): deployamos SOLO la app primaria ({{app_path}}). Un producto Flutter multi-app
-# (customer + provider) a canales/sitios separados queda DIFERIDO (liga L-LM-4 / P2-3) — no shippeamos una
-# matrix sin testear.
+# MULTI-APP (v1): deployamos SOLO la app primaria — la app se DETECTA en runtime (apps/*/pubspec.yaml), no un
+# path fijo, así funciona sin importar cómo la nombró el agente. Un producto multi-app (customer + provider)
+# a canales/sitios separados queda DIFERIDO (liga L-LM-4 / P2-3) — no shippeamos una matrix sin testear.
 
 on:
   workflow_dispatch:
@@ -35,11 +35,6 @@ on:
 permissions:
   contents: read
 
-env:
-  # App a compilar y publicar (misma variable que ui-verify / build-apk; el generador la sustituye,
-  # default apps/customer).
-  APP_PATH: "{{app_path}}"
-
 jobs:
   # Frontend Flutter-web → Firebase Hosting (prod si target=prod; si no, canal de preview temporal).
   web:
@@ -48,21 +43,27 @@ jobs:
     env:
       FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
     steps:
+      # Checkout PRIMERO — la deteccion de config necesita el arbol clonado (antes corria antes del
+      # checkout y chequeaba archivos en un workspace vacio → el deploy se salteaba SIEMPRE).
+      - name: Checkout
+        uses: actions/checkout@v4
+
       - name: Detect Firebase Hosting config
         id: cfg
         run: |
+          set -euo pipefail
+          # App Flutter primaria DETECTADA en runtime (apps/*/pubspec.yaml) — no un path fijo scaffoldeado.
+          app="$(find apps -maxdepth 2 -name pubspec.yaml 2>/dev/null | sort | head -1 | xargs -r dirname)"
+          echo "app_path=$app" >> "$GITHUB_OUTPUT"
           # Habilitá el tramo solo con: el secret BYO + la app primaria en el árbol + firebase.json (donde
           # el repo declara qué publicar). Si falta cualquiera → skip limpio, el job pasa en verde.
-          if [ -n "$FIREBASE_SERVICE_ACCOUNT" ] && [ -f "$APP_PATH/pubspec.yaml" ] && [ -f firebase.json ]; then
+          if [ -n "$FIREBASE_SERVICE_ACCOUNT" ] && [ -n "$app" ] && [ -f "$app/pubspec.yaml" ] && [ -f firebase.json ]; then
             echo "on=true" >> "$GITHUB_OUTPUT"
+            echo "deploy(web): app=$app, firebase.json presente, secret presente → deploy ON."
           else
             echo "on=false" >> "$GITHUB_OUTPUT"
-            echo "deploy(web): falta FIREBASE_SERVICE_ACCOUNT, $APP_PATH/pubspec.yaml o firebase.json — skip."
+            echo "deploy(web): falta FIREBASE_SERVICE_ACCOUNT, apps/*/pubspec.yaml o firebase.json — skip."
           fi
-
-      - name: Checkout
-        if: steps.cfg.outputs.on == 'true'
-        uses: actions/checkout@v4
 
       - name: Set up Flutter
         if: steps.cfg.outputs.on == 'true'
@@ -79,7 +80,7 @@ jobs:
 
       - name: Build Flutter web
         if: steps.cfg.outputs.on == 'true'
-        working-directory: ${{ env.APP_PATH }}
+        working-directory: ${{ steps.cfg.outputs.app_path }}
         run: |
           set -euo pipefail
           flutter config --enable-web
