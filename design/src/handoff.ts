@@ -121,7 +121,7 @@ export interface GithubTarget {
 
 // El shape (laxo) del manifest del stack que necesitamos para el path-map + vars de scaffold.
 interface StackLane { agent?: unknown; platform?: unknown; paths?: unknown }
-interface StackManifest { lanes?: Record<string, StackLane | null>; validation_commands?: unknown; design_tokens?: unknown }
+interface StackManifest { lanes?: Record<string, StackLane | null>; validation_commands?: unknown; design_tokens?: unknown; app_path?: unknown }
 
 // stackScaffoldVars: deriva del manifest del stack (registry/stacks/<stack>.yaml) las {{vars}} de
 // scaffold que dependen del STACK (no del backlog): los path-maps por lane, los comandos de validación
@@ -156,6 +156,10 @@ export function stackScaffoldVars(registryDir: string, stack: string): Partial<S
   if (backend.length) out.path_map_backend = backend.join("\n");
   if (typeof doc.validation_commands === "string" && doc.validation_commands.trim()) out.validation_commands = doc.validation_commands.trim();
   if (typeof doc.design_tokens === "string" && doc.design_tokens.trim()) out.design_tokens = doc.design_tokens.trim();
+  // app_path: la app FRONTEND primaria a buildear/verificar (working-directory de `flutter build`). Solo la
+  // declaran los stacks con superficie nativa/web que la CI compila desde un dir (aiuda-flutter-firebase);
+  // sin ella, ui-verify + build/deploy se saltean. Los stacks que no la usan simplemente no la traen.
+  if (typeof doc.app_path === "string" && doc.app_path.trim()) out.app_path = doc.app_path.trim();
   return out;
 }
 
@@ -269,16 +273,22 @@ async function publishToGithub(store: SupabaseDesignStore, workdir: string, gh: 
   for (const [name, { color, description }] of specs) {
     try { await repo.ensureLabel(name, color, description); } catch (e) { console.error(`  ⚠ label ${name}: ${e instanceof Error ? e.message : e}`); }
   }
-  // Pass 1 — issues, etiquetados con los mismos nombres de label.
-  let issues = 0;
+  // Pass 1 — issues, etiquetados con los mismos nombres de label. IDEMPOTENTE (2026-08-02): una story
+  // que YA tiene external_ref (issue creado en un handoff previo) se SALTEA — antes un re-handoff (para
+  // re-aterrizar scaffold/docs faltantes) re-creaba TODOS los issues y duplicaba el board (34→68 en YoMap).
+  // Solo se crean los que faltan; los existentes conservan su issue/labels. (Las labels de arriba ya son
+  // idempotentes.) Espejo de la filosofía de publishBacklog: "lo que ya existe no se toca".
+  const existingRefs = await store.loadStoryRefs();
+  let issues = 0, reused = 0;
   for (const st of stories) {
+    if (existingRefs.has(st.key)) { reused++; continue; }
     const labels = labelSpecsFor(st).map((s) => s.name);
     const { number } = await repo.createIssue(`[${st.key}] ${st.title}`, issueBody(st), labels);
     await store.setStoryRef(st.key, `github:${repo.owner}/${repo.repo}#${number}`, repo.htmlUrl);
     issues++;
   }
-  await store.brainAppend("repo_created", { repo: repo.htmlUrl, issues, labels: specs.size }, "engine:handoff");
-  console.log(`  ↪ GitHub: repo ${repo.htmlUrl} + ${issues} issues + ${specs.size} labels`);
+  await store.brainAppend("repo_created", { repo: repo.htmlUrl, issues, reused, labels: specs.size }, "engine:handoff");
+  console.log(`  ↪ GitHub: repo ${repo.htmlUrl} + ${issues} issues nuevos (${reused} reusados) + ${specs.size} labels`);
 }
 
 // makeHandoff: el HandoffExecutor completo. Publica al board SIEMPRE (Supabase); si se pasa

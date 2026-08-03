@@ -253,6 +253,16 @@ export class SupabaseDesignStore {
     });
   }
 
+  // loadStoryRefs: key→external_ref de las stories que YA tienen issue linkeado. Es la IDEMPOTENCIA del
+  // handoff GitHub: un re-handoff (para re-aterrizar scaffold/docs faltantes) NO debe re-crear los issues
+  // de las stories ya publicadas — antes duplicaba el board entero (34→68 en YoMap). Solo las que faltan.
+  async loadStoryRefs(): Promise<Map<string, string>> {
+    const res = await this.rest(`/stories?project_id=eq.${this.cfg.project}&select=key,external_ref`, { method: "GET", prefer: "count=none" });
+    const m = new Map<string, string>();
+    for (const r of (await res.json()) as Array<{ key: string; external_ref: string | null }>) if (r.external_ref) m.set(r.key, r.external_ref);
+    return m;
+  }
+
   // brainAppend writes one auditable event to the brain (F1-02) as the tenant. The gate
   // outcome is the highest-value provenance — the honest "why" the design is the way it
   // is (docs/00-vision) — so a resolved gate is recorded here (kind gate_answer, D5).

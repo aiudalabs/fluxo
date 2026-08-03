@@ -42,3 +42,28 @@ test("loadBacklog reconstruye sprint (uuid→key) y deps (blocked_by uuid[]→ke
     assert.deepEqual(s2.deps, ["S1-01"], "blocked_by uuid→key");
   } finally { globalThis.fetch = real; }
 });
+
+// Idempotencia del handoff GitHub: loadStoryRefs devuelve SOLO las stories que ya tienen issue linkeado
+// (external_ref no-null). El loop de publishToGithub saltea esas → un re-handoff no re-crea issues (era el
+// bug que duplicó el board de YoMap 34→68). La story sin external_ref NO está en el mapa → se le crea el issue.
+test("loadStoryRefs → key→external_ref solo de stories con issue (la sin ref se omite → se creará)", async () => {
+  const real = globalThis.fetch;
+  try {
+    globalThis.fetch = (async (url: string | URL | Request): Promise<Response> => {
+      const u = new URL(String(url));
+      const j = (b: unknown) => new Response(JSON.stringify(b), { status: 200, headers: { "content-type": "application/json" } });
+      if (u.pathname.endsWith("/stories")) return j([
+        { key: "S1-01", external_ref: "github:acme/yomap#35" },
+        { key: "S1-02", external_ref: null },
+        { key: "S1-03", external_ref: "github:acme/yomap#37" },
+      ]);
+      return j([]);
+    }) as typeof fetch;
+    const store = new SupabaseDesignStore({ url: "http://sb.test", anonKey: "a", jwtSecret: "s".repeat(40), tenant: "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa", project: "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb" });
+    const refs = await store.loadStoryRefs();
+    assert.equal(refs.size, 2, "solo las 2 stories con external_ref");
+    assert.equal(refs.get("S1-01"), "github:acme/yomap#35");
+    assert.equal(refs.has("S1-02"), false, "la story sin issue NO está → se le creará el issue");
+    assert.equal(refs.get("S1-03"), "github:acme/yomap#37");
+  } finally { globalThis.fetch = real; }
+});

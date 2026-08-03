@@ -166,6 +166,34 @@ for (const stack of ["aiuda-flutter-firebase", "react-supabase", "python-fastapi
   });
 }
 
+// app_path: la app Flutter PRIMARIA — SOLO aiuda-flutter-firebase la usa (ui-verify + build-apk/deploy/
+// device-verify, working-directory de `flutter build`). BUG: stackScaffoldVars NO la derivaba → los 4
+// workflows (incl. el gate VISUAL ui-verify) se salteaban en TODO proyecto flutter — parte del "la UI
+// sale pobre". Ahora se deriva del manifest. Guard de regresión: si deja de derivarse, ui-verify vuelve
+// a skipped → falla acá. (Los stacks react NO usan app_path → su ui-verify no depende de esto.)
+test("stackScaffoldVars (aiuda-flutter-firebase) DERIVA app_path → ui-verify + los workflows flutter EMITEN", () => {
+  const derived = stackScaffoldVars(registryDir, "aiuda-flutter-firebase");
+  assert.ok(derived.app_path, "manifest sin app_path derivado → los 4 workflows flutter se saltearían");
+  const vars: ScaffoldVars = {
+    project_name: "Acme", stack: "aiuda-flutter-firebase", language: "es",
+    lanes: "- flutter\n- firebase", art_director: "on", ...derived,
+  };
+  const { files, skipped } = buildScaffold(registryDir, vars);
+  const emitted = new Set(files.map((f) => f.path));
+  for (const wf of [
+    ".github/workflows/ui-verify.yml",
+    ".github/workflows/build-apk.yml",
+    ".github/workflows/deploy.yml",
+    ".github/workflows/device-verify.yml",
+  ]) {
+    assert.ok(emitted.has(wf), `${wf} debería EMITIRSE (era el bug: {{app_path}} sin derivar). skipped=${JSON.stringify(skipped.map((s) => s.path))}`);
+  }
+  // El path derivado se renderiza de verdad en ui-verify (no un placeholder).
+  const uiverify = files.find((f) => f.path === ".github/workflows/ui-verify.yml")!;
+  assert.match(uiverify.content, /APP_PATH:\s*["']?apps\//, "ui-verify sin el app_path renderizado");
+  assert.deepEqual(leftoverVars(uiverify.content), [], "ui-verify con vars sin resolver");
+});
+
 // Degradación graceful: sin stack o sin registryDir → stackScaffoldVars/skip como antes (no crashea).
 test("stackScaffoldVars degrada limpio: stack inexistente → {}; sin él CLAUDE.md se saltea (no crashea)", () => {
   assert.deepEqual(stackScaffoldVars(registryDir, "no-such-stack"), {}, "un stack sin manifest no debe derivar vars");

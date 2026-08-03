@@ -66,3 +66,12 @@ design_tokens: |
   sombras) están especificados en `docs/UI_SCREENS.md` (sección de design tokens) y
   `docs/OPINIONATED_DEFAULTS.md`. Aplicá esos valores exactos vía `ThemeData` + `google_fonts` — no
   inventes colores ni tamaños por pantalla; un valor que falte es un gap de diseño para levantar en el issue.
+# app_path: la app Flutter PRIMARIA (dir con `pubspec.yaml`) que la CI buildea/verifica — el bloque
+# {{app_path}} de ui-verify/build-apk/deploy/device-verify (es el `working-directory` de `flutter build`).
+# SIN esto, esos 4 workflows —incluido `ui-verify.yml`, el gate VISUAL del art-director— se saltean en el
+# scaffold (var sin resolver) y el repo del cliente queda SIN verificación de UI. MULTI-APP (v1): se buildea
+# SOLO la app primaria; la convención del monorepo aiuda (espejo de la lane `mobile` + la persona
+# flutter-dev) ubica la app cliente en `apps/customer`. Los workflows guardan con
+# `hashFiles('<app_path>/pubspec.yaml')` → si un proyecto la ubica en otro dir, degradan limpio (skip, no
+# rompen). Una fase futura lo derivará del ARCHITECTURE.md por-proyecto; hoy es la convención del stack.
+app_path: apps/customer
