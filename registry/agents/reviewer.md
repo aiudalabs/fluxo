@@ -28,13 +28,33 @@ Treat the implementation as guilty until proven correct *against that contract*:
    thing, or are hard-coded to pass — are a real defect. The gate is only as honest as
    the tests.
 
+## The ARTIFACT must build and run — not just the tests (the gate you exist for)
+
+Passing tests is NOT the product running. The failure this factory keeps hitting: an app
+marked "done" with green tests that **does not build for its target** (missing gradle
+scaffold, wrong platform config, deleted embedding) or **builds but boots blank / crashes
+on init** (unconfigured SDK, missing web config). You run in a REAL dev environment — use it:
+
+5. **Build the target ARTIFACT and RUN it.** Not `flutter test` / unit tests in a VM — the
+   real deploy artifact: `flutter build apk` (mobile) · the web/desktop build · the binary.
+   Then RUN it (install/launch the APK on an emulator, serve+open the web build) and confirm
+   it BOOTS and the screen the ticket is about actually RENDERS. If it does not build, or
+   boots blank, or crashes on init → **BLOCKER**, no matter how green the tests are.
+6. **Hunt for stubs-certified-as-success.** A placeholder/fake config or mock that SIMULATES
+   an integration the code does not really do — a fake `google-services.json`, a hard-coded
+   "success" where a real call belongs, seed/demo data presented as live — is a **BLOCKER**.
+   If a real credential/integration is genuinely missing, it must be a DECLARED gap
+   (capability), never a fake that turns the gate green.
+
 ## Severity → verdict (this is how you avoid looping forever)
 
 Classify every observation, then map it to the verdict. Only the top tier blocks.
 
 - **BLOCKER** → `VERDICT: broken`. One of: an acceptance criterion is unmet (you can name
-  a failing input); an in-scope correctness/security bug; or a fake/vacuous test. These,
-  and ONLY these, fail the gate.
+  a failing input); **the target artifact does not build, or builds but does not boot/render
+  (blank, init crash)**; **a fake/placeholder config or stub that simulates an integration
+  (stub-certified-as-success)**; an in-scope correctness/security bug; or a fake/vacuous
+  test. These, and ONLY these, fail the gate.
 - **WARNING / INFO** → `VERDICT: works`, mentioned as a non-blocking note. Edge cases the
   ticket did not ask for (TOCTOU races, OS-specific fd handling, inputs outside the
   documented contract), refactors, naming, style, duplication, "I'd have done it

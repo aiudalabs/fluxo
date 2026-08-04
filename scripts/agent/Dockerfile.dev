@@ -1,0 +1,37 @@
+# fluxo-agent-DEV — "máquina de dev real" (docs/19 · F1). Toolchain COMÚN pre-instalado:
+#   - Flutter (stable) + Android SDK + Java (base cirruslabs/flutter → `flutter build apk` CORRE)
+#   - node 20 + git + python3 + @anthropic-ai/claude-code (el CLI del agente)
+# El BROWSER para el run/smoke de web NO se hornea: el agente instala playwright-chromium on-demand
+# (la "puerta abierta" — egress curado). Se buildea como TAG NUEVO (fluxo-agent-dev:local) — NO reemplaza
+# fluxo-agent:local hasta validar (F1b).
+# `:stable` = consistente con la CI (subosito channel:stable). Si un repo pinea otra versión, fvm on-demand.
+FROM ghcr.io/cirruslabs/flutter:stable
+
+USER root
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+      curl git python3 python3-venv python3-pip ca-certificates && \
+    curl -fsSL https://deb.nodesource.com/setup_20.x | bash - && \
+    apt-get install -y --no-install-recommends nodejs && \
+    npm install -g @anthropic-ai/claude-code && \
+    npm cache clean --force && \
+    rm -rf /var/lib/apt/lists/*
+
+# El agente corre como uid 1000 (defense in depth). Para que flutter/gradle/android anden con ese uid:
+#  1) git safe.directory '*' → flutter corre git sobre /sdks/flutter (y sobre el repo del agente) sin
+#     "dubious ownership".
+#  2) HOME propio escribible → pub-cache / gradle / android-user viven en $HOME (si no, fallan sin home).
+#  3) el SDK de Flutter + Android world-writable (cache/licenses).
+RUN git config --system --add safe.directory '*' && \
+    mkdir -p /home/agent/.pub-cache /home/agent/.gradle /home/agent/.android && \
+    chmod -R 777 /home/agent && \
+    chmod -R a+rwX /sdks/flutter 2>/dev/null || true; \
+    for d in /opt/android-sdk-linux "$ANDROID_SDK_ROOT" "$ANDROID_HOME"; do \
+      [ -n "$d" ] && [ -d "$d" ] && chmod -R a+rwX "$d" 2>/dev/null || true; \
+    done
+ENV HOME=/home/agent \
+    PUB_CACHE=/home/agent/.pub-cache \
+    GRADLE_USER_HOME=/home/agent/.gradle
+
+WORKDIR /work
+# Sin ENTRYPOINT/CMD: el runner pasa `claude -p …`, igual que la imagen actual.
