@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
-  candidates, storyPrompt, sprintPrompt, screenPointer, channelFor, modelFor, docsGuardOk, sprintToPlan, sprintToReview, sprintToRetro,
+  candidates, storyPrompt, sprintPrompt, reviewPrompt, screenPointer, channelFor, modelFor, docsGuardOk, sprintToPlan, sprintToReview, sprintToRetro,
   type Policy, type DStory, type DSprint,
 } from "./dispatch.ts";
 
@@ -342,4 +342,26 @@ test("prompt: inyecta la guía de fidelidad SOLO con screen_key (data-driven, no
   assert.ok(!sprintPrompt("Sprint", [noScreen], FID).includes(FID), "sprint API-only NO debe incluirla");
   // sin pasar la guía → nunca (retrocompat + caller sin el archivo)
   assert.ok(!storyPrompt(withScreen).includes(FID));
+});
+
+// ── reviewPrompt (F4): el ticket del reviewer autónomo ───────────────────────────────────────────
+test("reviewPrompt: exige build+run real, findings.json con severidad, y [] si limpio", () => {
+  const p = reviewPrompt(
+    "Sprint 3",
+    "Reservas de turnos end-to-end",
+    [{ key: "S3-01", title: "Login", acceptance: "- el usuario entra con email", screenKey: "login" }],
+  );
+  assert.match(p, /BUILDEÁ el artefacto real|build apk|npm run build/i); // mandato build+run
+  assert.match(p, /\/work\/findings\.json/); // el contrato de salida
+  assert.match(p, /"severity": "P0"\|"deferred"/); // schema con severidad
+  assert.match(p, /stub|fake|pinta verde|simul/i); // anti-stub
+  assert.match(p, /S3-01/); // el spec del sprint (AC como contrato)
+  assert.match(p, /login\.html/); // apunta al mockup para pantallas
+  assert.match(p, /EXACTAMENTE `\[\]`/); // [] si limpio → no inventar objeciones
+});
+
+test("reviewPrompt: sin pantallas no menciona screen_key en el schema", () => {
+  const p = reviewPrompt("Sprint 1", "API de auth", [{ key: "S1-01", title: "endpoint /login", acceptance: "- 200 con token" }]);
+  assert.doesNotMatch(p, /screen_key/);
+  assert.match(p, /S1-01/);
 });

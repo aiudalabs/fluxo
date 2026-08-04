@@ -56,6 +56,43 @@ export function sprintP0Clear(stories: StoryLike[]): boolean {
   return openP0(stories) === 0;
 }
 
+// normalizeFindings: sanea lo que el reviewer escribió (jsonb del build_job, o un string JSON, o null)
+// a Finding[] confiable. Descarta entradas sin id/title o con severity inválida — el reviewer es un
+// agente y su salida no es de confianza (golden rule #2: validá en el borde). Genera id/severidad por
+// default solo si faltan de forma recuperable (severity ausente → 'deferred', lo conservador: no
+// bloquea). Pura → testeable.
+export function normalizeFindings(raw: unknown): Finding[] {
+  let arr: unknown = raw;
+  if (typeof raw === "string") {
+    try {
+      arr = JSON.parse(raw);
+    } catch {
+      return [];
+    }
+  }
+  if (!Array.isArray(arr)) return [];
+  const out: Finding[] = [];
+  for (const item of arr) {
+    if (!item || typeof item !== "object") continue;
+    const o = item as Record<string, unknown>;
+    const title = typeof o.title === "string" ? o.title.trim() : "";
+    if (!title) continue; // sin título no es un finding accionable
+    const id = typeof o.id === "string" && o.id.trim() ? o.id.trim() : `R-${out.length + 1}`;
+    const severity: Severity = o.severity === "P0" ? "P0" : "deferred"; // cualquier cosa != P0 → deferred (no bloquea)
+    out.push({
+      id,
+      title,
+      severity,
+      body: typeof o.body === "string" ? o.body : undefined,
+      acceptance: typeof o.acceptance === "string" ? o.acceptance : undefined,
+      owner: typeof o.owner === "string" ? o.owner : undefined,
+      screen_key: typeof o.screen_key === "string" ? o.screen_key : undefined,
+      kind: o.kind === "bug" || o.kind === "story" ? o.kind : undefined,
+    });
+  }
+  return out;
+}
+
 // partitionFindings: el re-feed. Mapea los findings del reviewer a story specs para publishBacklog.
 //   P0       → sprint_id = currentSprint (el MISMO sprint) → unbuilt>0 → re-bloquea + re-despacha a dev.
 //   deferred → sprint_id = nextSprint → NO bloquea el sprint actual, se resuelve más adelante.

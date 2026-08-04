@@ -334,6 +334,46 @@ export function sprintPrompt(
   return b.join("\n");
 }
 
+// reviewPrompt (F4/docs19 §3.2): el TICKET del REVIEWER autónomo. La PERSONA (build-limpio + run +
+// anti-stub + severidad) vive en registry/agents/reviewer.md — el runner la antepone; acá va solo el
+// QUÉ revisar (el spec del sprint) y el CONTRATO de salida (findings.json). Pura → testeable. `engine`
+// no aplica (el reviewer no orquesta ni abre PR). El reviewer corre sobre el código YA MERGEADO.
+export function reviewPrompt(
+  title: string,
+  goal: string,
+  members: Array<Pick<DStory, "key" | "title" | "acceptance" | "screenKey">>,
+): string {
+  const hasScreens = members.some((m) => m.screenKey);
+  const b: string[] = [];
+  b.push(`# Review del incremento del sprint — ${title}`);
+  b.push(
+    `\nSos el REVIEWER de contexto fresco. Revisá el incremento YA MERGEADO de este sprint contra su ` +
+    `objetivo y los criterios de aceptación de sus stories. Tu criterio NO es "los tests pasan": ` +
+    `BUILDEÁ el artefacto real del target y CORRÉLO (flutter build apk / npm run build + servir / el ` +
+    `binario), confirmá que arranca y hace lo que el sprint promete. Cazá stubs/configs falsos que ` +
+    `simulen una integración (stub-certified-as-success). Un criterio incumplible con un input concreto, ` +
+    `un artefacto que no buildea/no arranca, o un fake que "pinta verde" = P0.`);
+  if (goal.trim()) b.push(`\n## Objetivo del sprint\n${goal.trim()}`);
+  b.push(`\n## Stories del sprint (su AC es el contrato)`);
+  for (const st of members) {
+    b.push(`### ${st.key} — ${st.title}`);
+    if (st.acceptance?.trim()) b.push(`Criterios de aceptación:\n${st.acceptance.trim()}`);
+    if (st.screenKey) b.push(`Construye la pantalla \`${st.screenKey}\`: su mockup aprobado está en docs/mockups/${st.screenKey}.html — la pantalla real debe VERSE como el mockup y RENDERIZAR (no en blanco).`);
+    b.push("");
+  }
+  b.push(
+    `## Salida — escribí tus findings a \`/work/findings.json\`\n` +
+    `Un array JSON (usá bash: \`cat > /work/findings.json <<'EOF' … EOF\`). Cada finding:\n` +
+    `  { "id": "<slug estable, ej R-<sprint>-01>", "title": "<qué está mal, una línea>", ` +
+    `"severity": "P0"|"deferred", "body": "<detalle: archivo/pantalla + input que falla + evidencia de tu build/run>", ` +
+    `"acceptance": "<con qué lo das por resuelto>", "owner": "<lane, ej flutter-dev>"` +
+    (hasScreens ? `, "screen_key": "<si es una pantalla>"` : "") + ` }\n` +
+    `severity: **P0** = bloquea (AC incumplido / no buildea / no arranca / stub falso). **deferred** = ` +
+    `mejora o edge fuera del AC, no bloquea. Si el incremento está limpio, escribí EXACTAMENTE \`[]\`. ` +
+    `NO inventes objeciones para parecer riguroso: si el AC se cumple y el artefacto buildea+corre, es \`[]\`.`);
+  return b.join("\n");
+}
+
 // docsGuardOk — el guard `docs-on-main` (Fase 5): no despachar si el PRD del proyecto no está en
 // `main`. Fail-open: `prdOnMain === false` ⇒ NO despacha; `true` o `null` (el chequeo a GitHub
 // falló) ⇒ despacha igual (no bloqueamos el build por un error transitorio de red). Faithful a v1

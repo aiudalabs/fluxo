@@ -21,7 +21,9 @@ import { runAssistant, sseEvent, type ChatMsg } from "./assistant.ts";
 import { buildAssistantTools, ASSISTANT_TOOL_IDS } from "./assistantTools.ts";
 import { GithubApp, GithubRepo } from "./github.ts";
 import { Projector, type MirroredStory } from "./projection.ts";
-import { candidates, storyPrompt, sprintPrompt, docsGuardOk, sprintToPlan, sprintToReview, sprintToRetro, type Policy, type DStory, type DSprint } from "./dispatch.ts";
+import { candidates, storyPrompt, sprintPrompt, reviewPrompt, docsGuardOk, sprintToPlan, sprintToReview, sprintToRetro, type Policy, type DStory, type DSprint } from "./dispatch.ts";
+import { SupabaseDesignStore } from "./supabase.ts";
+import { normalizeFindings } from "./reviewGate.ts";
 import { AutoMerger, prNumFromUrl } from "./automerge.ts";
 import { Approver } from "./approve.ts";
 import { resolveProjectCapabilities, computeCapabilityGate } from "./capabilities.ts";
@@ -42,6 +44,10 @@ const UI_FIDELITY = (() => {
 const url = process.env.SUPABASE_URL;
 const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 if (!url || !serviceKey) { console.error("need SUPABASE_URL + SUPABASE_SERVICE_ROLE_KEY (source .env)"); process.exit(1); }
+// F4: anon + jwtSecret son opcionales (solo el reviewer autónomo los usa, para publishFindings como
+// tenant). Si faltan, reconcileReviewFindings se auto-saltea (no rompe el resto del worker).
+const anonKey = process.env.SUPABASE_ANON_KEY;
+const jwtSecret = process.env.SUPABASE_JWT_SECRET;
 
 const arg = (f: string) => process.argv.find((a) => a.startsWith(`--${f}=`))?.split("=")[1];
 const dryRun = process.argv.includes("--dry-run");
@@ -617,10 +623,89 @@ async function reconcileBuild() {
   }
 }
 
+// ── F4 · Reviewer autónomo (docs/19) — SOLO engine + review_mode:"auto" ──────────────────────────
+// Producer: un sprint TERMINADO (todas sus stories done) y aún NO revisado → crea un review-job en
+// build_jobs (kind='review'). El poller/runner lo corre en la imagen del stack (build+run REAL del
+// artefacto, no los tests), escribe findings a /work/findings.json, y reconcileReviewFindings los
+// aplica. Uno por sprint (sprintToReview da el de menor posición pendiente); dedup contra jobs en vuelo
+// o sin aplicar. review_mode:"auto" es opt-in (default off/ceremony) → esto NO dispara solo en proyectos
+// que no lo pidieron. Cuesta plata (un agente real) — por eso el opt-in explícito.
+async function reconcileEngineReview() {
+  const projects = await rest<Array<{ id: string; name: string; tenant_id: string; settings: Settings | null }>>(`/projects?select=id,name,tenant_id,settings`);
+  for (const p of projects) {
+    if (!isEngine(p.settings) || p.settings?.review_mode !== "auto") continue;
+    const [sprints, stories] = await Promise.all([
+      rest<Array<{ id: string; key: string; position: number | null; goal: string | null; reviewed_at: string | null }>>(`/sprints?project_id=eq.${p.id}&select=id,key,position,goal,reviewed_at&order=position`),
+      rest<Array<{ id: string; key: string; title: string; sprint_id: string | null; status: string; acceptance: string | null; screen_key: string | null }>>(`/stories?project_id=eq.${p.id}&select=id,key,title,sprint_id,status,acceptance,screen_key`),
+    ]);
+    const total = new Map<string, number>();
+    const unbuilt = new Map<string, number>();
+    for (const s of stories) {
+      if (!s.sprint_id) continue;
+      total.set(s.sprint_id, (total.get(s.sprint_id) ?? 0) + 1);
+      if (s.status !== "done") unbuilt.set(s.sprint_id, (unbuilt.get(s.sprint_id) ?? 0) + 1);
+    }
+    const targetKey = sprintToReview(sprints, total, unbuilt); // sprint all-done, sin revisar, menor pos
+    if (!targetKey) continue;
+    const target = sprints.find((s) => s.key === targetKey);
+    if (!target) continue;
+    // Dedup: ¿ya hay un review-job de este sprint en vuelo (pending/running) o done-sin-aplicar?
+    const inflight = await rest<Array<{ id: string }>>(
+      `/build_jobs?project_id=eq.${p.id}&kind=eq.review&sprint_key=eq.${encodeURIComponent(targetKey)}&or=(status.in.(pending,running),and(status.eq.done,applied_at.is.null))&select=id`,
+    );
+    if (inflight.length) continue;
+    const next = sprints.find((s) => (s.position ?? 0) > (target.position ?? 0)); // el siguiente por posición
+    const nextKey = next?.key ?? `${targetKey}-followup`; // sin siguiente → bucket followup (lo crea publishFindings)
+    const members = stories
+      .filter((s) => s.sprint_id === target.id)
+      .map((s) => ({ key: s.key, title: s.title, acceptance: s.acceptance, screenKey: s.screen_key }));
+    const prompt = reviewPrompt(target.key, target.goal ?? "", members);
+    const res = await fetch(`${base}/build_jobs`, {
+      method: "POST", headers: svc,
+      body: JSON.stringify({ tenant_id: p.tenant_id, project_id: p.id, kind: "review", label: `review-${targetKey.toLowerCase()}`, prompt, sprint_key: targetKey, next_sprint_key: nextKey, story_keys: [] }),
+    });
+    if (res.ok) console.log(`⟳ ${p.name}: review-job creado para sprint ${targetKey} (siguiente=${nextKey})`);
+    else console.error(`  review-job ${p.name}/${targetKey} falló: ${res.status} ${(await res.text()).slice(0, 140)}`);
+  }
+}
+
+// Applier: un review-job DONE con findings sin aplicar → publishFindings (como tenant, RLS + partición
+// de reviewGate) y, si 0 P0, stampeá reviewed_at (el gate "sprint done ⟺ 0 P0"). Si hay P0, ya quedaron
+// como stories backlog del MISMO sprint → el próximo tick las re-despacha y el sprint NO se cierra.
+async function reconcileReviewFindings() {
+  if (!anonKey || !jwtSecret) return; // sin credenciales de tenant no podemos publishFindings (RLS)
+  const jobs = await rest<Array<{ id: string; project_id: string; sprint_key: string | null; next_sprint_key: string | null; findings: unknown }>>(
+    `/build_jobs?kind=eq.review&status=eq.done&applied_at=is.null&select=id,project_id,sprint_key,next_sprint_key,findings`,
+  );
+  for (const j of jobs) {
+    if (!j.sprint_key) { await patchJob(j.id, { applied_at: new Date().toISOString() }); continue; }
+    const proj = (await rest<Array<{ tenant_id: string }>>(`/projects?id=eq.${j.project_id}&select=tenant_id`))[0];
+    if (!proj) continue;
+    const findings = normalizeFindings(j.findings);
+    const store = new SupabaseDesignStore({ url: url!, anonKey, jwtSecret, tenant: proj.tenant_id, project: j.project_id });
+    const { p0, deferred } = await store.publishFindings(findings, { currentSprint: j.sprint_key, nextSprint: j.next_sprint_key ?? `${j.sprint_key}-followup` });
+    // Gate "done ⟺ 0 P0": sin P0 abiertas → el sprint pasa → stampeá reviewed_at (done). Con P0, NO.
+    if (p0 === 0) {
+      await fetch(`${base}/sprints?project_id=eq.${j.project_id}&key=eq.${encodeURIComponent(j.sprint_key)}`, {
+        method: "PATCH", headers: svc, body: JSON.stringify({ reviewed_at: new Date().toISOString() }),
+      });
+    }
+    await patchJob(j.id, { applied_at: new Date().toISOString() });
+    console.log(`✓ review ${j.sprint_key}: ${p0} P0 + ${deferred} deferred → ${p0 === 0 ? "sprint DONE (reviewed)" : `${p0} P0 re-despachadas al sprint`}`);
+  }
+}
+async function patchJob(id: string, patch: Record<string, unknown>): Promise<void> {
+  await fetch(`${base}/build_jobs?id=eq.${id}`, { method: "PATCH", headers: svc, body: JSON.stringify(patch) });
+}
+
 async function tick() {
   try { await reconcileDesign(); } catch (e) { console.error("reconcileDesign:", e instanceof Error ? e.message : e); }
   try { await reconcileIncrements(); } catch (e) { console.error("reconcileIncrements:", e instanceof Error ? e.message : e); }
   try { await reconcileCeremonies(); } catch (e) { console.error("reconcileCeremonies:", e instanceof Error ? e.message : e); }
+  // F4: el reviewer autónomo (engine + review_mode:auto). Applier ANTES del producer: aplicar los
+  // findings de un review ya hecho (que puede cerrar el sprint o re-despachar P0) antes de crear el próximo.
+  try { await reconcileReviewFindings(); } catch (e) { console.error("reconcileReviewFindings:", e instanceof Error ? e.message : e); }
+  try { await reconcileEngineReview(); } catch (e) { console.error("reconcileEngineReview:", e instanceof Error ? e.message : e); }
   if (!noBuild) {
     // Orden del conductor de v1: PROYECTAR (GitHub = verdad) → APROBAR (auto_if_safe) → AUTO-MERGE
     // (gated) → DESPACHAR. Aprobar antes de mergear: destraba el CI para que los checks corran y el
@@ -644,6 +729,8 @@ const SCHEMA_PROBES: Array<{ table: string; column: string; migration: string }>
   { table: "increment_requests", column: "id", migration: "20260719140000_increment_requests.sql" },
   { table: "design_phases", column: "cache_read_tokens", migration: "20260719120000_design_phase_costs.sql" },
   { table: "run_costs", column: "estimated", migration: "20260724120000_run_costs_estimated.sql" },
+  { table: "stories", column: "severity", migration: "20260803120000_story_severity.sql" },       // F4: gate P0
+  { table: "build_jobs", column: "kind", migration: "20260804120000_build_jobs_review.sql" },      // F4: reviewer autónomo
 ];
 async function preflightSchema(): Promise<void> {
   const missing: string[] = [];

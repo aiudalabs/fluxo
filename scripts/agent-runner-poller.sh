@@ -35,17 +35,32 @@ while true; do
   LABEL="$(echo "$JOB" | python3 -c 'import json,sys;print(json.load(sys.stdin)[0]["label"])')"
   ISSUES="$(echo "$JOB" | python3 -c 'import json,sys;print(json.load(sys.stdin)[0].get("issues") or "")')"
   MODEL="$(echo "$JOB" | python3 -c 'import json,sys;print(json.load(sys.stdin)[0].get("model") or "claude-opus-4-8")')"
+  KIND="$(echo "$JOB" | python3 -c 'import json,sys;print(json.load(sys.stdin)[0].get("kind") or "build")')"
   mapfile -t KEYS < <(echo "$JOB" | python3 -c 'import json,sys;[print(k) for k in json.load(sys.stdin)[0].get("story_keys") or []]')
   echo "$JOB" | python3 -c 'import json,sys;open("/tmp/build-'"$ID"'.txt","w").write(json.load(sys.stdin)[0]["prompt"])'
-  log "job $ID → build $LABEL (issues=$ISSUES, stories=${KEYS[*]:-none})"
+  log "job $ID → $KIND $LABEL (issues=$ISSUES, stories=${KEYS[*]:-none})"
 
   set +e
-  OUT="$("$RUNNER" "$PROJECT" "/tmp/build-$ID.txt" "$LABEL" "$ISSUES" "$MODEL" 2>&1)"
+  OUT="$("$RUNNER" "$PROJECT" "/tmp/build-$ID.txt" "$LABEL" "$ISSUES" "$MODEL" "$KIND" "$ID" 2>&1)"
   RC=$?
   set -e
   PR="$(printf '%s' "$OUT" | sed -nE 's/.*PR=([0-9]+).*/\1/p' | tail -1)"
   COST="$(printf '%s' "$OUT" | sed -nE 's/.*COST=([0-9.]+).*/\1/p' | tail -1)"; COST="${COST:-0}"
   TENANT="$(printf '%s' "$JOB" | python3 -c 'import json,sys;print(json.load(sys.stdin)[0]["tenant_id"])' 2>/dev/null)"
+  # ── REVIEW-job (F4): NO abre PR ni toca stories. El runner ya PATCHeó `findings`; acá solo cerramos
+  #    el job (done + costo). reconcileReviewFindings (worker) aplica los findings + gatea el sprint.
+  if [ "$KIND" = "review" ]; then
+    if [ "$RC" = "0" ]; then
+      curl -s "${H[@]}" -X PATCH "$B/build_jobs?id=eq.$ID" -d "{\"status\":\"done\",\"cost_usd\":$COST,\"updated_at\":\"now()\"}" >/dev/null
+      curl -s "${H[@]}" -H "Prefer: resolution=ignore-duplicates" -X POST "$B/run_costs?on_conflict=project_id,run_id" -d "{\"tenant_id\":\"$TENANT\",\"project_id\":\"$PROJECT\",\"run_id\":\"engine:$ID\",\"issues\":\"\",\"usd\":$COST}" >/dev/null
+      log "✓ review $ID done (cost \$$COST) — worker aplicará los findings"
+    else
+      ERR="$(printf '%s' "$OUT" | tail -3 | tr '\n' ' ' | sed 's/"/'"'"'/g')"
+      curl -s "${H[@]}" -X PATCH "$B/build_jobs?id=eq.$ID" -d "{\"status\":\"failed\",\"error\":\"rc=$RC $ERR\",\"updated_at\":\"now()\"}" >/dev/null
+      log "✗ review $ID FALLÓ (rc=$RC): $ERR"
+    fi
+    continue
+  fi
   if [ "$RC" = "0" ] && [ -n "$PR" ]; then
     PRURL="https://github.com/$(curl -s "${H[@]}" "$B/projects?id=eq.$PROJECT&select=repo" | python3 -c 'import json,sys,re;u=json.load(sys.stdin)[0]["repo"];print(re.sub(r".*github.com/([^/]+/[^/.]+).*",r"\1",u))')/pull/$PR"
     curl -s "${H[@]}" -X PATCH "$B/build_jobs?id=eq.$ID" -d "{\"status\":\"done\",\"pr_url\":\"$PRURL\",\"cost_usd\":$COST,\"updated_at\":\"now()\"}" >/dev/null

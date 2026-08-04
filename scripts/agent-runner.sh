@@ -19,7 +19,8 @@ set -euo pipefail
 export HOME=/root
 
 PROJECT_ID="${1:?PROJECT_ID}"; PROMPT_FILE="${2:?PROMPT_FILE}"; LABEL="${3:?LABEL}"
-ISSUES_CSV="${4:-}"; MODEL="${5:-claude-opus-4-8}"
+ISSUES_CSV="${4:-}"; MODEL="${5:-claude-opus-4-8}"; KIND="${6:-build}"; JOB_ID="${7:-}"
+REGISTRY_DIR="${REGISTRY_DIR:-/opt/fluxo/registry}"  # F4: persona del reviewer (reviewer.md)
 ENVF="${ENVF:-/opt/fluxo/deploy/.env.prod}"
 AGENT_IMG="${AGENT_IMG:-fluxo-agent-dev:local}"  # "máquina de dev real" (Flutter+Android SDK+Java+node); docs/19 F1. Fallback viejo: AGENT_IMG=fluxo-agent:local
 AGENT_DIR="${AGENT_DIR:-/opt/fluxo/agent}"  # dir del Dockerfile.dev (para rebuild-si-falta)
@@ -57,6 +58,58 @@ git checkout -b "$BRANCH"
 # el remote NO debe filtrar el token al container: lo saco del montaje quitando credenciales de la URL
 git remote set-url origin "https://github.com/$SLUG.git"
 chown -R 1000:1000 "$WD"   # el container corre como uid 1000 (node) y edita el workdir montado
+
+# Imagen del agente: si un `docker prune` la borró, rebuildeala local (idempotente, capas cacheadas).
+if ! docker image inspect "$AGENT_IMG" >/dev/null 2>&1; then
+  log "imagen $AGENT_IMG ausente (¿prune?) — rebuildeando desde $AGENT_DIR…"
+  docker build -f "$AGENT_DIR/Dockerfile.dev" -t "$AGENT_IMG" "$AGENT_DIR" >"$WD/../$LABEL.imgbuild.log" 2>&1 \
+    || { echo "no pude rebuildear $AGENT_IMG (ver $LABEL.imgbuild.log)"; exit 1; }
+fi
+
+# ── REVIEW-job (F4/docs19): el REVIEWER de contexto fresco corre sobre el código YA MERGEADO (main),
+#    buildea+corre el artefacto, y escribe findings a /work/findings.json. NO commitea, NO abre PR.
+#    Su salida es la columna build_jobs.findings (la PATCHea acá); el worker la aplica (publishFindings).
+if [ "$KIND" = "review" ]; then
+  [ -n "$JOB_ID" ] || { echo "review job sin JOB_ID"; exit 1; }
+  RPERSONA="$(cat "$REGISTRY_DIR/agents/reviewer.md" 2>/dev/null || true)"
+  RPROMPT="$RPERSONA
+
+$(cat "$PROMPT_FILE")
+
+NOTA (runner fluxo_engine · modo REVIEW): estás en una MÁQUINA DE DEV REAL con el toolchain del stack, sobre el código YA MERGEADO en /work. Para juzgar el incremento BUILDEÁ el artefacto real del target y CORRÉLO (flutter build apk / npm run build + servir / el binario) — NO te alcanza con \`flutter test\`. Cazá stubs/configs falsos (stub-certified-as-success). Cuando termines, ESCRIBÍ tus findings al archivo /work/findings.json con bash (ej: cat > /work/findings.json <<'EOF' … EOF) — SIEMPRE escribí ese archivo: un array JSON como el contrato de arriba, o EXACTAMENTE [] si el incremento está limpio. Es tu ÚNICA salida: NO commitees, NO pushees, NO abras PR."
+  RLOG="$WD/../$LABEL.stream.json"
+  git config --global --add safe.directory "$WD" 2>/dev/null || true
+  log "corriendo el REVIEWER en $AGENT_IMG sobre el código mergeado…"
+  set +e
+  docker run --rm --user 1000:1000 \
+    -e CLAUDE_CODE_OAUTH_TOKEN="$CLAUDE_TOK" \
+    -v "$WD:/work" -w /work "$AGENT_IMG" \
+    claude -p --output-format stream-json --verbose --dangerously-skip-permissions --model "$MODEL" "$RPROMPT" \
+    > "$RLOG" 2>"$WD/../$LABEL.err"
+  RRC=$?
+  set -e
+  RRESULT="$(tail -80 "$RLOG" | python3 -c 'import json,sys
+res=None
+for ln in sys.stdin:
+  try: o=json.loads(ln)
+  except: continue
+  if o.get("type")=="result": res=o
+print(json.dumps({"is_error":res.get("is_error"),"cost":res.get("total_cost_usd")}) if res else "{}")' 2>/dev/null)"
+  COST="$(printf '%s' "$RRESULT" | python3 -c 'import json,sys;print(json.load(sys.stdin).get("cost") or 0)' 2>/dev/null || echo 0)"
+  log "reviewer terminó (rc=$RRC): $RRESULT"
+  FF="$WD/findings.json"
+  if [ ! -f "$FF" ] || ! python3 -c 'import json,sys;d=json.load(open(sys.argv[1]));sys.exit(0 if isinstance(d,list) else 1)' "$FF" 2>/dev/null; then
+    echo "::el reviewer no dejó un /work/findings.json válido (array JSON):: (ver $WD/../$LABEL.err)"; tail -5 "$WD/../$LABEL.err" 2>/dev/null || true; exit 2
+  fi
+  NFIND="$(python3 -c 'import json,sys;print(len(json.load(open(sys.argv[1]))))' "$FF")"
+  # PATCH build_jobs.findings (jsonb). --data-binary con el JSON envuelto {"findings":[...]}.
+  curl -s -H "apikey: $SVC" -H "Authorization: Bearer $SVC" -H "Content-Type: application/json" \
+    -X PATCH "$SUPA_URL/rest/v1/build_jobs?id=eq.$JOB_ID" \
+    --data-binary "$(python3 -c 'import json,sys;print(json.dumps({"findings":json.load(open(sys.argv[1]))}))' "$FF")" >/dev/null
+  log "✓ reviewer: $NFIND finding(s) → build_jobs.findings (job $JOB_ID)"
+  echo "REVIEW_OK JOB=$JOB_ID WD=$WD COST=$COST"
+  exit 0
+fi
 
 # ── agente ADENTRO del container (claude -p stream-json) ──────────────────────────────
 # Prompt: el agente COMMITEA LOCAL después de cada unidad (como la action → pocos commits semánticos).

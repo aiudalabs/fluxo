@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { openP0, sprintP0Clear, partitionFindings } from "./reviewGate.ts";
+import { openP0, sprintP0Clear, partitionFindings, normalizeFindings } from "./reviewGate.ts";
 
 // Helpers: una story como la ve el gate (subset de la fila DB): status + severidad de origen.
 const p0 = (status: string) => ({ status, severity: "P0" as const });
@@ -64,4 +64,26 @@ test("partitionFindings: acceptance default = title; kind/owner/screen_key respe
 test("partitionFindings: vacío → sin stories, 0/0", () => {
   const r = partitionFindings([], { currentSprint: "s1", nextSprint: "s2" });
   assert.deepEqual(r, { stories: [], p0: 0, deferred: 0 });
+});
+
+// ── normalizeFindings: saneo de la salida (no confiable) del reviewer ─────────────────────────────
+test("normalizeFindings: parsea array, respeta P0, default deferred, descarta sin título", () => {
+  const r = normalizeFindings([
+    { id: "R1", title: "APK no buildea", severity: "P0", owner: "flutter-dev" },
+    { id: "R2", title: "spacing", severity: "nonsense" }, // severity inválida → deferred
+    { title: "sin id" },                                   // sin id → se genera
+    { id: "R4", body: "sin título" },                      // sin título → descartada
+    "basura",                                              // no-objeto → descartada
+  ]);
+  assert.equal(r.length, 3);
+  assert.equal(r[0].severity, "P0");
+  assert.equal(r[1].severity, "deferred"); // severity inválida NO bloquea
+  assert.match(r[2].id, /^R-/);            // id generado
+});
+
+test("normalizeFindings: acepta string JSON y null/no-array → []", () => {
+  assert.equal(normalizeFindings('[{"id":"R1","title":"x","severity":"P0"}]')[0].severity, "P0");
+  assert.deepEqual(normalizeFindings(null), []);
+  assert.deepEqual(normalizeFindings("no-json"), []);
+  assert.deepEqual(normalizeFindings({ not: "array" }), []);
 });
