@@ -184,22 +184,25 @@ function ceremonyStation(
   model: FlowModel,
   awaitingByRunId: Record<string, boolean>,
 ): CeremonyStation {
-  const dim = modes[kind] === "auto";
+  const auto = modes[kind] === "auto";
   const node = sprint
     ? model.ceremonies.find((c) => c.kind === kind && c.sprintId === sprint.id) ?? null
     : null;
   // Derivación del ciclo de vida:
-  //   modo auto                    → off (no activada).
-  //   modo ceremony + run sellado  → done (*_at).
-  //   modo ceremony + run con gate → awaiting (esperando tu decisión).
-  //   modo ceremony + run en vuelo → running.
+  //   run sellado (*_at)           → done.
+  //   modo ceremony + run con gate → awaiting (esperando tu decisión humana).
+  //   run en vuelo                 → running (incluye el REVIEW autónomo del engine, F4: review_run_id
+  //                                  seteado por el worker → el nodo existe → se ve corriendo en el ciclo).
+  //   modo auto SIN run todavía    → off (no hay ceremonia humana pendiente; nada que mostrar aún).
   //   modo ceremony sin run        → waiting (activada, aún no le toca).
   let control: ControlState;
-  if (dim) control = "off";
-  else if (node && node.state === "done") control = "done";
-  else if (node && node.runId && awaitingByRunId[node.runId]) control = "awaiting";
+  if (node && node.state === "done") control = "done";
+  else if (node && node.runId && awaitingByRunId[node.runId] && !auto) control = "awaiting";
   else if (node) control = "running";
+  else if (auto) control = "off";
   else control = "waiting";
+  // Dim solo si el modo es auto Y no hay actividad (sin run): un auto-review en vuelo/hecho NO se atenúa.
+  const dim = auto && !node;
   return {
     kind,
     dim,

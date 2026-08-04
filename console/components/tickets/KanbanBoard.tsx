@@ -53,6 +53,12 @@ function StoryCard({ ticket, gate, capGate, candidate, onDispatch, onStop, onOpe
     >
       <div className="kb-top">
         <span className="kb-id">{ticket.id}</span>
+        {ticket.severity === "P0" && (
+          <span className="kb-badge kb-p0" title="Bloqueante del reviewer — el sprint no cierra hasta resolverlo">P0</span>
+        )}
+        {ticket.kind === "bug" && ticket.severity !== "P0" && (
+          <span className="kb-badge kb-bug" title="Defecto (finding del reviewer)">bug</span>
+        )}
         {ticket.sprint_id && <span className="kb-sprint">{ticket.sprint_id}</span>}
       </div>
       <div className="kb-ttl">{ticket.title}</div>

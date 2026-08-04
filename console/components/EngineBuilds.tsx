@@ -13,7 +13,7 @@ interface Progress { turns?: number; bash?: number; edits?: number; reads?: numb
 export interface BuildJob {
   id: string; label: string; status: string; pr_url: string | null;
   log: string | null; progress: Progress | null; cost_usd: number | null; error: string | null;
-  story_keys: string[] | null; created_at: string;
+  story_keys: string[] | null; created_at: string; kind: string | null;
 }
 
 export function useBuildJobs() {
@@ -25,7 +25,7 @@ export function useBuildJobs() {
     let dead = false;
     const load = async () => {
       const { data } = await supabase.from("build_jobs")
-        .select("id,label,status,pr_url,log,progress,cost_usd,error,story_keys,created_at")
+        .select("id,label,status,pr_url,log,progress,cost_usd,error,story_keys,created_at,kind")
         .eq("project_id", projectId).order("created_at", { ascending: false }).limit(20);
       if (!dead) setJobs((data as BuildJob[]) ?? []);
     };
@@ -62,6 +62,7 @@ function BuildCard({ j, projectId }: { j: BuildJob; projectId: string }) {
     <div className="eb-card">
       <div className={`eb-bar${j.log ? " click" : ""}`} onClick={() => j.log && setOpen((v) => !v)}>
         <span className={`eb-dot ${j.status}`} />
+        {j.kind === "review" && <span className="kb-badge eb-kind-review" title="Review autónomo del reviewer (build+run del incremento)">review</span>}
         <b className="eb-label">{j.label}</b>
         <span className="eb-status">{j.status}</span>
         <span className="sp" />

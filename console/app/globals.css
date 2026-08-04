@@ -3412,6 +3412,32 @@ details.log-row[open] > summary::before {
   font-size: 10px;
   color: var(--md-outline);
 }
+/* F4: badge de severidad/kind en la card (finding del reviewer). P0 = bloqueante del sprint. */
+.kb-badge {
+  font-family: var(--mono);
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  padding: 1px 5px;
+  border-radius: 5px;
+  line-height: 1.5;
+  white-space: nowrap;
+}
+.kb-p0 {
+  color: #fff;
+  background: var(--md-error, #b3261e);
+}
+.kb-bug {
+  color: var(--md-error, #b3261e);
+  background: color-mix(in srgb, var(--md-error, #b3261e) 14%, transparent);
+}
+/* F4: badge "review" en la card de Agents (distingue el review autónomo de un build). */
+.eb-kind-review {
+  color: var(--md-on-tertiary-container, #4a2a7a);
+  background: var(--md-tertiary-container, #e9ddff);
+  margin-right: 2px;
+}
 .kb-ttl {
   font-family: var(--disp);
   font-size: 15px;

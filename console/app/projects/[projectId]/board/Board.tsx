@@ -206,6 +206,7 @@ export default function Board() {
         external_ref: s.external_ref ?? undefined,
         kind: s.kind ?? undefined,
         agent_lost: s.agent_lost ?? undefined,
+        severity: s.severity ?? undefined,
       }));
       mapped.sort((a, b) => a.id.localeCompare(b.id));
       setTickets(mapped);

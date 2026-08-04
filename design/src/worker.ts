@@ -661,11 +661,20 @@ async function reconcileEngineReview() {
       .map((s) => ({ key: s.key, title: s.title, acceptance: s.acceptance, screenKey: s.screen_key }));
     const prompt = reviewPrompt(target.key, target.goal ?? "", members);
     const res = await fetch(`${base}/build_jobs`, {
-      method: "POST", headers: svc,
+      method: "POST", headers: { ...svc, Prefer: "return=representation" },
       body: JSON.stringify({ tenant_id: p.tenant_id, project_id: p.id, kind: "review", label: `review-${targetKey.toLowerCase()}`, prompt, sprint_key: targetKey, next_sprint_key: nextKey, story_keys: [] }),
     });
-    if (res.ok) console.log(`⟳ ${p.name}: review-job creado para sprint ${targetKey} (siguiente=${nextKey})`);
-    else console.error(`  review-job ${p.name}/${targetKey} falló: ${res.status} ${(await res.text()).slice(0, 140)}`);
+    if (!res.ok) { console.error(`  review-job ${p.name}/${targetKey} falló: ${res.status} ${(await res.text()).slice(0, 140)}`); continue; }
+    // Prender la fase de review en el Flow: review_run_id = id del build_job (uuid). El Flow lee
+    // sprints.review_run_id → nodo "en review" (running); reviewed_at (que stampea el applier al pasar)
+    // → "done". Así el auto-review se ve en el ciclo del sprint, no solo en Agents.
+    const jobId = ((await res.json()) as Array<{ id: string }>)?.[0]?.id;
+    if (jobId) {
+      await fetch(`${base}/sprints?project_id=eq.${p.id}&key=eq.${encodeURIComponent(targetKey)}`, {
+        method: "PATCH", headers: svc, body: JSON.stringify({ review_run_id: jobId }),
+      });
+    }
+    console.log(`⟳ ${p.name}: review-job creado para sprint ${targetKey} (siguiente=${nextKey})`);
   }
 }
 

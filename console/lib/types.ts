@@ -21,6 +21,7 @@ export interface OrchestratorTicket {
   kind?: string;
   screen_key?: string;
   agent_lost?: string;
+  severity?: string; // F4: 'P0'|'deferred' si la story nació de un finding del reviewer
 }
 
 export interface DispatchCandidate {
