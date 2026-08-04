@@ -40,14 +40,17 @@ function fakePostgrest(seed?: { sprints?: Array<{ key: string }>; stories?: Arra
   for (const sp of seed?.sprints ?? []) sprints.set(sp.key, { id: uid(sp.key), key: sp.key });
   for (const st of seed?.stories ?? []) stories.set(st.key, { id: uid(st.key), key: st.key, blocked_by: st.blocked_by ?? [] });
   const calls: Array<{ method: string; path: string }> = [];
+  const posted: { sprints: any[]; stories: any[] } = { sprints: [], stories: [] }; // filas crudas POSTeadas (F4: para asertar severity/sprint_id)
   const j = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } });
 
   const fetchFn = async (url: string | URL | Request, init?: RequestInit): Promise<Response> => {
     n++;
     const u = new URL(String(url));
-    const table = u.pathname.split("/").pop()!;      // sprints | stories
+    const table = u.pathname.split("/").pop()!;      // sprints | stories | brain | …
     const method = init?.method ?? "GET";
     calls.push({ method, path: u.pathname + u.search });
+    // Tablas no modeladas (ej. brain, para el audit de publishFindings): aceptan el insert sin modelar.
+    if (table !== "sprints" && table !== "stories") return j([], method === "POST" ? 201 : 200);
     const tbl = table === "sprints" ? sprints : stories;
 
     if (method === "GET") return j([...tbl.values()].map((r) => ({ id: r.id, key: r.key })));
@@ -58,6 +61,7 @@ function fakePostgrest(seed?: { sprints?: Array<{ key: string }>; stories?: Arra
         if (tbl.has(r.key)) return j({ code: "23505", message: `duplicate key value violates unique constraint "${table}_project_id_key_key"` }, 409);
       }
       for (const r of rows) tbl.set(r.key, { id: uid(r.key), key: r.key, blocked_by: (r as { blocked_by?: string[] }).blocked_by ?? [] } as never);
+      (table === "sprints" ? posted.sprints : posted.stories).push(...rows);
       return j([...rows.map((r) => ({ id: uid(r.key), key: r.key }))], 201);
     }
     if (method === "PATCH") {
@@ -69,7 +73,7 @@ function fakePostgrest(seed?: { sprints?: Array<{ key: string }>; stories?: Arra
     }
     return j({}, 500);
   };
-  return { fetchFn, sprints, stories, calls, count: () => n };
+  return { fetchFn, sprints, stories, calls, posted, count: () => n };
 }
 
 const SPRINTS: SprintSeed[] = [{ key: "SP1", title: "S1" }, { key: "SP2", title: "S2" }];
@@ -191,5 +195,43 @@ test("publishBacklog(full=false, iterate): NUNCA reporta huérfanos (el delta es
     // Un iterate publica un DELTA (solo S1-03); S1-01/02 NO son huérfanas.
     const r = await store.publishBacklog([], [{ key: "S1-03", title: "c" }], { full: false });
     assert.deepEqual(r.orphans, []);
+  });
+});
+
+// ── publishFindings (F4): el re-feed del reviewer al backlog ──────────────────────────────────────
+test("publishFindings: P0 → MISMO sprint (con severity), deferred → sprint siguiente", async () => {
+  await withFetch(async () => {
+    const fake = fakePostgrest({ sprints: [{ key: "SP3" }] }); // SP3 (el revisado) ya existe; SP4 no
+    globalThis.fetch = fake.fetchFn as typeof fetch;
+    const store = new SupabaseDesignStore(CFG);
+    const r = await store.publishFindings(
+      [
+        { id: "F-APK", title: "el APK no buildea", severity: "P0", owner: "flutter-dev" },
+        { id: "F-SPACE", title: "spacing off vs mockup", severity: "deferred" },
+      ],
+      { currentSprint: "SP3", nextSprint: "SP4" },
+    );
+    assert.deepEqual(r, { p0: 1, deferred: 1 });
+    const byKey = Object.fromEntries(fake.posted.stories.map((s: any) => [s.key, s]));
+    // P0 → mismo sprint (SP3 = id-SP3), severity persistida, kind bug
+    assert.equal(byKey["F-APK"].sprint_id, "id-SP3");
+    assert.equal(byKey["F-APK"].severity, "P0");
+    assert.equal(byKey["F-APK"].kind, "bug");
+    assert.equal(byKey["F-APK"].status, "backlog"); // nace backlog → unbuilt>0 → re-bloquea el sprint
+    // deferred → SP4 (creado en este mismo publish porque no existía)
+    assert.equal(byKey["F-SPACE"].sprint_id, "id-SP4");
+    assert.equal(byKey["F-SPACE"].severity, "deferred");
+    assert.ok(fake.posted.sprints.some((s: any) => s.key === "SP4"), "SP4 se crea para las deferred");
+  });
+});
+
+test("publishFindings: sin findings → no toca la DB (0/0)", async () => {
+  await withFetch(async () => {
+    const fake = fakePostgrest();
+    globalThis.fetch = fake.fetchFn as typeof fetch;
+    const store = new SupabaseDesignStore(CFG);
+    const r = await store.publishFindings([], { currentSprint: "SP3", nextSprint: "SP4" });
+    assert.deepEqual(r, { p0: 0, deferred: 0 });
+    assert.equal(fake.posted.stories.length, 0);
   });
 });

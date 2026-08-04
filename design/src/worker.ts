@@ -204,7 +204,7 @@ interface Settings {
   dispatch_mode?: "auto" | "manual";
   workflow_approval?: "off" | "auto_if_safe";
   planning_mode?: "ceremony" | "off";     // ceremony = un sprint no despacha hasta planearse
-  review_mode?: "ceremony" | "off";        // ceremony = un sprint terminado se revisa antes de avanzar
+  review_mode?: "ceremony" | "off" | "auto"; // ceremony = demo humana; auto (F4/docs19) = reviewer agente autónomo + gate "done ⟺ 0 P0", sin humano
   retro_mode?: "ceremony" | "off";         // ceremony = tras revisar, la retro puede editar el método
   exec_env?: "github_actions" | "fluxo_engine"; // dónde corre el build (docs/17). default github_actions.
   lanes?: Record<string, { channel?: string; model?: string }>;

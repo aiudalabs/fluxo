@@ -10,6 +10,7 @@
 //     gate freezes the run until Studio flips the row to 'resolved'.
 
 import { createHmac } from "node:crypto";
+import { partitionFindings, type Finding } from "./reviewGate.ts";
 import type { LiveStory, LiveSprint, StoreMutation } from "./planApply.ts";
 import type {
   Artifact,
@@ -84,6 +85,7 @@ export interface StorySeed {
   epic_id?: string;
   kind?: string;      // default 'story'
   screen_key?: string;
+  severity?: string;  // F4: 'P0'|'deferred' si la story nació de un finding del reviewer; null = normal
 }
 
 const delay = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -329,6 +331,7 @@ export class SupabaseDesignStore {
           epic_id: st.epic_id ?? null,
           kind: st.kind ?? "story",
           screen_key: st.screen_key ?? null,
+          severity: st.severity ?? null,
         }))),
       });
     }
@@ -367,8 +370,8 @@ export class SupabaseDesignStore {
     const proj = this.cfg.project;
     const sres = await this.rest(`/sprints?project_id=eq.${proj}&select=id,key,title,goal,position&order=position`, { method: "GET", prefer: "count=none" });
     const sprintRows = (await sres.json()) as Array<{ id: string; key: string; title: string | null; goal: string | null; position: number | null }>;
-    const stres = await this.rest(`/stories?project_id=eq.${proj}&select=id,key,title,lane,sprint_id,body,acceptance,epic_id,kind,screen_key,blocked_by&order=key`, { method: "GET", prefer: "count=none" });
-    const storyRows = (await stres.json()) as Array<{ id: string; key: string; title: string | null; lane: string | null; sprint_id: string | null; body: string | null; acceptance: string | null; epic_id: string | null; kind: string | null; screen_key: string | null; blocked_by: string[] | null }>;
+    const stres = await this.rest(`/stories?project_id=eq.${proj}&select=id,key,title,lane,sprint_id,body,acceptance,epic_id,kind,screen_key,severity,blocked_by&order=key`, { method: "GET", prefer: "count=none" });
+    const storyRows = (await stres.json()) as Array<{ id: string; key: string; title: string | null; lane: string | null; sprint_id: string | null; body: string | null; acceptance: string | null; epic_id: string | null; kind: string | null; screen_key: string | null; severity: string | null; blocked_by: string[] | null }>;
     const sprintIdToKey = new Map(sprintRows.map((r) => [r.id, r.key]));
     const storyIdToKey = new Map(storyRows.map((r) => [r.id, r.key]));
     const sprints: SprintSeed[] = sprintRows.map((r, i) => ({ key: r.key, title: r.title ?? r.key, goal: r.goal ?? "", position: r.position ?? i }));
@@ -383,8 +386,37 @@ export class SupabaseDesignStore {
       epic_id: r.epic_id ?? undefined,
       kind: r.kind ?? undefined,
       screen_key: r.screen_key ?? undefined,
+      severity: r.severity ?? undefined,
     }));
     return { sprints, stories };
+  }
+
+  // publishFindings (F4): el re-feed del REVIEWER al backlog. Toma los findings estructurados,
+  // los particiona (design/src/reviewGate.ts) — P0 → MISMO sprint (→ el gate `unbuilt`/P0 re-bloquea
+  // y re-despacha), deferred → sprint SIGUIENTE — y los persiste vía publishBacklog (aditivo,
+  // idempotente por key = finding.id). Devuelve el conteo para que el conductor decida si el sprint
+  // cierra (p0 === 0) o hay que loopear. `nextSprint` se crea si no existe (para las deferred).
+  async publishFindings(
+    findings: Finding[],
+    ctx: { currentSprint: string; nextSprint: string },
+  ): Promise<{ p0: number; deferred: number }> {
+    const { stories, p0, deferred } = partitionFindings(findings, ctx);
+    if (!stories.length) return { p0: 0, deferred: 0 };
+    const sprintSeeds: SprintSeed[] = deferred > 0 ? [{ key: ctx.nextSprint }] : [];
+    const storySeeds: StorySeed[] = stories.map((s) => ({
+      key: s.id,
+      title: s.title,
+      body: s.body,
+      acceptance: s.acceptance,
+      lane: s.owner ?? "",
+      sprint: s.sprint_id,
+      kind: s.kind,
+      screen_key: s.screen_key,
+      severity: s.severity,
+    }));
+    await this.publishBacklog(sprintSeeds, storySeeds, { full: false });
+    await this.brainAppend("findings_published", { p0, deferred, sprint: ctx.currentSprint }, "engine:review");
+    return { p0, deferred };
   }
 
   // ── Sprint-planning (plan_apply) ──────────────────────────────────────────────────
