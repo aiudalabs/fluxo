@@ -21,8 +21,8 @@ export HOME=/root
 PROJECT_ID="${1:?PROJECT_ID}"; PROMPT_FILE="${2:?PROMPT_FILE}"; LABEL="${3:?LABEL}"
 ISSUES_CSV="${4:-}"; MODEL="${5:-claude-opus-4-8}"
 ENVF="${ENVF:-/opt/fluxo/deploy/.env.prod}"
-AGENT_IMG="${AGENT_IMG:-fluxo-agent:local}"
-AGENT_DIR="${AGENT_DIR:-/opt/fluxo/agent}"  # Dockerfile de la imagen del agente (para rebuild-si-falta)
+AGENT_IMG="${AGENT_IMG:-fluxo-agent-dev:local}"  # "máquina de dev real" (Flutter+Android SDK+Java+node); docs/19 F1. Fallback viejo: AGENT_IMG=fluxo-agent:local
+AGENT_DIR="${AGENT_DIR:-/opt/fluxo/agent}"  # dir del Dockerfile.dev (para rebuild-si-falta)
 WORKROOT="${WORKROOT:-/opt/fluxo/runs}"
 
 log(){ echo "[$(printf '%(%H:%M:%S)T')] $*"; }
@@ -63,7 +63,7 @@ chown -R 1000:1000 "$WD"   # el container corre como uid 1000 (node) y edita el 
 # NO pushea (no tiene creds); el runner pushea cada commit nuevo apenas aparece (abajo). Así no se
 # pierde trabajo si crashea, el token de git queda AFUERA, y los commits los decide el agente.
 PROMPT="$(cat "$PROMPT_FILE")
-NOTA (runner fluxo_engine): estás en un container aislado sobre la rama $BRANCH. Implementá y corré los tests (podés npm/node/build/test con libertad). IMPORTANTE — para no perder trabajo: hacé \`git add -A && git commit\` LOCAL después de completar CADA unidad de trabajo con sus tests en verde (mensaje descriptivo). NO pushees ni abras PR (no hay credenciales de git acá; el runner pushea tus commits solo y abre el PR al final)."
+NOTA (runner fluxo_engine): este container es una MÁQUINA DE DEV REAL, aislada sobre la rama $BRANCH — tenés el toolchain del stack (Flutter+Android SDK, node, etc.) y libertad para npm/node/flutter/build/test e instalar lo que falte. TU CRITERIO DE TERMINADO NO ES \"los tests pasan\": es que el ARTEFACTO DEL TARGET BUILDEA Y CORRE. Buildeá el artefacto real (flutter build apk / npm run build + servir / el binario) y CORRÉLO/booteálo — verificá que arranca y hace lo que pide la story, como en tu propia compu. Los tests son parte de tu verificación, no el objetivo. PROHIBIDO fingir una integración con configs/artefactos falsos (un google-services.json inventado, un \"success\" hardcodeado, data demo como si fuera real): si falta una credencial real, dejala como GAP DECLARADO, nunca un stub que pinta verde. Para no perder trabajo: \`git add -A && git commit\` LOCAL después de CADA unidad con su verificación real en verde. NO pushees ni abras PR (el runner pushea tus commits y abre el PR al final)."
 LOGF="$WD/../$LABEL.stream.json"
 # git como root sobre un repo que el agente (uid 1000) commitea → evitar "dubious ownership".
 git config --global --add safe.directory "$WD" 2>/dev/null || true
@@ -72,7 +72,7 @@ git config --global --add safe.directory "$WD" 2>/dev/null || true
 # local si falta, ANTES de correr — es idempotente y barato (capas cacheadas).
 if ! docker image inspect "$AGENT_IMG" >/dev/null 2>&1; then
   log "imagen $AGENT_IMG ausente (¿prune?) — rebuildeando desde $AGENT_DIR…"
-  docker build -t "$AGENT_IMG" "$AGENT_DIR" >"$WD/../$LABEL.imgbuild.log" 2>&1 \
+  docker build -f "$AGENT_DIR/Dockerfile.dev" -t "$AGENT_IMG" "$AGENT_DIR" >"$WD/../$LABEL.imgbuild.log" 2>&1 \
     || { echo "no pude rebuildear $AGENT_IMG (ver $LABEL.imgbuild.log)"; exit 1; }
   log "imagen $AGENT_IMG reconstruida"
 fi
