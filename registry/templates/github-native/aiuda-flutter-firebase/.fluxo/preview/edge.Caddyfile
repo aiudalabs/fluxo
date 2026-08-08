@@ -1,0 +1,63 @@
+# Edge del preview efímero (aiuda-flutter-firebase · docs/20 P2). UN SOLO ORIGEN para el browser:
+# la app Flutter web estática en `/`, y cada emulador de Firebase colgado de su propio prefijo de path.
+#
+# POR QUÉ same-origin y no un puerto por emulador: el preview se sirve por HTTPS (Caddy de prod +
+# sslip.io). Los SDK de FlutterFire arman la URL del emulador con `http://` hardcodeado (ver
+# preview-shim.js), y un pedido http desde una página https es mixed content → bloqueado. El shim
+# reescribe esos pedidos al origen de la página; este Caddyfile es el que sabe, por el PATH, a qué
+# emulador va cada uno. Los prefijos no son inventados: son los que exponen los propios emuladores.
+#
+# Los puertos son los que declara `.fluxo/verify/stack.verify.yaml` (auth 9099, firestore 8085,
+# functions 5001) — un solo vocabulario para e2e-verify y para el preview.
+:80 {
+	encode gzip
+
+	# ── Auth emulator ── El emulador prefija el host de la API real como primer segmento del path,
+	# así que estos prefijos identifican al tráfico de auth sin ambigüedad.
+	handle /identitytoolkit.googleapis.com/* {
+		reverse_proxy emulator:9099
+	}
+	handle /securetoken.googleapis.com/* {
+		reverse_proxy emulator:9099
+	}
+	handle /www.googleapis.com/* {
+		reverse_proxy emulator:9099
+	}
+	handle /emulator/* {
+		reverse_proxy emulator:9099
+	}
+
+	# ── Firestore emulator ── WebChannel (streaming) + REST.
+	# `flush_interval -1` desactiva el buffering: el canal Listen es long-poll y con buffering la app
+	# se quedaría esperando los snapshots.
+	handle /google.firestore.v1.Firestore/* {
+		reverse_proxy emulator:8085 {
+			flush_interval -1
+		}
+	}
+	handle /v1/* {
+		reverse_proxy emulator:8085 {
+			flush_interval -1
+		}
+	}
+
+	# ── Storage emulator ──
+	handle /v0/b/* {
+		reverse_proxy emulator:9199
+	}
+
+	# ── Functions emulator ── un callable se direcciona /<projectId>/<region>/<nombre>.
+	# El projectId es la constante del stack (demo-fluxo), igual que en stack.verify.yaml.
+	handle /demo-fluxo/* {
+		reverse_proxy emulator:5001
+	}
+
+	# ── La app ── build estático de Flutter web. El SPA-fallback es OBLIGATORIO: sin él, cualquier
+	# deep-link (y el /api/health que pollea el preview-runner) daría 404 y el preview nunca pasaría
+	# a `live`. Mientras el build no terminó, /srv/web está vacío → 404 → el runner sigue esperando.
+	handle {
+		root * /srv/web
+		try_files {path} /index.html
+		file_server
+	}
+}

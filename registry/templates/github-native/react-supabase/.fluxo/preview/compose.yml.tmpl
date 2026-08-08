@@ -2,8 +2,9 @@
 # Corre la app END-TO-END y NAVEGABLE para el preview Fluxo-hosted. Sin Dockerfile en el repo → usa
 # node:20 + los scripts de los workspaces. El worker (Baileys/WhatsApp) se OMITE (no aporta a la UI).
 #
-# El preview-runner (scripts/preview-runner.sh) sustituye los {{placeholders}} y lo corre en una RED
-# AISLADA. Data por-stack: un stack con otra base declara su propia receta.
+# El preview-runner (scripts/preview-runner.sh) sustituye los marcadores de doble llave y lo corre en
+# una RED AISLADA. Data por-stack: un stack con otra base declara su propia receta. (No escribas un
+# marcador de ejemplo en un comentario: el runner falla fuerte si queda alguno sin sustituir.)
 #
 # Lo que este recipe resolvió (validado con misalon, 2026-07-23 — ver docs/14):
 #   1. Supabase-ismos: las migraciones dependen del schema `auth` (auth.users, auth.uid()). Un Postgres

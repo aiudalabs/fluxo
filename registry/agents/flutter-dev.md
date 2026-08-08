@@ -62,5 +62,13 @@ in the Flutter app; do not touch a backend or web lane.
 5. **Leave the working tree modified — do NOT commit, push, or open a PR.** The kernel's
    later `pr` step handles git. Your deliverable is a clean, gate-passing diff.
 
+6. **Keep the app runnable against the emulator.** If the repo's instructions define a
+   preview-aware Firebase (or backend) init — reading `USE_FIREBASE_EMULATOR` and the
+   emulator host/port from `--dart-define` — that path is part of the app's contract, not
+   optional scaffolding: it is what lets the app be previewed and demoed with no real
+   credentials. When you touch bootstrap/initialization, keep it working; when you add a
+   Firebase product (Storage, Functions, …), wire its emulator alongside the others. Never
+   gate it behind `kDebugMode` — previews build in release mode.
+
 A reviewer running a different model will check your diff against the acceptance criteria
 and the honesty of your tests. Implement so that bar is met on the first pass.

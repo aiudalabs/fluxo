@@ -1,0 +1,125 @@
+# preview.compose — aiuda-flutter-firebase (Flutter web + Firebase Emulator Suite), EFÍMERO (docs/20).
+#
+# LA TESIS (docs/20 §1): el preview EMULA. Nada de credenciales reales, nada de tocar el Firebase del
+# cliente: proyecto `demo-*` + emuladores + seed → la app arranca POBLADA y NAVEGABLE. Lo único que no
+# se puede emular es Google Maps (los tiles los sirve Google) — eso va con key guardada (docs/20 P3).
+#
+# Flujo: `build` compila la app a web apuntando al emulador y la publica en el volumen `webroot` →
+# `emulator` levanta auth/firestore(/functions/storage) → `seed` la puebla → `edge` sirve todo en UN
+# SOLO ORIGEN (la app en `/`, cada emulador en su prefijo de path). El preview-runner sustituye los
+# marcadores de doble llave con sed y hace `docker compose up`. (Ojo: no escribas un marcador de
+# ejemplo en un comentario — el runner falla fuerte si queda alguno sin sustituir, comentario incluido.)
+#
+# SEGURIDAD: red propia, límites de CPU/mem/pids, sin secrets del sistema, sin Docker socket. El único
+# servicio en la red de ingress es `edge`; emulator/build/seed quedan aislados.
+name: fluxo-preview-{{preview_id}}
+
+volumes:
+  # El build publica acá y el edge sirve de acá. `docker compose down -v` (teardown del runner) lo
+  # borra → cada preview arranca con el volumen vacío, sin restos del build anterior.
+  webroot:
+  # Cachés entre regeneraciones del MISMO preview: pub-cache (deps de Dart) y los .jar de los
+  # emuladores + el npx de firebase-tools. Sin esto, cada regeneración re-descarga todo.
+  pubcache:
+  emulatorcache:
+
+services:
+  # 1) EL EMULADOR — el corazón de docs/20: la app corre de verdad, contra un backend real, sin una
+  #    sola credencial del cliente. Imagen: la MISMA "máquina de dev real" del engine (docs/19 F1),
+  #    que ya trae Java (los emuladores de auth/firestore son procesos JVM) + node + curl.
+  emulator:
+    image: fluxo-agent-dev:local
+    working_dir: /repo
+    volumes:
+      - "{{repo_path}}:/repo"
+      - "{{recipe_dir}}:/etc/fluxo/recipe:ro"
+      - "emulatorcache:/root/.cache"
+    environment:
+      HOME: /root
+      REPO_PATH: /repo
+      FIREBASE_PROJECT: demo-fluxo
+      # Dos JVM (auth + firestore) en un VPS chico: sin tope, cada una toma un cuarto de la RAM del host.
+      JAVA_TOOL_OPTIONS: "-Xmx448m"
+    command: ["bash", "/etc/fluxo/recipe/emulator-entrypoint.sh"]
+    healthcheck:
+      # El MISMO ready_probe que declara .fluxo/verify/stack.verify.yaml: el hub levanta antes que
+      # auth/firestore, así que probar el hub daría "listo" demasiado temprano.
+      test: ["CMD-SHELL", "curl -sf http://127.0.0.1:9099/ >/dev/null && curl -sf http://127.0.0.1:8085/ >/dev/null"]
+      interval: 5s
+      timeout: 5s
+      retries: 90
+    mem_limit: 1600m
+    pids_limit: 400
+
+  # 2) EL BUILD — one-shot: compila la app a web con los --dart-define del emulador, inyecta el shim
+  #    y publica en `webroot`. Termina y no vuelve a correr.
+  build:
+    image: fluxo-agent-dev:local
+    working_dir: /repo
+    volumes:
+      - "{{repo_path}}:/repo"
+      - "{{recipe_dir}}:/etc/fluxo/recipe:ro"
+      - "webroot:/srv/web"
+      - "pubcache:/home/agent/.pub-cache"
+    environment:
+      REPO_PATH: /repo
+      WEBROOT: /srv/web
+      RECIPE_DIR: /etc/fluxo/recipe
+      PREVIEW_PROJECT_ID: demo-fluxo
+      # Google Maps no se emula. Vacío ⇒ la app se previsualiza igual con el mapa en blanco (docs/20 P3).
+      MAPS_API_KEY: "{{maps_api_key}}"
+    command: ["bash", "/etc/fluxo/recipe/build-web.sh"]
+    restart: "no"
+    mem_limit: 3g
+    pids_limit: 800
+
+  # 3) EL SEED — un preview vacío no se puede evaluar. Reusa las fixtures que el repo YA declara para
+  #    e2e-verify (.fluxo/verify/e2e/seed/) + crea la cuenta demo.
+  #    `network_mode: service:emulator` comparte el namespace de red con el emulador → 127.0.0.1 es el
+  #    emulador, sin depender de resolución de nombres ni de a qué interfaz bindeó.
+  seed:
+    image: node:20-slim
+    network_mode: "service:emulator"
+    volumes:
+      - "{{repo_path}}:/repo:ro"
+      - "{{recipe_dir}}:/etc/fluxo/recipe:ro"
+    environment:
+      REPO_PATH: /repo
+      PROJECT_ID: demo-fluxo
+      FIRESTORE_HOST: 127.0.0.1:8085
+      AUTH_HOST: 127.0.0.1:9099
+      DEMO_EMAIL: demo@preview.fluxo.dev
+      DEMO_PASSWORD: "FluxoDemo123!"
+    command: ["node", "/etc/fluxo/recipe/preview-seed.mjs"]
+    depends_on:
+      emulator:
+        condition: service_healthy
+    restart: "no"
+    mem_limit: 256m
+    pids_limit: 100
+
+  # 4) EL EDGE — el entrypoint del preview. Sirve la app y rutea cada emulador por prefijo de path
+  #    (ver edge.Caddyfile). El Caddy de PROD lo alcanza por nombre (fluxo-preview-<id>-edge-1) vía la
+  #    red `fluxo-preview-ingress` y le pega TLS + el subdominio sslip.io. El puerto local
+  #    127.0.0.1:{{preview_port}} lo usa el runner sólo para el health-check.
+  edge:
+    image: caddy:2-alpine
+    volumes:
+      - "{{edge_caddyfile}}:/etc/caddy/Caddyfile:ro"
+      - "webroot:/srv/web:ro"
+    ports:
+      - "127.0.0.1:{{preview_port}}:80"
+    networks:
+      - default
+      - ingress
+    depends_on:
+      - emulator
+    mem_limit: 128m
+    pids_limit: 100
+
+networks:
+  # Red compartida SÓLO con el Caddy de prod (el runner la crea y conecta el Caddy). El resto del stack
+  # del preview queda en la red `default` aislada.
+  ingress:
+    external: true
+    name: fluxo-preview-ingress

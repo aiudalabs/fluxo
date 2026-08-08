@@ -20,7 +20,9 @@
 #                 GITHUB_TOKEN(clona repos privados)  PREVIEW_TTL_HOURS(=6)  INTERVAL(=15)
 #                 PORT_BASE(=8900)  DEFAULT_STACK(=react-supabase)
 #                 PREVIEW_BASE_HOST(=2.25.78.202.sslip.io)  INGRESS_NET(=fluxo-preview-ingress)
-#                 CADDY_CONTAINER(=deploy-caddy-1)
+#                 CADDY_CONTAINER(=deploy-caddy-1)  PREVIEW_MAPS_API_KEY(Google Maps en el preview,
+#                 docs/20 P3 — vacío ⇒ el mapa sale en blanco y el resto de la app se previsualiza igual)
+#                 DEV_IMG(=fluxo-agent-dev:local)  AGENT_DIR(=/opt/fluxo/agent)
 # ─────────────────────────────────────────────────────────────────────────────────────────────────
 set -uo pipefail
 export GIT_TERMINAL_PROMPT=0   # nunca prompteés user/pass → un repo privado sin token FALLA rápido, no cuelga
@@ -34,6 +36,12 @@ DEFAULT_STACK="${DEFAULT_STACK:-react-supabase}"
 PREVIEW_BASE_HOST="${PREVIEW_BASE_HOST:-2.25.78.202.sslip.io}"   # sslip.io → IP del VPS, DNS wildcard auto
 INGRESS_NET="${INGRESS_NET:-fluxo-preview-ingress}"              # red compartida edge↔Caddy de prod
 CADDY_CONTAINER="${CADDY_CONTAINER:-deploy-caddy-1}"
+# Recetas que compilan el artefacto (aiuda-flutter-firebase: `flutter build web`) corren en la "máquina
+# de dev real" del engine (docs/19 F1) — la misma imagen, mismo canal de Flutter, cero skew.
+DEV_IMG="${DEV_IMG:-fluxo-agent-dev:local}"
+AGENT_DIR="${AGENT_DIR:-/opt/fluxo/agent}"
+# Google Maps es lo ÚNICO que no se puede emular (docs/20 §1). Vacío ⇒ preview sin mapa, no sin preview.
+PREVIEW_MAPS_API_KEY="${PREVIEW_MAPS_API_KEY:-}"
 # GitHub App: para clonar repos PRIVADOS del cliente sin token estático (misma credencial headless que
 # el worker). El pem en el HOST (el .env.prod trae GITHUB_APP_PRIVATE_KEY_PATH = path DENTRO del container).
 GITHUB_APP_PEM="${GITHUB_APP_PEM:-/opt/fluxo/deploy/app.pem}"
@@ -107,6 +115,19 @@ ensure_ingress() {
     docker inspect "$CADDY_CONTAINER" --format '{{range $k,$v := .NetworkSettings.Networks}}{{$k}} {{end}}' 2>/dev/null | grep -qw "$INGRESS_NET" \
       || docker network connect "$INGRESS_NET" "$CADDY_CONTAINER" >/dev/null 2>&1
   fi
+}
+
+# ── imagen de dev (recetas que COMPILAN el artefacto) ───────────────────────────────────────────
+# Self-heal, mismo patrón que agent-runner.sh (hardening del 2026-08-01): un `docker prune` borra la
+# imagen y, sin esto, el `compose up` intentaría pullearla de un registry donde no existe → rc=2 y un
+# preview fallado sin explicación. Idempotente: si la imagen está, no hace nada.
+ensure_dev_image() {
+  docker image inspect "$DEV_IMG" >/dev/null 2>&1 && return 0
+  [ -f "$AGENT_DIR/Dockerfile.dev" ] || { log "falta $AGENT_DIR/Dockerfile.dev — no puedo construir $DEV_IMG"; return 1; }
+  log "imagen $DEV_IMG ausente (¿prune?) — rebuildeando desde $AGENT_DIR…"
+  docker build -f "$AGENT_DIR/Dockerfile.dev" -t "$DEV_IMG" "$AGENT_DIR" >"$PREVIEW_DIR/.imgbuild.log" 2>&1 \
+    || { log "no pude rebuildear $DEV_IMG (ver $PREVIEW_DIR/.imgbuild.log)"; return 1; }
+  log "imagen $DEV_IMG reconstruida"
 }
 
 # ── teardown de un preview (compose down) ───────────────────────────────────────────────────────
@@ -305,17 +326,35 @@ process_one() { # $1=id  $2=project_id  $3=ref
       -e "s#{{edge_caddyfile}}#$wd/edge.Caddyfile#g" \
       -e "s#{{public_api_url}}#$public_api_url#g" \
       -e "s#{{jwt_secret}}#$jwt#g" \
+      -e "s#{{recipe_dir}}#$recipe#g" \
+      -e "s#{{maps_api_key}}#$PREVIEW_MAPS_API_KEY#g" \
       "$recipe/compose.yml.tmpl" > "$wd/compose.yml"
+
+  # FAIL-LOUD: un placeholder sin sustituir arriba deja un compose sintácticamente válido pero con un
+  # path/valor literal `{{x}}` → el preview levanta roto y el error aparece lejos de la causa. Un
+  # placeholder nuevo en una receta ES un cambio de contrato con este runner; que se note acá.
+  if grep -q '{{[a-z_]*}}' "$wd/compose.yml"; then
+    local missing; missing=$(grep -o '{{[a-z_]*}}' "$wd/compose.yml" | sort -u | tr '\n' ' ')
+    set_status "$id" failed ",\"error\":$(jesc "la receta de $stack usa placeholders que el preview-runner no sustituye: $missing")"
+    teardown "$pid"; return
+  fi
 
   # 5) levantar (la red de ingress tiene que existir para el edge)
   ensure_ingress
+  # Recetas que compilan el artefacto usan la imagen de dev; si falta, construirla ANTES del up.
+  if grep -q "$DEV_IMG" "$wd/compose.yml" && ! ensure_dev_image; then
+    set_status "$id" failed ",\"error\":$(jesc "la receta de $stack necesita la imagen $DEV_IMG y no pude construirla")"
+    teardown "$pid"; return
+  fi
   if ! docker compose -f "$wd/compose.yml" up -d >"$wd/up.log" 2>&1; then
     set_status "$id" failed ",\"error\":$(jesc "docker compose up falló: $(tail -2 "$wd/up.log" | tr '\n' ' ')")"; teardown "$pid"; return
   fi
 
-  # 6) esperar el edge (front + api arriba). Hasta 5 min (npm ci + migrate + next dev).
+  # 6) esperar el edge (front + api arriba). Hasta ~12 min: alcanza para `npm ci + migrate + next dev`
+  #    (react-supabase) y también para un `flutter build web` en frío + boot del Firebase Emulator
+  #    Suite (aiuda-flutter-firebase, docs/20), que con 5 min no llegaba y fallaba por timeout.
   local ok=""
-  for _ in $(seq 1 40); do
+  for _ in $(seq 1 90); do
     sleep 8
     local fe api
     # front: cualquier 2xx/3xx = la app respondió (puede redirigir / → /login con 302/303/307/308).

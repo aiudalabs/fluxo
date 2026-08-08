@@ -1,9 +1,13 @@
 # 20 · Que la app SALGA CORRIENDO — emulador para el preview + keys guardadas para el build real
 
-> **Estado (2026-08-07):** dirección ACORDADA con el usuario, pendiente de construir. Reemplaza el
+> **Estado (2026-08-07):** dirección ACORDADA con el usuario. Reemplaza el
 > enfoque "derivar el config del SA" que se exploró en la sesión anterior (over-engineered). El core
 > derivado (`scripts/provision-runtime-config.sh`, commit `51b94a3`) queda como alternativa opcional,
 > NO como el camino elegido.
+>
+> **P1 + P2 CONSTRUIDOS** (2026-08-07): convención preview-aware en el método + receta de preview con
+> emulador, seed y edge same-origin. 11 tests nuevos (315/315 en verde, typecheck limpio). **Todavía NO
+> validado en vivo** — falta rsync del registry+runner al VPS y una corrida real. Ver §6.
 
 ## 0. El problema (feedback del usuario, sin vueltas)
 
@@ -97,6 +101,40 @@ usa el config real. Chico y limpio.
 - reservas-belleza (`514846756386`) es el Firebase BYO histórico de YoMap; la SA `Fluxo YoMap E2E`
   existe ahí. Para el preview con emulador **no se necesita**.
 
+## 4-bis. Lo CONSTRUIDO en P1+P2 (2026-08-07) y el hallazgo que cambió el diseño
+
+**El hallazgo (verificado contra el source de los plugins, no inferido):** en WEB, los tres SDK de
+FlutterFire arman la URL del emulador con **`http://` hardcodeado** — `firebase_auth_web` 6.2.6
+(`final String origin = 'http://$host:$port'`), `cloud_functions` 6.3.6 (`_origin = 'http://…'`) y
+`cloud_firestore` 6.8.0 (que **descarta** `sslEnabled` en web; el JS SDK computa
+`ssl: isCloudWorkstation(host)`, false para todo host que no termine en `.cloudworkstations.dev`).
+El preview se sirve por HTTPS ⇒ **mixed content ⇒ el browser bloquea todo**. O sea: la versión ingenua
+de P1 ("que la app llame `useAuthEmulator` y listo") **no funciona** en un preview hosteado.
+
+**La resolución:** el puente http→https vive en la INFRA (P2), no en la app. Así P1 queda idiomático
+(y sirve igual para dev local y para mobile, donde no hay problema de esquema).
+
+- **P1 · convención preview-aware** — contrato completo con el código Dart en
+  `registry/templates/.../aiuda-flutter-firebase/.github/instructions/app.instructions.md.tmpl`
+  (sección "Firebase init: preview-aware"), + el deber de mantenerla en `registry/agents/flutter-dev.md`.
+  Los defaults de los `--dart-define` son los que YA declara `stack.verify.yaml` (`demo-fluxo`,
+  9099/8085/5001) → un `firebase emulators:start` local anda sin pasar ninguno.
+- **P2 · receta** en `registry/templates/.../aiuda-flutter-firebase/.fluxo/preview/`
+  (`compose.yml.tmpl` · `emulator-entrypoint.sh` · `build-web.sh` · `preview-shim.js` ·
+  `preview-seed.mjs` · `edge.Caddyfile` · `README.md`). Decisiones que valen: **un solo origen**
+  ruteado **por prefijo de path** a cada emulador; **rules abiertas a propósito** (el preview evalúa la
+  UI; las rules las verifica e2e-verify + el reviewer); **seed reusa las fixtures de e2e-verify** +
+  cuenta demo (`demo@preview.fluxo.dev` / `FluxoDemo123!`); **imagen = `fluxo-agent-dev:local`**, la
+  misma "máquina de dev real" del engine (cero skew de Flutter, y ya trae Java para los emuladores JVM).
+- **`scripts/preview-runner.sh`**: placeholders `recipe_dir` + `maps_api_key`, auto-build de la imagen
+  de dev si falta (mismo patrón self-heal que agent-runner), espera hasta ~12 min (un `flutter build
+  web` en frío no entraba en los 5 min) y un **guard fail-loud** si queda un placeholder sin sustituir.
+- **Gate de honestidad**: si la app NO es preview-aware, `build-web.sh` **falla con la instrucción
+  concreta** en vez de publicar un cascarón vacío — que es exactamente el bug que este doc vino a matar.
+- **11 tests** (`design/src/previewRecipe.test.ts`): contrato receta↔runner (placeholders), semántica
+  del shim (incluido "no tocar https/relativas"), ruteo del edge, conversión JSON→typed-values del
+  seeder y el seeder corriendo contra un stub del REST del emulador.
+
 ## 5. Referencias de código (para desarrollar en frío)
 - Preview: `scripts/preview-runner.sh` (RECIPE path ~285-308, gen_env ~135-163, health ~316-325);
   receta molde `registry/templates/github-native/react-supabase/.fluxo/preview/`.
@@ -108,3 +146,21 @@ usa el config real. Chico y limpio.
   regex placeholder), `.../aiuda-flutter-firebase/.fluxo/verify/provisioning.rules.yaml.tmpl` (~33 la
   regla de la Maps key).
 - Capabilities: `registry/capabilities/firebase.yaml`, `design/src/capabilities.ts`.
+
+## 6. Lo que FALTA para ver YoMap corriendo (en orden)
+
+1. **Desplegar al VPS** — la receta la lee el runner desde el registry del VPS, y el runner cambió:
+   ```bash
+   rsync -az --delete --exclude .git registry/ root@2.25.78.202:/opt/fluxo/registry/
+   rsync -az scripts/preview-runner.sh root@2.25.78.202:/opt/fluxo/preview-runner.sh
+   ssh root@2.25.78.202 'chmod +x /opt/fluxo/preview-runner.sh && systemctl restart fluxo-preview-runner'
+   ```
+   (rsync **pierde el bit +x** → sin el `chmod` systemd falla con `203/EXEC`.)
+2. **La app de YoMap todavía NO es preview-aware** → hoy el preview va a fallar con el mensaje del gate
+   (que es la verdad, no un bug). Cerrarlo **como capacidad, no a mano**: una story despachada al repo
+   del cliente que implemente la init preview-aware de `app.instructions.md`. **Cuesta plata** (dispara
+   un agente real) y toca un repo de cliente → pedir el OK antes.
+3. **Validar la preview en vivo** y recién ahí dar P2 por cerrado.
+4. **P3** (store de `GOOGLE_SERVICES_JSON` + `MAPS_API_KEY` como tenant credentials, inyección al build
+   real, gate de lint). El hook ya está: el runner acepta `PREVIEW_MAPS_API_KEY` y `build-web.sh` la
+   inyecta en `web/index.html`; falta el origen (Vault) y la UI.

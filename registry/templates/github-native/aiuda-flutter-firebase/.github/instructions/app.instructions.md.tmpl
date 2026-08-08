@@ -36,6 +36,56 @@ Every screen that reads data implements the states its acceptance criteria imply
   dependency rules (`core` → nothing; `data` → core; `ui` → core; `feature_*` →
   core/data/ui) — no cyclic imports.
 
+## Firebase init: preview-aware (OBLIGATORIO)
+
+La app tiene que poder correr contra el **Firebase Emulator Suite** sin ninguna credencial
+real. De eso depende "App en vivo" (el preview navegable que ve el cliente) y el dev loop
+local. Es UNA sola función, en el bootstrap, y se escribe una vez por proyecto.
+
+El contrato son estos `--dart-define` (los defaults son los que ya declara
+`.fluxo/verify/stack.verify.yaml`, así que un `firebase emulators:start` local funciona sin
+pasar ninguno):
+
+```dart
+const bool kUseEmulator = bool.fromEnvironment('USE_FIREBASE_EMULATOR');
+const String kEmulatorHost = String.fromEnvironment('FIREBASE_EMULATOR_HOST', defaultValue: '127.0.0.1');
+const String kDemoProjectId = String.fromEnvironment('FIREBASE_DEMO_PROJECT_ID', defaultValue: 'demo-fluxo');
+const int kAuthPort = int.fromEnvironment('FIREBASE_AUTH_EMULATOR_PORT', defaultValue: 9099);
+const int kFirestorePort = int.fromEnvironment('FIRESTORE_EMULATOR_PORT', defaultValue: 8085);
+const int kFunctionsPort = int.fromEnvironment('FUNCTIONS_EMULATOR_PORT', defaultValue: 5001);
+const int kStoragePort = int.fromEnvironment('FIREBASE_STORAGE_EMULATOR_PORT', defaultValue: 9199);
+
+Future<void> initFirebase() async {
+  if (!kUseEmulator) {
+    await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
+    return;
+  }
+  // Proyecto demo-*: son valores DUMMY a propósito — el emulador no valida credenciales.
+  await Firebase.initializeApp(
+    options: const FirebaseOptions(
+      apiKey: 'fake-api-key',
+      appId: '1:0:web:0',
+      messagingSenderId: '0',
+      projectId: kDemoProjectId,
+    ),
+  );
+  await FirebaseAuth.instance.useAuthEmulator(kEmulatorHost, kAuthPort);
+  FirebaseFirestore.instance.useFirestoreEmulator(kEmulatorHost, kFirestorePort);
+  FirebaseFunctions.instance.useFunctionsEmulator(kEmulatorHost, kFunctionsPort);
+  await FirebaseStorage.instance.useStorageEmulator(kEmulatorHost, kStoragePort);
+}
+```
+
+Reglas:
+- `initFirebase()` corre **antes** de cualquier uso de Firestore/Auth (los `use*Emulator` tienen
+  que ejecutarse antes del primer pedido, o el SDK tira `emulator-config-failed`).
+- Sin la env, el camino es EXACTAMENTE el de siempre (`DefaultFirebaseOptions`) — esto no
+  cambia en nada el build real que se publica.
+- Llamá a los `use*Emulator` con host y puerto **pelados**, sin esquema ni `https`. En el
+  preview hosteado, la infra de Fluxo se encarga del puente a HTTPS; la app no tiene que
+  saber nada de eso.
+- No metas la rama de emulador atrás de un `kDebugMode`: el preview compila en **release**.
+
 ## Stay in lane
 - Do NOT touch `functions/**`, `packages-ts/**`, `admin/**`, or any `*.rules` /
   `*.indexes.json` — those are the firebase-dev and react-dev lanes. Clients never
