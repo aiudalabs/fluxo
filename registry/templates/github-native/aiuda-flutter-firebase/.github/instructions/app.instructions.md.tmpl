@@ -61,12 +61,17 @@ Future<void> initFirebase() async {
     return;
   }
   // Proyecto demo-*: son valores DUMMY a propósito — el emulador no valida credenciales.
+  // `storageBucket` NO es opcional aunque parezca de relleno: sin él, el primer uso de
+  // FirebaseStorage tira `[firebase_storage/no-bucket] No default storage bucket could be
+  // found` y la app entera se cae al arrancar (pasó en YoMap, 2026-08-08). El emulador
+  // acepta cualquier nombre de bucket.
   await Firebase.initializeApp(
     options: const FirebaseOptions(
       apiKey: 'fake-api-key',
       appId: '1:0:web:0',
       messagingSenderId: '0',
       projectId: kDemoProjectId,
+      storageBucket: '$kDemoProjectId.appspot.com',
     ),
   );
   await FirebaseAuth.instance.useAuthEmulator(kEmulatorHost, kAuthPort);
