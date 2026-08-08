@@ -12,7 +12,36 @@ LATAM**. Este repo es el **rebuild v2** — un sustrato nuevo que reemplaza al k
 
 ---
 
-## ▶ AL REINICIAR — levantá TODA la infra y corré el E2E BROWSER-DRIVEN (pedido explícito del usuario)
+## ▶ POR DÓNDE SEGUIR (2026-08-07) — LEÉ ESTO PRIMERO
+
+**Hecho y en `main` (aiudalabs/fluxo):**
+- **F1–F4 = orquestador de devs reales + reviewer autónomo** (`docs/19`): el dev es Claude Code en una
+  máquina de dev real que **buildea y corre** el artefacto (no solo tests); un **reviewer** de contexto
+  fresco corre post-sprint (build+run real) y el gate **"sprint done ⟺ 0 P0"** re-fedea los P0 al backlog.
+  **Desplegado en prod y VALIDADO en vivo** (YoMap SP1: cazó un P0 real que 150 tests en verde escondían).
+  De primera clase en la UI (Flow + badge P0 en el board + badge review en Agents).
+
+**LA TAREA ACTUAL — que la app SALGA CORRIENDO, no "a medias": `docs/20-app-corriendo-emulador-y-keys.md`.**
+El gap: Fluxo cablea el secret de CI pero NO el config de runtime (google-services.json real + Maps key)
+→ el APK compila pero no arranca y "App en vivo" muestra el cascarón. **Dirección acordada con el usuario
+(2026-08-07):** separar dos modos —
+- **Preview / App en vivo → EMULAR** (Firebase emulator + proyecto `demo-*` + seed) → corre sin ninguna
+  credencial real. Maps (no emulable) = key guardada o mock.
+- **Build real (deploy) → guardar-y-usar** las keys que el usuario da (google-services.json + Maps),
+  como tenant credentials, inyectadas al compilar.
+
+**Empezar por P2+P1** de `docs/20` (receta de preview con emulador + app "preview-aware") → el win visible
+es **YoMap corriendo en App en vivo sin credenciales reales**. Después P3 (store de keys + inyección al
+build real + gate de lint). **NO** retomar el enfoque "derivar del SA" (over-engineered; `provision-runtime-config.sh`
+quedó como alternativa opcional, no el camino).
+
+Estado runtime: prod supabase = `fluxo-prod` (`nlesumlklfqkoswhqptz`, CLI linkeado). Reviewer autónomo
+opt-in por `review_mode:auto` (default off). Pendiente menor: **F5** (subordinar `test-verify`/`ui-verify`
+al build+run del reviewer).
+
+---
+
+## ▶ (HISTÓRICO — HECHO) E2E BROWSER-DRIVEN del conductor
 
 **DÓNDE ESTAMOS (2026-07-13):** el conductor completo está en `main` (y `origin/main`):
 **F1–F4 (motor)** proyección GitHub→story · despacho story/sprint · scaffold reviewer · auto-merge gated —
