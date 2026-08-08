@@ -5,9 +5,12 @@
 > derivado (`scripts/provision-runtime-config.sh`, commit `51b94a3`) queda como alternativa opcional,
 > NO como el camino elegido.
 >
-> **P1 + P2 CONSTRUIDOS** (2026-08-07): convención preview-aware en el método + receta de preview con
-> emulador, seed y edge same-origin. 11 tests nuevos (315/315 en verde, typecheck limpio). **Todavía NO
-> validado en vivo** — falta rsync del registry+runner al VPS y una corrida real. Ver §6.
+> **P1 + P2 CONSTRUIDOS Y DESPLEGADOS** (2026-08-07): convención preview-aware en el método + receta de
+> preview con emulador, seed y edge same-origin. 11 tests nuevos (315/315 en verde, typecheck limpio).
+> **Validado en el VPS contra el emulador REAL** (no sólo con stubs): el emulador levanta healthy con
+> nuestro entrypoint, el seed escribe con los tipos correctos, el dato se lee **a través del edge**, el
+> usuario demo **se loguea**, y el gate de preview-aware falla/pasa como corresponde. Lo único que falta
+> para ver una app entera corriendo es que la app del proyecto sea preview-aware (§6.2).
 
 ## 0. El problema (feedback del usuario, sin vueltas)
 
@@ -163,7 +166,15 @@ de P1 ("que la app llame `useAuthEmulator` y listo") **no funciona** en un previ
    (que es la verdad, no un bug). Cerrarlo **como capacidad, no a mano**: una story despachada al repo
    del cliente que implemente la init preview-aware de `app.instructions.md`. **Cuesta plata** (dispara
    un agente real) y toca un repo de cliente → pedir el OK antes.
-3. **Validar la preview en vivo** y recién ahí dar P2 por cerrado.
+3. **Validar la preview en vivo** con una app de verdad y recién ahí dar P2 por cerrado.
+   **Ya validado en el VPS (2026-08-07)** con un repo sintético, contra el emulador REAL:
+   emulador healthy en ~40s con nuestro entrypoint · el seed escribe con los tipos correctos
+   (`doubleValue 4.5`, `integerValue "3"`) · el documento se lee **a través del edge** (prueba el ruteo
+   `/v1/*` → firestore) · el usuario demo **hace login** por el edge (prueba `/identitytoolkit…/*` →
+   auth) · el SPA-fallback devuelve 404 con el webroot vacío (el runner sigue esperando, como debe) ·
+   el gate de preview-aware falla con el mensaje accionable y pasa cuando la app lo cumple.
+   **Sin validar todavía:** el `flutter build web` completo + el shim ejercitado por un browser real —
+   eso necesita (2).
 4. **P3** (store de `GOOGLE_SERVICES_JSON` + `MAPS_API_KEY` como tenant credentials, inyección al build
    real, gate de lint). El hook ya está: el runner acepta `PREVIEW_MAPS_API_KEY` y `build-web.sh` la
    inyecta en `web/index.html`; falta el origen (Vault) y la UI.

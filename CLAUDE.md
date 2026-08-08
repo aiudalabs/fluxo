@@ -30,16 +30,19 @@ El gap: Fluxo cablea el secret de CI pero NO el config de runtime (google-servic
 - **Build real (deploy) → guardar-y-usar** las keys que el usuario da (google-services.json + Maps),
   como tenant credentials, inyectadas al compilar.
 
-**P1+P2 CONSTRUIDOS (2026-08-07), NO validados en vivo todavía.** Convención preview-aware (método) +
-receta de preview con emulador Firebase, seed y edge same-origin (`registry/templates/.../aiuda-flutter-firebase/.fluxo/preview/`),
-11 tests nuevos (315/315 verde). **Hallazgo que definió el diseño:** en web los SDK de FlutterFire arman
-la URL del emulador con `http://` HARDCODEADO → mixed content sobre HTTPS; por eso el puente vive en la
-INFRA (`preview-shim.js` reescribe fetch/XHR al mismo origen) y no en cada app. **Lo que sigue, en orden
-(detalle en `docs/20` §6):** (1) rsync de `registry/` + `preview-runner.sh` al VPS y restart del servicio;
-(2) la app de YoMap todavía NO es preview-aware → el preview falla con el mensaje del gate (es la verdad);
-cerrarlo con una story despachada al repo del cliente — **cuesta plata, pedir OK**; (3) validar en vivo;
-(4) P3 (keys guardadas + inyección al build real + gate de lint). **NO** retomar el enfoque "derivar del SA"
-(over-engineered; `provision-runtime-config.sh` quedó como alternativa opcional, no el camino).
+**P1+P2 CONSTRUIDOS, DESPLEGADOS Y VALIDADOS contra el emulador REAL (2026-08-07).** Convención
+preview-aware (método) + receta de preview con emulador Firebase, seed y edge same-origin
+(`registry/templates/.../aiuda-flutter-firebase/.fluxo/preview/`), 11 tests nuevos (315/315 verde).
+En el VPS: emulador healthy, seed con tipos correctos, lectura **a través del edge**, login del usuario
+demo, y el gate de preview-aware fallando/pasando como debe. **Hallazgo que definió el diseño:** en web
+los SDK de FlutterFire arman la URL del emulador con `http://` HARDCODEADO → mixed content sobre HTTPS;
+por eso el puente vive en la INFRA (`preview-shim.js` reescribe fetch/XHR al mismo origen) y no en cada
+app — no intentes resolverlo con `sslEnabled`. **Lo que sigue (detalle en `docs/20` §6):** (1) la app de
+YoMap todavía NO es preview-aware → su preview falla con el mensaje del gate (es la verdad, no un bug);
+cerrarlo con una story despachada al repo del cliente — **cuesta plata, pedir OK**; (2) con eso, validar
+una preview entera (build web + shim en un browser real); (3) P3 (keys guardadas + inyección al build
+real + gate de lint). **NO** retomar el enfoque "derivar del SA" (over-engineered;
+`provision-runtime-config.sh` quedó como alternativa opcional, no el camino).
 
 Estado runtime: prod supabase = `fluxo-prod` (`nlesumlklfqkoswhqptz`, CLI linkeado). Reviewer autónomo
 opt-in por `review_mode:auto` (default off). Pendiente menor: **F5** (subordinar `test-verify`/`ui-verify`
