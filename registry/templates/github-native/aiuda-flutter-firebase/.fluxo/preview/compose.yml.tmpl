@@ -38,6 +38,9 @@ services:
       HOME: /root
       REPO_PATH: /repo
       FIREBASE_PROJECT: demo-fluxo
+      # La caché de npm DENTRO del volumen persistido: si no, cada regeneración re-baja el tarball de
+      # firebase-tools (el `npx`). Los .jar de los emuladores ya caen en ~/.cache/firebase.
+      npm_config_cache: /root/.cache/npm
       # Dos JVM (auth + firestore) en un VPS chico: sin tope, cada una toma un cuarto de la RAM del host.
       JAVA_TOOL_OPTIONS: "-Xmx448m"
     command: ["bash", "/etc/fluxo/recipe/emulator-entrypoint.sh"]
