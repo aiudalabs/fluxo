@@ -149,13 +149,16 @@ de P1 ("que la app llame `useAuthEmulator` y listo") **no funciona** en un previ
 
 ## 6. Lo que FALTA para ver YoMap corriendo (en orden)
 
-1. **Desplegar al VPS** — la receta la lee el runner desde el registry del VPS, y el runner cambió:
+1. **Desplegar al VPS** — la receta la lee el runner desde el registry del VPS, y el runner cambió.
+   El preview-runner vive en **`/opt/fluxo/scripts/`** (así lo apunta el `ExecStart` de la unit), NO en
+   la raíz de `/opt/fluxo` como los otros scripts host-level:
    ```bash
    rsync -az --delete --exclude .git registry/ root@2.25.78.202:/opt/fluxo/registry/
-   rsync -az scripts/preview-runner.sh root@2.25.78.202:/opt/fluxo/preview-runner.sh
-   ssh root@2.25.78.202 'chmod +x /opt/fluxo/preview-runner.sh && systemctl restart fluxo-preview-runner'
+   rsync -az scripts/preview-runner.sh root@2.25.78.202:/opt/fluxo/scripts/preview-runner.sh
+   ssh root@2.25.78.202 'chmod +x /opt/fluxo/scripts/preview-runner.sh && systemctl restart fluxo-preview-runner'
    ```
    (rsync **pierde el bit +x** → sin el `chmod` systemd falla con `203/EXEC`.)
+   **HECHO el 2026-08-07** (dry-run previo: sólo altas, nada borrado; runner reiniciado y activo).
 2. **La app de YoMap todavía NO es preview-aware** → hoy el preview va a fallar con el mensaje del gate
    (que es la verdad, no un bug). Cerrarlo **como capacidad, no a mano**: una story despachada al repo
    del cliente que implemente la init preview-aware de `app.instructions.md`. **Cuesta plata** (dispara
