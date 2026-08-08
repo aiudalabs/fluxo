@@ -81,10 +81,12 @@ NOTA (runner fluxo_engine · modo REVIEW): estás en una MÁQUINA DE DEV REAL co
   git config --global --add safe.directory "$WD" 2>/dev/null || true
   log "corriendo el REVIEWER en $AGENT_IMG sobre el código mergeado…"
   set +e
-  docker run --rm --user 1000:1000 \
+  # El prompt entra por STDIN, no como argv — ver la nota en el despacho del agente (abajo): un prompt
+  # en la línea de comando hace que `pkill -f <patrón>` del propio agente lo mate a él.
+  printf '%s' "$RPROMPT" | docker run --rm -i --user 1000:1000 \
     -e CLAUDE_CODE_OAUTH_TOKEN="$CLAUDE_TOK" \
     -v "$WD:/work" -w /work "$AGENT_IMG" \
-    claude -p --output-format stream-json --verbose --dangerously-skip-permissions --model "$MODEL" "$RPROMPT" \
+    claude -p --output-format stream-json --verbose --dangerously-skip-permissions --model "$MODEL" \
     > "$RLOG" 2>"$WD/../$LABEL.err"
   RRC=$?
   set -e
@@ -131,10 +133,20 @@ if ! docker image inspect "$AGENT_IMG" >/dev/null 2>&1; then
 fi
 log "corriendo el agente en $AGENT_IMG (network=egress pendiente F3; por ahora default)…"
 set +e
-docker run --rm --user 1000:1000 \
+# EL PROMPT VA POR STDIN, NUNCA COMO ARGV. Suena cosmético y no lo es: con el prompt en la línea de
+# comando, TODO su texto queda en el argv del proceso `claude`, y `pkill -f <patrón>` matchea contra la
+# línea de comando COMPLETA. Un agente que limpia procesos suyos (`pkill -f "firebase emulators:start"`)
+# matchea su PROPIO proceso — porque ese texto está en el prompt — y SE SUICIDA a mitad del trabajo.
+# Pasó de verdad (2026-08-08, story S-fb-emulator-init-1 de YoMap): el agente terminó la
+# implementación, la pusheó, quiso bajar el emulador que había levantado para verificar, y se mató
+# solo → rc=143 (SIGTERM) → job `failed` y 14 min de trabajo bueno sin PR. Por stdin el argv queda
+# limpio, así que ningún patrón razonable puede matchearlo (y de paso el prompt deja de ser visible en
+# `ps`/`docker top`). `-i` es imprescindible para que el contenedor reciba stdin.
+# En un pipeline en background, $! es el PID del ÚLTIMO comando (el docker run) — que es el que queremos.
+printf '%s' "$PROMPT" | docker run --rm -i --user 1000:1000 \
   -e CLAUDE_CODE_OAUTH_TOKEN="$CLAUDE_TOK" \
   -v "$WD:/work" -w /work "$AGENT_IMG" \
-  claude -p --output-format stream-json --verbose --dangerously-skip-permissions --model "$MODEL" "$PROMPT" \
+  claude -p --output-format stream-json --verbose --dangerously-skip-permissions --model "$MODEL" \
   > "$LOGF" 2>"$WD/../$LABEL.err" &
 AGENT_PID=$!
 # Push incremental DRIVEN BY COMMITS (no timer): mientras el agente trabaja, cuando el HEAD cambia
