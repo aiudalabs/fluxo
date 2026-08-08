@@ -356,6 +356,19 @@ process_one() { # $1=id  $2=project_id  $3=ref
   local ok=""
   for _ in $(seq 1 90); do
     sleep 8
+    # FAIL-FAST: si la receta tiene un servicio one-shot `build` (compilar el artefacto) y murió con
+    # error, esperar los 12 min no aporta nada y encima SEPULTA la causa: el usuario terminaba viendo
+    # "la app no respondió a tiempo" en vez del error real (p.ej. "la app no es preview-aware" o un
+    # fallo de compilación). Cortamos acá y le pasamos la última parte del log, que es lo accionable.
+    local bstate; bstate=$(docker inspect -f '{{.State.Status}}:{{.State.ExitCode}}' "fluxo-preview-$pid-build-1" 2>/dev/null || true)
+    case "$bstate" in
+      exited:0|"") ;;   # terminó bien, o esta receta no tiene servicio `build` (react-supabase)
+      exited:*)
+        local blog; blog=$(docker logs --tail 12 "fluxo-preview-$pid-build-1" 2>&1 | tr '\n' ' ' | tail -c 900)
+        set_status "$id" failed ",\"error\":$(jesc "el build del preview falló: $blog")"
+        teardown "$pid"; return
+      ;;
+    esac
     local fe api
     # front: cualquier 2xx/3xx = la app respondió (puede redirigir / → /login con 302/303/307/308).
     fe=$(curl -s -o /dev/null -w "%{http_code}" "http://127.0.0.1:$port" 2>/dev/null || echo 000)
