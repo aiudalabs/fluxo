@@ -213,6 +213,39 @@ test("el seeder convierte JSON a los typed values del REST de Firestore", () => 
   });
 });
 
+test("el seeder expresa timestamps y geopoints (que JSON no sabe y la app SÍ castea)", () => {
+  const { toFirestoreValue } = seeder;
+  // Sembrar un createdAt como string hace que un `as Timestamp` de la app reviente, y un location
+  // como mapa rompe el `as GeoPoint`. Los escapes son explícitos: la fixture declara qué es.
+  assert.deepEqual(toFirestoreValue({ $timestamp: "2026-08-01T12:00:00Z" }), {
+    timestampValue: "2026-08-01T12:00:00Z",
+  });
+  assert.deepEqual(toFirestoreValue({ $geopoint: { lat: 19.4326, lng: -99.1332 } }), {
+    geoPointValue: { latitude: 19.4326, longitude: -99.1332 },
+  });
+  // Anidados dentro de un documento normal.
+  assert.deepEqual(toFirestoreFieldsOf({ createdAt: { $timestamp: "2026-01-01T00:00:00Z" } }), {
+    createdAt: { timestampValue: "2026-01-01T00:00:00Z" },
+  });
+  // Un mapa común sigue siendo un mapa (el escape no se dispara por cualquier objeto).
+  assert.deepEqual(toFirestoreValue({ lat: 1, lng: 2 }), {
+    mapValue: { fields: { lat: { integerValue: "1" }, lng: { integerValue: "2" } } },
+  });
+  assert.throws(() => toFirestoreValue({ $geopoint: { lat: "19", lng: "-99" } }), /numéricos/);
+});
+
+function toFirestoreFieldsOf(o: Record<string, unknown>) {
+  return seeder.toFirestoreFields(o);
+}
+
+test("el seeder lee las fixtures DEL PROYECTO además de las genéricas del stack", () => {
+  const src = readFileSync(join(FLUTTER_PREVIEW, "preview-seed.mjs"), "utf8");
+  // Las del stack son de una app de reservas de ejemplo; sin las del proyecto, la app se suscribe a
+  // sus colecciones reales, vienen vacías y el preview queda en un spinner eterno (YoMap, 2026-08-08).
+  assert.match(src, /\.fluxo\/verify\/e2e\/seed/);
+  assert.match(src, /\.fluxo\/preview\/seed/);
+});
+
 test("el seeder respeta el naming <coleccion>.<docId>.json de las fixtures del stack", () => {
   const { parseFixtureName } = seeder;
   assert.deepEqual(parseFixtureName("providers.prov1.json"), { collection: "providers", docId: "prov1" });
@@ -253,12 +286,12 @@ test("el seeder siembra world state + cuenta demo por el REST del emulador", asy
   writeFileSync(join(repo, ".fluxo/verify/e2e/seed/providers.prov1.json"), '{"name":"Clinica Norte","available":true}');
   writeFileSync(join(repo, ".fluxo/verify/e2e/seed/notas.txt"), "ruido que no es fixture");
 
-  const seen: Array<{ url: string; body: string }> = [];
+  const seen: Array<{ url: string; body: string; method: string }> = [];
   const server = createServer((req, res) => {
     let body = "";
     req.on("data", (c) => (body += c));
     req.on("end", () => {
-      seen.push({ url: req.url!, body });
+      seen.push({ url: req.url!, body, method: req.method! });
       res.writeHead(200, { "Content-Type": "application/json" });
       res.end(JSON.stringify({ localId: "uid-demo" }));
     });
@@ -284,11 +317,14 @@ test("el seeder siembra world state + cuenta demo por el REST del emulador", asy
 
   const doc = seen.find((r) => r.url.includes("/documents/"));
   assert.ok(doc, "el seeder no escribió ningún documento");
+  // PATCH sobre el path del documento = crear-o-reemplazar. Con POST?documentId el segundo seed
+  // moría con 409 ALREADY_EXISTS y dejaba la data a medias.
   assert.equal(
     doc.url,
-    "/v1/projects/demo-fluxo/databases/(default)/documents/providers?documentId=prov1",
-    "el path REST de Firestore tiene que llevar el projectId, la base (default) y el documentId",
+    "/v1/projects/demo-fluxo/databases/(default)/documents/providers/prov1",
+    "el path REST de Firestore tiene que llevar el projectId, la base (default) y el docId",
   );
+  assert.equal(doc.method, "PATCH", "el seed tiene que ser idempotente (PATCH crea o reemplaza)");
   assert.deepEqual(JSON.parse(doc.body), {
     fields: { name: { stringValue: "Clinica Norte" }, available: { booleanValue: true } },
   });

@@ -38,7 +38,21 @@ export function toFirestoreValue(v) {
   }
   if (typeof v === 'string') return { stringValue: v };
   if (Array.isArray(v)) return { arrayValue: { values: v.map(toFirestoreValue) } };
-  if (typeof v === 'object') return { mapValue: { fields: toFirestoreFields(v) } };
+  if (typeof v === 'object') {
+    // Escapes EXPLÍCITOS para los tipos que JSON no sabe expresar y la app SÍ castea. Sin esto, un
+    // `createdAt` se sembraba como string y un `location` como mapa: la app hace `as Timestamp` /
+    // `as GeoPoint` y revienta, o peor, muestra la pantalla vacía sin decir por qué.
+    // Son explícitos a propósito (no adivinamos por la pinta del string): una fixture dice qué es.
+    if ('$timestamp' in v) return { timestampValue: v.$timestamp };
+    if ('$geopoint' in v) {
+      const { lat, lng } = v.$geopoint;
+      if (typeof lat !== 'number' || typeof lng !== 'number') {
+        throw new Error('$geopoint necesita {lat, lng} numéricos');
+      }
+      return { geoPointValue: { latitude: lat, longitude: lng } };
+    }
+    return { mapValue: { fields: toFirestoreFields(v) } };
+  }
   throw new Error(`tipo no soportado en una fixture de seed: ${typeof v}`);
 }
 
@@ -59,39 +73,64 @@ export function parseFixtureName(fileName) {
 // ── REST del emulador ──────────────────────────────────────────────────────────────────────────────
 // `Bearer owner` es el token que el emulador de Firestore acepta como admin (bypassa las rules) — es
 // el mecanismo del emulador, no una credencial real.
+// PATCH (no POST?documentId): crea o REEMPLAZA. El seed tiene que ser idempotente — se re-corre sobre
+// un emulador que ya tiene estado (regenerás el preview, corregís una fixture y volvés a sembrar), y
+// con POST el segundo intento moría con 409 ALREADY_EXISTS a mitad de camino, dejando la data a medias.
 async function putDoc(collection, docId, body) {
   const url =
     `http://${FIRESTORE_HOST}/v1/projects/${PROJECT_ID}/databases/(default)/documents/` +
-    `${encodeURIComponent(collection)}?documentId=${encodeURIComponent(docId)}`;
+    `${encodeURIComponent(collection)}/${encodeURIComponent(docId)}`;
   const res = await fetch(url, {
-    method: 'POST',
+    method: 'PATCH',
     headers: { 'Content-Type': 'application/json', Authorization: 'Bearer owner' },
     body: JSON.stringify({ fields: toFirestoreFields(body) }),
   });
   if (!res.ok) throw new Error(`Firestore ${collection}/${docId}: HTTP ${res.status} ${await res.text()}`);
 }
 
-async function createUser({ email, password, displayName }) {
-  const url = `http://${AUTH_HOST}/identitytoolkit.googleapis.com/v1/accounts:signUp?key=fake-api-key`;
+// Crea la cuenta demo. Dos caminos:
+//  · con `uid` (o `phoneNumber`) → endpoint ADMIN del emulador, que deja fijar el localId. Es lo que
+//    hace falta en apps de login por TELÉFONO: el uid tiene que ser conocido de antemano para poder
+//    sembrar su `users/{uid}` y que la app encuentre el perfil al entrar (si no, arranca sin perfil).
+//  · sin uid → signUp normal de email/password.
+async function createUser(user) {
+  const { uid, email, password, displayName, phoneNumber } = user;
+  const admin = Boolean(uid || phoneNumber);
+  const url = admin
+    ? `http://${AUTH_HOST}/identitytoolkit.googleapis.com/v1/projects/${PROJECT_ID}/accounts`
+    : `http://${AUTH_HOST}/identitytoolkit.googleapis.com/v1/accounts:signUp?key=fake-api-key`;
+  const body = admin
+    ? { localId: uid, email, password, displayName, phoneNumber, emailVerified: true }
+    : { email, password, displayName, returnSecureToken: true };
   const res = await fetch(url, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ email, password, displayName, returnSecureToken: true }),
+    headers: { 'Content-Type': 'application/json', ...(admin ? { Authorization: 'Bearer owner' } : {}) },
+    body: JSON.stringify(Object.fromEntries(Object.entries(body).filter(([, v]) => v !== undefined))),
   });
   const payload = await res.json().catch(() => ({}));
-  // EMAIL_EXISTS no es un fallo: el preview se regenera sobre un emulador que puede traer estado.
-  if (!res.ok && payload?.error?.message !== 'EMAIL_EXISTS') {
-    throw new Error(`Auth ${email}: HTTP ${res.status} ${JSON.stringify(payload)}`);
+  // "ya existe" no es un fallo: el seed se re-corre sobre un emulador que puede traer estado. El
+  // emulador tiene un mensaje distinto por cada forma de duplicado (EMAIL_EXISTS, PHONE_NUMBER_EXISTS,
+  // DUPLICATE_LOCAL_ID) — todas significan lo mismo acá.
+  const msg = payload?.error?.message || '';
+  if (!res.ok && !/EXISTS|DUPLICATE/.test(msg)) {
+    throw new Error(`Auth ${email || phoneNumber}: HTTP ${res.status} ${JSON.stringify(payload)}`);
   }
-  return payload.localId || null;
+  return payload.localId || uid || null;
 }
 
 // ── main ───────────────────────────────────────────────────────────────────────────────────────────
 async function main() {
-  // 1) world state — las fixtures que el repo ya declara para e2e-verify.
-  const seedDir = join(REPO, '.fluxo/verify/e2e/seed');
+  // 1) world state. DOS orígenes, en orden:
+  //    a) `.fluxo/verify/e2e/seed/` — las fixtures que el stack ya trae para e2e-verify. Son
+  //       GENÉRICAS del stack (una app de reservas de ejemplo), así que casi nunca coinciden con el
+  //       dominio real del proyecto.
+  //    b) `.fluxo/preview/seed/` — las fixtures DEL PROYECTO, con su esquema de verdad. Un preview
+  //       "arrancó pero no muestra nada" casi siempre es que faltan éstas: la app se suscribe a sus
+  //       colecciones, vienen vacías y la pantalla se queda esperando.
+  const seedDirs = [join(REPO, '.fluxo/verify/e2e/seed'), join(REPO, '.fluxo/preview/seed')];
   let docs = 0;
-  if (existsSync(seedDir)) {
+  for (const seedDir of seedDirs) {
+    if (!existsSync(seedDir)) continue;
     for (const file of readdirSync(seedDir).filter((f) => f.endsWith('.json'))) {
       const parsed = parseFixtureName(file);
       if (!parsed) {
@@ -102,11 +141,12 @@ async function main() {
       await putDoc(parsed.collection, parsed.docId, body);
       docs++;
     }
-    console.log(`seed: ${docs} documento(s) de world state desde ${seedDir}`);
+    console.log(`seed: fixtures de ${seedDir} cargadas`);
+  }
+  if (docs === 0) {
+    console.warn('seed: NINGUNA fixture encontrada — el preview va a arrancar SIN datos de ejemplo.');
   } else {
-    // No es un error: un proyecto sin fixtures previsualiza igual, sólo que vacío. Lo decimos fuerte
-    // porque "el preview arrancó pero no muestra nada" casi siempre es ESTO.
-    console.warn(`seed: no existe ${seedDir} — el preview va a arrancar SIN datos de ejemplo.`);
+    console.log(`seed: ${docs} documento(s) de world state en total`);
   }
 
   // 2) cuentas demo — sin esto no se puede ni entrar a la app.
@@ -116,7 +156,9 @@ async function main() {
     : [{ email: DEMO_EMAIL, password: DEMO_PASSWORD, displayName: 'Demo Fluxo' }];
   for (const user of users) {
     const uid = await createUser(user);
-    console.log(`seed: usuario demo ${user.email} (password ${user.password})${uid ? ` uid=${uid}` : ''}`);
+    const who = user.phoneNumber || user.email;
+    const how = user.phoneNumber ? '(login por SMS: el código sale del emulador)' : `(password ${user.password})`;
+    console.log(`seed: usuario demo ${who} ${how}${uid ? ` uid=${uid}` : ''}`);
   }
   console.log('seed: listo.');
 }
