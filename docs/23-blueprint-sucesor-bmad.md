@@ -72,11 +72,29 @@ Los tres que más pesan y su mitigación de diseño:
 - **"BMAD cambia o no encaja"** → BMAD se usa como esqueleto vendored (copiado al repo), no como
   dependencia viva; nuestras personas/gates son nuestros archivos.
 
-## 5. Qué decide el research de mercado (docs/22 §3)
+## 5. Lo que el research resolvió (docs/22 Parte 3 — leerlo entero)
 
-La elección concreta del ejecutor delegado (Claude Code Actions vs Copilot coding agent vs ambos según
-repo), y si algún builder con preview nativo cubre la demo-al-cliente mejor que los preview channels
-del stack. El blueprint no se casa con un vendor: el método es texto y corre en cualquiera.
+El research cerró las elecciones abiertas, con cinco hallazgos que cambian el blueprint:
+
+1. **`bmad-loop` existe y ES la arquitectura de Fluxo, mantenida por el autor de BMAD** (MIT): loop
+   determinista `pick story → implement → adversarially review → verify → commit`, "No LLM in the
+   control loop", reviewer en contexto fresco, resumable. **No se escribe orquestador: se extiende
+   bmad-loop** (pineado a un tag; aportes como extensión, nunca parches al engine — es early beta).
+2. **La delegación issue→agente→PR es commodity** (GitHub/Linear/Jira convergieron). No es moat.
+3. **Nadie en el mercado verifica que la app CORRA** ni expone una URL de preview para el cliente
+   final. **Ese es el gap — y es exactamente lo que Fluxo ya tiene escrito y validado** (reviewer
+   build+run con "done⟺0 P0" + la receta de preview emulado de docs/20). El moat del sucesor son esas
+   dos piezas portadas a comandos `[verify]` de bmad-loop + una capa fina de cliente en español.
+4. **Firebase Studio está muerto** (sunset; sign-ups cerrados desde jun-2026) — la única alternativa
+   alquilada de preview Flutter desapareció. La receta propia de docs/20 conserva su valor ("guardá la
+   receta, tirá el runner"); para el APK real, Appetize.io (~$59/mes, link público embebible).
+5. **ACP (Agent Client Protocol)** es el estándar de interop para mezclar CLIs (Claude Code, Codex,
+   Copilot CLI, Gemini) por etapa — portabilidad de ejecutor sin código propio.
+
+**Stack elegido** (tabla completa y costos en docs/22 Parte 3 §5): BMAD-METHOD v6 (método) +
+bmad-loop (orquestación) + Claude Code headless (ejecutor) + Linear (board del cliente, agentes sin
+costo de seat) + GitHub BYO (CI/repos) + emulador demo-* para preview web + Appetize para APK.
+Costo fijo ~$160-180/mes. Todo lo demás de Fluxo se apaga.
 
 ## 6. El experimento de validación (antes de comprometer nada)
 

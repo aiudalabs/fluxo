@@ -12,7 +12,29 @@ LATAM**. Este repo es el **rebuild v2** — un sustrato nuevo que reemplaza al k
 
 ---
 
-## ▶ POR DÓNDE SEGUIR (2026-08-07) — LEÉ ESTO PRIMERO
+## ▶ PIVOTE (2026-08-08) — LEÉ ESTO ANTES QUE NADA
+
+**Decisión del usuario: Fluxo v2 entra en FREEZE de features y se diseña un SUCESOR simple.** Motivo:
+el costo dominante era la operación humana del sustrato propio (días de debugging para cosas que
+Claude Code hace sin fricción). El paquete de decisión completo:
+- **`docs/21-radiografia-fluxo.md`** — estado, arquitectura, diagramas, casos de uso, los 17
+  incidentes, economía real, qué cargar / qué NO reconstruir.
+- **`docs/22-analisis-adversarial-premortem-y-mercado.md`** — adversarial (16 piezas a no
+  reconstruir) · premortem (12 fracasos + 5 invariantes verificables) · research de mercado
+  (hallazgo clave: **`bmad-loop` del autor de BMAD ya es el orquestador que Fluxo construyó a mano**;
+  el gap de mercado = verificar que la app CORRE + preview para el cliente — justo lo que Fluxo ya
+  tiene validado).
+- **`docs/23-blueprint-sucesor-bmad.md`** — el diseño del sucesor + el experimento de validación §6
+  (un producto chico E2E con BMAD+bmad-loop+Claude Code, SIN tocar Fluxo) que es el paso siguiente.
+
+**Reglas del freeze:** no construir F5/F9/F10; prod (VPS+Supabase) queda operable tal cual; los
+previews siguen sirviendo para demos. Pendiente menor heredado: las fixtures con campo `geo` de YoMap
+están en el clon del VPS pero NO pusheadas a la rama `engine/sprint-SP-fb-emulator-init-1` (VPS
+inaccesible en su momento) — si se regenera ese preview, las publicaciones no aparecen hasta pushearlas.
+
+---
+
+## ▶ (HISTÓRICO — pre-pivote) POR DÓNDE SEGUIR (2026-08-07)
 
 **Hecho y en `main` (aiudalabs/fluxo):**
 - **F1–F4 = orquestador de devs reales + reviewer autónomo** (`docs/19`): el dev es Claude Code en una

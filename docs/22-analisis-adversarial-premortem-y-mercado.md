@@ -3,7 +3,7 @@
 > **Cómo se produjo este doc (2026-08-08):** tres agentes independientes, cada uno con acceso al repo,
 > al log de decisiones (`~/.devtrace/decisions/fluxo.md`) y a la evidencia de los 17 incidentes de
 > `docs/21 §5`. Parte 1 ataca a Fluxo v2 tal como existe; Parte 2 hace el premortem del sucesor ANTES
-> de construirlo; Parte 3 (research de mercado con fuentes web verificadas) se agrega al completarse.
+> de construirlo; Parte 3 es el research de mercado con fuentes web verificadas (9 coding agents, PM con agentes, app builders, BMAD, ACP).
 > Las conclusiones alimentan `docs/23-blueprint-sucesor-bmad.md`.
 
 ---
@@ -453,3 +453,152 @@ Seis métricas, con umbral concreto, cadencia y qué se hace al cruzarlas. Todas
 ---
 
 > **La frase que hay que tener pegada al monitor.** Fluxo v2 no fracasó por construir un orquestador: fracasó porque construyó un orquestador **y además** tuvo que resolver stubs certificados como éxito, gates que skipean, credenciales que expiran y apps que compilan sin arrancar. El sucesor borra la primera mitad de esa lista. **Si además borra la segunda —el reviewer, los gates deterministas, el registro auditable— no queda un sistema simple: queda Claude Code, y eso ya lo tenía cualquiera.**
+---
+
+# Parte 3 · Research de mercado — herramientas para el sucesor (agosto 2026)
+
+## 0. Los cinco hallazgos que cambian la decisión
+
+1. **`bmad-loop` es Fluxo, open source, MIT, mantenido por el propio BMad Code.** Su README lo describe textualmente como *"A deterministic ralph-loop orchestrator for the BMAD-METHOD implementation phase"*, con el loop **`pick story → implement → adversarially review → verify → commit`** y *"No LLM in the control loop"*. Es la misma tesis arquitectónica que ustedes construyeron a mano en `control/` + `design/` + el reviewer F4. → https://github.com/bmad-code-org/bmad-loop
+2. **La delegación "issue → agente → PR" es commodity.** GitHub, Linear y Jira convergieron al mismo patrón, con API pública. Ya no es un diferenciador, es plomería alquilable.
+3. **Nadie verifica que la app CORRA.** El techo de todo el mercado es *"run automated tests and linters"*. Las dos únicas excepciones parciales son Factory.ai (Droid Control: video con pass/fail por paso) y Cursor (screenshots/videos). **Ninguno de los 9 agentes investigados expone una URL de preview desplegada y accesible por un cliente final.**
+4. **Firebase Studio murió y se llevó la única solución de preview Flutter alquilable.** Textual: *"Firebase Studio is sunsetting on March 22, 2027. **As of June 22, 2026, new workspace creation and user signup are disabled.**"* → https://firebase.google.com/docs/studio — Tenía emulador Android en el browser para workspaces Flutter, importaba repos de GitHub y era gratis. Ya no podés ni crear cuenta. `zapp.run` (Flutter → web desde GitHub) también está caído: el dominio no resuelve.
+5. **ACP (Agent Client Protocol) es el estándar de interop que sí conviene alquilar.** Registro público co-lanzado por Zed y JetBrains el 28-ene-2026, con *"Claude Code, Codex CLI, GitHub Copilot CLI, OpenCode, Gemini CLI, and many more"*. → https://zed.dev/blog/acp-registry
+
+---
+
+## 1. Tabla comparativa maestra
+
+| Herramienta | Delegación backlog→agente | Verificación / QA | Preview de la app corriendo | Precio (verificado) | Veredicto |
+|---|---|---|---|---|---|
+| **bmad-loop** | Story de `sprint-status.yaml` → sesión fresca; CLI `run`/`sweep`/`resume`/`confirm` | ✅ **Lo mejor del set para el caso**: review adversarial en contexto fresco + verificación de artefactos en disco (frontmatter, baseline-commit como *"cheap LLM-lie detector"*, diff no vacío, tus comandos `[verify]`) | ❌ | **Gratis (MIT)** | 🟢 **ALQUILAR — es el corazón del sucesor** |
+| **BMAD-METHOD** (v6.10.0) | El método: 4 fases + skills + gates | Gate de sprint readiness PASS/CONCERNS/FAIL; `bmad-code-review`; `bmad-qa-generate-e2e-tests` | ❌ | **Gratis (MIT)** | 🟢 **ALQUILAR — reemplaza `registry/`** |
+| **Claude Code** (Actions / headless / cloud) | `@claude` en issue nuevo; `claude -p`; Routines API (`POST /v1/claude_code/routines/{id}/fire`) — ⚠️ **sin trigger por issue** | ✅ Code Review con *"a fleet of specialized agents"*, findings 🔴/🟡/🟣 | ❌ | Pro $17–20/mes · Team $20–100/seat · **Code Review $15–25 por review**, facturado aparte | 🟢 **ALQUILAR — el ejecutor** |
+| **GitHub Copilot cloud agent** | ✅ Nativo: assignee + `POST /agents/repos/{o}/{r}/tasks` + GraphQL | Tests y linters en sandbox de Actions; security validation (CodeQL + secret scanning + advisory DB) **sin licencia GHAS** | ❌ | Pro **$10** · Pro+ **$39** · Max **$100** · Business **$19/seat** (1.900 créditos) · Enterprise **$39/seat**. **1 AI credit = $0.01** | 🟡 **VIGILAR** — el gotcha mata la orquestación (ver §3) |
+| **Linear** | ✅ El mejor modelo: `AgentSession` + `AgentActivity`; **`delegate` ≠ `assignee`**; coding sessions con Claude Code o Codex | Draft PR + review humano | ❌ | Free $0 · Basic **$10** · Business **$16**/user/mes. **Los agentes NO cuentan como seat.** AI credits: ~**$3–5 por bug fix** | 🟢 **ALQUILAR — el board del cliente** |
+| **Jira + Rovo** | ✅ Assignee, @mención, **transición de workflow**, **columna de board**; Jira Automation con Copilot/Cursor/Claude como action steps nativos | Tests; audit trail de cada invocación | ❌ | Rovo Dev **$20/dev/mes** (2.000 credits, $0.01 overage). Rovo base: 25/70/150 credits por user según edición | 🔴 **IGNORAR** para el ICP (agencias boutique LATAM no viven en Jira) |
+| **Factory.ai (Droids)** | ❌ PR-first, sin asignación por issue | ✅✅ **Droid Control**: *"launch apps, type commands, click buttons, record what happens"* → **video** + tabla pass/fail por paso | Pro **$20** · Plus **$100** · Max **$200**/mes — ⚠️ límites no publicados ("~5x de Pro" sin decir cuánto es Pro) | 🟡 **VIGILAR** — el único que ejecuta la app de verdad |
+| **Cursor Cloud Agents** | ✅ `@cursor` en issue/PR, Linear, Slack, `POST /v1/agents`, Automations | ✅ Controla desktop y browser; videos + screenshots al PR; Bugbot | Pro **$20** → Ultra **$200**/mes. 🔴 **Cloud agents se cobran a API pricing, fuera del bucket plano** | 🟡 VIGILAR |
+| **OpenHands** | ✅ Label `openhands` o `@openhands`; `POST /api/v1/app-conversations` | PR Review Assistant | ❌ (solo puertos de sandbox) | OSS gratis · SaaS gratis **con 10 conversaciones/día** · Enterprise no público | 🟡 VIGILAR (el límite de 10/día mata cualquier operación seria) |
+| **Devin (Cognition)** | Linear/Jira; `api.devin.ai/v3` | Devin Review (no verificado) | ❌ | Pro **$20** · Max **$200** · Teams **$80 + $40/seat**. ACUs solo Enterprise, **precio no público** | 🔴 **IGNORAR** — 15% de éxito en el único estudio serio (Answer.AI, 20 tareas → 3 éxitos), y lo peor: *"no pudimos discernir ningún patrón para predecir qué tareas funcionarían"* |
+| **Kiro (Amazon)** | ✅ Label `kiro` / `/kiro` | ✅ *"a verification agent checks output"* + **property-based testing** | ❌ | Free $0 · Pro **$20** → Power **$200**/mes, $0.04/crédito | 🟡 VIGILAR (Q Developer está en sunset → Kiro es el reemplazo) |
+| **Jules (Google)** | ✅ Label `jules`; API alpha | ⚠️ Solo si ponés tests en el setup script | ❌ **Imposible por diseño**: *"Long-running processes like dev servers or watch scripts aren't currently supported"* | Vía Google AI Pro **$19.99** / Ultra **$99.99–199.99** | 🔴 IGNORAR |
+| **Codegen** | — | — | — | — | ⚫ **MUERTO** — adquirido por ClickUp, *"deprecated on January 16, 2026"* |
+| **Sweep** | — | — | — | Basic $10 → Ultra $60/mes | ⚫ **PIVOTEÓ** — hoy es autocomplete para JetBrains; repo zombie (últimos 3 commits en 2 años = ediciones del README) |
+| **Copilot Workspace** | — | — | — | — | ⚫ **MUERTO** — no aparece en la doc de conceptos de GitHub; lo reemplazó Agent HQ + mission control |
+| **Firebase Studio** | Importaba repos de GitHub | — | ✅✅ **Emulador Android en browser para Flutter + link compartible** | Era gratis | ⚫ **MUERTO** — signups cerrados 22-jun-2026 |
+| **FlutterFlow** | — | — | ⚠️ *"Run Mode links are **not public**"*; Web Publishing sí (con watermark en Free) | Basic **$39** · Growth **$80** · Business **$150**/mes | 🔴 IGNORAR — **no importa repos Flutter externos** (las Project APIs operan sobre su YAML propietario) |
+| **Appetize.io** | — | — | ✅✅ **Link público sin cuenta** `appetize.io/app/{buildId}` + iframe embebible + `POST /v1/apps` con la URL del APK | Free 30 min/mes (sesión de 3 min) · **Starter $89/mes ($59 anual)**, 500 min + $0.06/min · Premium $449/$319 | 🟢 **ALQUILAR — la única capa de preview móvil alquilable que existe** |
+| **Expo / EAS** | — | — | ❌ Exige que el cliente **instale Expo Go** o el binario (iOS: UDIDs ad hoc) | Free $0 · Starter **$19** · Production **$199**/mes | 🔴 IGNORAR (además es RN, no Flutter) |
+| **Lovable / Bolt / v0 / Replit** | — | — | ❌ Web only, o móvil vía Expo Go. **Ninguno importa código externo para previsualizarlo** | Lovable Pro **$25** · Bolt Pro **$25** · v0 Plus **$30**/user · Replit no verificable (pricing da 403) | 🔴 IGNORAR — son competidores de producto, no proveedores |
+| **ACP (Agent Client Protocol)** | Estándar JSON-RPC editor↔agente, con registro público | — | — | Gratis, abierto | 🟢 **ALQUILAR — la capa de portabilidad de CLIs** |
+| **LangGraph / Temporal** | `interrupt()` pausa el grafo y espera input humano | — | — | OSS | 🔴 **IGNORAR** — son *sustrato*, y la lección de Fluxo v1 es exactamente no volver a construir sustrato |
+
+---
+
+## 2. BMAD: estado verificado (agosto 2026)
+
+**Muy vivo.** v6.10.0 (3-jul-2026), 51.660 estrellas, 5.913 forks, **commits del día de hoy** (`2026-08-09T04:03`), canal `next` publicando en npm casi a diario. **MIT**, pero con *"TRADEMARK NOTICE: BMad™, BMad Method™, and BMad Core™ are trademarks of BMad Code, LLC"* — el código lo podés usar y modificar; **la marca no**.
+
+**Cómo estructura el trabajo** (verificado en https://docs.bmad-method.org/reference/workflow-map/ y en el árbol del repo):
+
+- **Fase 1 Analysis** (opcional): `bmad-brainstorming`, `bmad-forge-idea`, `bmad-deep-recon`, `bmad-product-brief`, `bmad-prfaq`
+- **Fase 2 Planning**: `bmad-prd` → `prd.md` · `bmad-ux` → `DESIGN.md` · `bmad-spec` → `SPEC.md`
+- **Fase 3 Solutioning**: `bmad-architecture` → `ARCHITECTURE-SPINE.md` · `bmad-create-epics-and-stories` · **`bmad-sprint-planning` → gate PASS/CONCERNS/FAIL + `sprint-status.yaml`**
+- **Fase 4 Implementation**: `bmad-build` / `bmad-build-auto`, `bmad-code-review`, `bmad-correct-course`, `bmad-retrospective`, `bmad-qa-generate-e2e-tests`, `bmad-checkpoint-preview`
+- **Gates humanos**: validación del PRD, review de arquitectura, sprint readiness gate, veredicto de aceptación del retro
+- **Agentes**: analyst, architect, dev, pm, ux-designer (`src/bmm-skills/agents/`)
+
+**Punto clave de v6.10**: BMAD se reorganizó **como skills de Claude Code** (`src/core-skills/`, `src/bmm-skills/`, `.claude-plugin/marketplace.json`). Instalación: `npx bmad-method install`. Requiere Node 20.12+, Python 3.10+ y `uv`.
+
+**Críticas conocidas** (fuentes secundarias, marcadas como tales): workflow muy prescriptivo ("plan-everything-first"), curva de aprendizaje de ~2 meses, y **costo de tokens** — con la observación de que *"el 80% o más del gasto de tokens va a re-inyectar los mismos documentos de estándares en cada invocación de agente"*. → https://reenbit.com/bmad-method-token-budget-context-engineering-roi/ · https://adsantos.medium.com/you-should-bmad-part-2-a007d28a084b — **No verificadas en fuente primaria; tratar como señal, no como dato.** La crítica más citada ("BMAD no automatiza la orquestación, depende de handoffs humanos explícitos") **quedó obsoleta**: eso es exactamente lo que `bmad-loop` resuelve.
+
+### `bmad-loop` en detalle — lean esto antes de escribir una línea del sucesor
+
+Repo creado el 19-jun-2026, 81 estrellas, **push de hoy**, estado *"early open beta"* con advertencia explícita de breaking changes pre-1.0. Lo que ya trae, verbatim del README:
+
+- 🧠 *"**No LLM in the control loop.** Story selection, retry budgets, gates, and completion checks are code, not prompts — so they're deterministic, debuggable, and free."*
+- 🔍 *"**Trust nothing, verify everything.** After each session the orchestrator checks artifacts on disk: spec frontmatter status, baseline-commit match (recorded independently — a cheap LLM-lie detector), non-empty diff, sprint-status sync, and your test/lint commands before any commit."*
+- 🪟 *"**Fresh context per step.** Dev and review are separate sessions — review never inherits the implementer's context, so there's no anchoring bias."* ← **es exactamente el reviewer F4 de ustedes**
+- ♻️ *"Every run is a resumable state machine on disk"*, con adapter genérico de tmux que maneja `claude`, `codex`, `gemini`, `copilot` o `antigravity`, **mezclables por etapa**
+- 🌿 Aislamiento opcional por git worktree (`[scm] isolation = "worktree"`)
+- **TUI completa**: tabla de runs, árbol de sprint, ledger de deferred-work, tokens por story, journal en vivo
+- **`bmad-loop confirm <story-key>`**: parkea una story en `awaiting-operator` cuando debe acciones externas (*"buy the domain, publish the DNS record"*) y la completa con audit trail. **Ese es el gate humano ya construido.**
+- Todos los comandos tienen `--json` con documento estable machine-readable → el console web se cuelga de ahí sin parsear texto
+
+Lo que **no** trae: preview de la app, multi-tenancy, UI web, nada de cliente. Corre local (Linux/macOS/WSL), un proyecto por vez.
+
+---
+
+## 3. Gotchas que rompen orquestaciones (verificados, y caros de descubrir tarde)
+
+- **GitHub Copilot cloud agent**: *"Los workflows de GitHub Actions **no corren automáticamente** cuando Copilot pushea cambios a un PR"* — hay que apretar "Approve and run workflows" a mano. Además, la API de agent tasks *"only supports user-to-server tokens… **installation access tokens de GitHub App no están soportados**"*. Límite duro de **59 minutos** por sesión, **un repo y un PR** por tarea.
+- **Claude Code Action**: rechaza actores bot salvo que estén en `allowed_bots` — *"evita que bots disparen a Claude en loop"*. Y *"GitHub no dispara workflows en commits hechos con el `GITHUB_TOKEN` por defecto"* → si lo pasás, el CI no corre sobre los commits de Claude.
+- **Claude Routines**: eventos de GitHub soportados = **solo `Pull request` y `Release`**. No hay trigger por issue. Y la doc advierte: *"Un status verde… significa que la sesión arrancó y salió sin error de infraestructura. **NO significa que la tarea de tu prompt haya tenido éxito.**"*
+- **Cursor**: los cloud agents se cobran **a API pricing**, fuera del plan mensual.
+- **Codex**: *"Agent internet access is off by default"* — rompe cualquier build que baje dependencias en runtime.
+- **Firebase Hosting preview channels**: apuntan al **backend REAL**, no al emulador. Si querés preview emulado, el bundle web tiene que salir de tu propio hosting — no mezclar los dos mecanismos.
+- **Appetize**: **no acepta AAB** — *"you will need to convert your `aab` to an `apk` or `apks`"*. Y la compatibilidad de arquitectura del APK Flutter en emulador **no está verificada**: probalo con un APK real antes de comprometerte.
+
+---
+
+## 4. El gap real: qué NO cubre nadie
+
+De los ~20 productos investigados, **cuatro huecos** quedan completamente abiertos, y los cuatro son del mismo eje:
+
+**① Verificación por ejecución.** El techo universal del mercado es "corre tests y linters". Ninguna doc primaria de GitHub, Linear, Jira, Copilot, Claude, Devin, OpenHands, Jules o Kiro dice "buildea el artefacto y comprobá que arranca". Factory.ai es el único que ejecuta la app (Droid Control, con video), y es un producto de $100–200/mes con límites de uso no publicados. **El gate "sprint done ⟺ 0 P0 encontrados por un reviewer que buildeó y corrió" que ustedes ya validaron en vivo con YoMap SP1 no lo vende nadie.**
+
+**② El config de runtime.** Todos proveen credenciales para que el código *compile*. Nadie provee las que hacen que la app *arranque* (`google-services.json`, Maps key). Este es literalmente el gap de `docs/20` — y la investigación lo confirma como universal, no como una carencia de Fluxo.
+
+**③ Preview móvil para un cliente no técnico.** Bolt y Replit generan móvil, pero su preview exige **Expo Go instalado en el teléfono del cliente**. Firebase Studio lo resolvía y cerró. FlutterFlow lo prohíbe por arquitectura. zapp.run murió. **"El cliente abre un link y ve la app corriendo, sin instalar nada" no lo resuelve nadie para Flutter.** Appetize es lo único alquilable, y opera sobre el binario, no sobre el código.
+
+**④ El paquete "agencia LATAM".** Nadie vende: brief en español → backlog gateado → ejecución en el GitHub del cliente con **sus** credenciales (cero COGS) → preview presentable al cliente final → todo en un idioma y a un precio que cierre para una dev-shop boutique. Linear cobra por seat y en inglés; Jira es enterprise; los app builders son competidores del cliente, no proveedores de la agencia.
+
+**Corolario de posicionamiento:** ustedes tenían razón en la tesis y se equivocaron en el alcance. Construyeron el sustrato (store, conductor, aislamiento, RLS, dispatch) **otra vez**, cuando lo que era defendible era ①+②+③. El sucesor debe construir **solo** eso.
+
+Dato de mercado que confirma que ① es el cuello de botella real: GitHub introdujo límites de PRs abiertos a nivel repo (17-jun-2026) y a nivel org (6-ago-2026), y aclara que *"Pull requests opened by Copilot or another AI agent will count toward your limit"*. Están poniendo un límite **cuantitativo** porque no saben distinguir cualitativamente un PR bueno de uno malo.
+
+---
+
+## 5. Stack mínimo recomendado para AIuda Labs (alquilando todo lo posible)
+
+**Regla: si aparece en la columna "alquilar" de la tabla, no se escribe.**
+
+| Capa | Qué alquilar | Costo | Por qué |
+|---|---|---|---|
+| **Método** (fases, agentes, gates, plantillas) | **BMAD-METHOD v6** (`npx bmad-method install`) | $0 (MIT) | Reemplaza `registry/` entero. Mantenido a diario por terceros. Traducir las plantillas al español es data, no código. |
+| **Orquestador** (story → dev → review → verify → commit) | **`bmad-loop`** | $0 (MIT) | Ya es su arquitectura: loop determinista, review en contexto fresco, verificación de artefactos en disco, resumable, `--json` en todo, gate `awaiting-operator`. Fork o extensión, **no reescritura**. |
+| **Ejecutor** | **Claude Code headless** (`claude -p --bare`) sobre el VPS que ya tienen | Suscripción Max **$100/mes** o API a demanda | El adapter ya existe en bmad-loop; `--bare` es el modo recomendado para CI. Sin COGS por asiento. |
+| **Portabilidad de CLI** | **ACP** cuando necesiten codex/gemini/copilot | $0 | Registro público Zed+JetBrains; bmad-loop ya mezcla CLIs por etapa. |
+| **Board del cliente** | **Linear** (`AgentSession` + `AgentActivity`, `delegate ≠ assignee`) | **$10–16/user/mes**, **agentes sin costo de seat** | Es la UI que ustedes construyeron en `console/`, gratis y mejor. El protocolo de streaming agente→ticket ya está diseñado. |
+| **Preview web** (el 80% de los casos) | **`flutter build web` + Firebase Emulator Suite con proyecto `demo-*`** en el VPS propio | ~$0 | Verificado: en web la config vive en `firebase_options.dart` (Dart) — **`google-services.json` no hace falta**, es un artefacto del build Gradle de Android. Preview y build real quedan limpiamente separados. |
+| **Preview del APK real** (cuando el web no alcanza) | **Appetize.io Starter** | **$59/mes anual** + $0.06/min | Único proveedor con link público sin cuenta + iframe + API. Cobro por minuto de streaming, no por asiento — encaja con "el cliente mira 20 minutos y se va". |
+| **CI / secretos / repos** | **GitHub del cliente** (BYO, como ya hacían) | $0 para ustedes | Security validation (CodeQL + secret scanning + advisory DB) sin licencia GHAS. |
+
+**Costo fijo del stack: ~$160–180/mes** (Claude Max $100 + Appetize $59 + VPS) más Linear por usuario, contra un Fluxo que exigía Supabase managed, VPS, y mantenimiento de kernel propio.
+
+**Lo único que AIuda Labs debería CONSTRUIR** — y no es poco, es todo el moat:
+
+1. **El gate de "corre de verdad"**: extender los comandos `[verify]` de bmad-loop para que además de tests hagan build + arranque + smoke, y que el reviewer de contexto fresco emita findings severizados con el gate "sprint done ⟺ 0 P0". Ya lo tienen escrito y validado en vivo — es un port a la config de bmad-loop, no un rebuild.
+2. **El store de config de runtime** (`google-services.json` + Maps key como tenant credentials, inyectadas al compilar) + la receta de preview emulado. Es `docs/20` tal cual, y la investigación confirma que nadie más lo resuelve.
+3. **La capa de cliente en español**: la vista que el cliente de la agencia abre para ver el backlog gateado y la app corriendo. Fina, sobre Linear + el link de preview.
+
+**Lo que hay que apagar sin nostalgia**: el store propio, el conductor, la RLS multi-tenant, el dispatch, la consola completa, el minting de tokens, el registry propio. Todo eso lo alquilás por $0 o por menos de lo que cuesta mantenerlo.
+
+**Riesgo a asumir explícitamente**: `bmad-loop` es *early open beta* con breaking changes garantizados pre-1.0. La mitigación correcta es pinear un tag, leer el CHANGELOG antes de cada upgrade, y mantener el aporte propio como extensión (comandos `[verify]`, adapters, config) en vez de parches al engine — que es exactamente la línea de "carry del método, alquilá el sustrato" con la que arrancó v2.
+
+---
+
+## Fuentes principales
+
+**BMAD**: [BMAD-METHOD](https://github.com/bmad-code-org/BMAD-METHOD) · [bmad-loop](https://github.com/bmad-code-org/bmad-loop) · [Workflow map](https://docs.bmad-method.org/reference/workflow-map/) · [npm bmad-method](https://www.npmjs.com/package/bmad-method)
+
+**Agentes**: [Copilot cloud agent](https://docs.github.com/en/copilot/concepts/agents/coding-agent/about-coding-agent) · [API de agent tasks](https://docs.github.com/en/copilot/how-tos/use-copilot-agents/cloud-agent/use-cloud-agent-via-the-api) · [Third-party agents](https://docs.github.com/en/copilot/concepts/agents/about-third-party-coding-agents) · [Billing por AI credits](https://docs.github.com/en/copilot/concepts/billing/usage-based-billing-for-organizations-and-enterprises) · [Claude Code GitHub Actions](https://code.claude.com/docs/en/github-actions) · [headless](https://code.claude.com/docs/en/headless) · [Routines](https://code.claude.com/docs/en/routines) · [Code Review](https://code.claude.com/docs/en/code-review) · [Agent Teams](https://code.claude.com/docs/en/agent-teams) · [Devin pricing](https://devin.ai/pricing) · [Windsurf → Devin Desktop](https://devin.ai/blog/windsurf-is-now-devin-desktop) · [Answer.AI sobre Devin](https://www.answer.ai/posts/2025-01-08-devin.html) · [OpenHands](https://github.com/All-Hands-AI/OpenHands) · [Factory QA](https://factory.ai/news/automated-qa) · [Droid Control](https://docs.factory.ai/software-factory/droid-control) · [Cursor cloud agents](https://cursor.com/docs/cloud-agent.md) · [Kiro](https://kiro.dev/blog/introducing-kiro-autonomous-agent/) · [Jules](https://jules.google/docs/faq/) · [Codegen → ClickUp](https://clickup.com/blog/clickup-codegen-acquisition/) · [Sweep hoy](https://sweep.dev/)
+
+**PM**: [Linear for Agents](https://linear.app/developers/agents) · [Agent Interaction Protocol](https://linear.app/developers/agent-interaction) · [Coding sessions](https://linear.app/docs/coding-sessions) · [AI credits](https://linear.app/docs/ai-credits) · [Linear pricing](https://linear.app/pricing) · [Agent HQ](https://github.blog/news-insights/company-news/welcome-home-agents/) · [PR limits org](https://github.blog/changelog/2026-08-06-set-pull-request-limits-at-the-organization-level/) · [Rovo Dev pricing](https://www.atlassian.com/software/rovo-dev/pricing) · [Jira Automation + agentes](https://www.atlassian.com/blog/development/scale-agent-impact-with-jira-automation)
+
+**Preview**: [Firebase Studio sunset](https://firebase.google.com/docs/studio) · [Appetize sharing](https://docs.appetize.io/platform/sharing-apps.md) · [Appetize API](https://docs.appetize.io/rest-api/v1/create-new-app.md) · [Appetize pricing](https://appetize.io/pricing) · [Flutter web + Firebase](https://firebase.google.com/docs/flutter/setup) · [Emuladores + proyectos demo-](https://firebase.google.com/docs/emulator-suite/connect_auth) · [Hosting preview channels](https://firebase.google.com/docs/hosting/test-preview-deploy) · [FlutterFlow run mode](https://docs.flutterflow.io/testing/run-your-app/) · [EAS pricing](https://expo.dev/pricing) · [Lovable](https://docs.lovable.dev/introduction/subscription-plans) · [Bolt](https://bolt.new/pricing) · [v0](https://v0.app/docs/pricing)
+
+**Interop**: [ACP Registry](https://zed.dev/blog/acp-registry) · [agentclientprotocol.com](https://agentclientprotocol.com/)
+
+**No verificado / marcado como tal**: precios de ACU de Devin en 2026 · una evaluación crítica de Devin posterior a enero 2025 · pricing de Replit (la página devuelve 403) · las críticas de costo de tokens de BMAD (solo fuentes secundarias) · la fecha exacta del sunset de Copilot Workspace (la desaparición sí está confirmada por la doc actual) · compatibilidad de arquitectura de APKs Flutter en el emulador de Appetize.
