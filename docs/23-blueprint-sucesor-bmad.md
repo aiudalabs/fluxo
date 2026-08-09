@@ -15,21 +15,25 @@ Code a mano** (`flutter run`, un preview channel de hosting) — porque ES Claud
 
 ## 1. Principios (los invariantes del diseño)
 
-1. **Cero orquestación propia.** Ni worker, ni scheduler, ni motor de workflows, ni runner de agentes,
-   ni infra de preview. Si una necesidad parece pedir uno, la respuesta es un harness existente o no
-   se hace. *(Señal de alarma: el día que escribamos un loop que "pollea una cola", paramos.)*
-2. **Una sola fuente de verdad por estado.** El backlog vive en GitHub Issues/Projects. El código y su
-   historia en git. Las decisiones en markdown en el repo. No hay Postgres espejo que reconciliar.
-3. **El método es texto versionado en el repo del proyecto.** Personas, gates, contratos de verify —
-   heredados del `registry/` de Fluxo, colgados del esqueleto BMAD, instalados como archivos
-   (`.claude/`, `docs/`, `.github/`) por el scaffold inicial.
-4. **Delegar la ejecución, no la responsabilidad.** El harness hace; los GATES deciden. Los tres gates
-   con evidencia de Fluxo se conservan como CI del repo (no como servicio nuestro): provisioning-lint,
-   test-verify, y el reviewer fresco con mandato build+RUN.
-5. **Money-safe por construcción.** Nada dispara gasto sin un humano o un gate aprobado; toda entrada
-   se valida ANTES del primer token pago (lección del run sobre el pedido vacío).
-6. **Un solo cliente hasta que duela.** Nada de multi-tenant/RLS/Vault/billing hasta el segundo
-   cliente pagando. La agencia opera por repo, no por plataforma.
+Los invariantes canónicos son los **5 del premortem** (`docs/22` Parte 2 §3) — se eligen esos porque
+son *verificables* (cada uno trae su chequeo y la narrativa de fracaso a la que empuja violarlo):
+
+- **I1 · Cero procesos propios de larga vida** — `ps` no muestra nada nuestro corriendo.
+- **I2 · Cero estado de verdad propio** — borrar toda máquina nuestra no pierde información.
+- **I3 · Ningún "hecho" sin artefacto ejecutado** — evidencia (exit code, screenshot, URL) localizable
+  en <1 min para cualquier ítem cerrado.
+- **I4 · Ningún gasto sin techo declarado y sin corte externo** — presupuesto por proyecto + límite
+  duro en el proveedor; el kill-switch nunca es código nuestro.
+- **I5 · Todo se corre desde el repo, con un comando, por alguien que no es Noel** — deps pineadas y
+  vendorizadas; un tercero llega a una app corriendo con el README.
+
+A esos se les suman dos reglas de alcance:
+6. **El método es texto versionado en el repo del proyecto** (personas, gates, contratos de verify del
+   `registry/`, colgados del esqueleto BMAD, instalados por el scaffold).
+7. **Un solo cliente hasta que duela** — nada de multi-tenant/Vault/billing hasta el segundo cliente
+   pagando. Y la regla "todo gap se cierra como capacidad del sistema" queda **suspendida** hasta
+   entonces (el adversarial la señala como la causa mecánica de media lista de complejidad: cada
+   incidente producía un fix de método *y* una pieza de infra permanente).
 
 ## 2. Arquitectura propuesta (lo mínimo que cierra los 6 casos de uso)
 
